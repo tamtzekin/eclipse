@@ -1,0 +1,56 @@
+# ───────────────────────────────────────────────────────
+# ECLIPSE — Cross-platform UE 5.6 .gitignore
+# Mac + PC developers share the same repo. Each platform
+# regenerates its own build artifacts locally.
+# ───────────────────────────────────────────────────────
+
+# ── UE generated build artifacts (both platforms) ──
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# ── PC / Visual Studio ──
+.vs/
+*.sln
+*.suo
+*.sdf
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.opendb
+*.user
+*.userosscache
+*.usertasks
+vsconfig
+
+# ── Mac / Xcode ──
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# ── IDE / editor metadata ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS junk ──
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ── Local-only files ──
+LocalNotes.md
+*.local.*
+*.log
+
+# ── Plugins compiled binaries (keep source, ignore output) ──
+Plugins/*/Binaries/
+Plugins/*/Intermediate/

@@ -1,0 +1,40 @@
+# ECLIPSE — Git LFS rules (cross-platform Mac/PC)
+* text=auto eol=lf
+
+# Source code (text)
+*.cpp    text
+*.h      text
+*.hpp    text
+*.cs     text
+*.ini    text
+*.csv    text
+*.json   text
+*.md     text
+*.txt    text
+*.uproject text
+
+# UE binary assets — track via Git LFS
+*.uasset filter=lfs diff=lfs merge=lfs -text
+*.umap   filter=lfs diff=lfs merge=lfs -text
+*.upk    filter=lfs diff=lfs merge=lfs -text
+
+# Audio / textures / video
+*.mp3    filter=lfs diff=lfs merge=lfs -text
+*.wav    filter=lfs diff=lfs merge=lfs -text
+*.ogg    filter=lfs diff=lfs merge=lfs -text
+*.png    filter=lfs diff=lfs merge=lfs -text
+*.jpg    filter=lfs diff=lfs merge=lfs -text
+*.jpeg   filter=lfs diff=lfs merge=lfs -text
+*.tga    filter=lfs diff=lfs merge=lfs -text
+*.psd    filter=lfs diff=lfs merge=lfs -text
+*.exr    filter=lfs diff=lfs merge=lfs -text
+*.fbx    filter=lfs diff=lfs merge=lfs -text
+*.obj    filter=lfs diff=lfs merge=lfs -text
+*.mp4    filter=lfs diff=lfs merge=lfs -text
+*.mov    filter=lfs diff=lfs merge=lfs -text
+
+# Force LF on UE config / source — avoids CRLF noise across Win/Mac
+*.cs    text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.ini   text eol=lf
