@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"EngineAssociation": "5.6",
 	"Category": "",
-	"Description": "",
+	"Description": "ECLIPSE — nightclub vertical slice (UE 5.6.1).",
 	"Modules": [
 		{
 			"Name": "eclipse",
@@ -11,7 +11,8 @@
 			"AdditionalDependencies": [
 				"Engine",
 				"AIModule",
-				"UMG"
+				"UMG",
+				"EnhancedInput"
 			]
 		}
 	],
@@ -29,6 +30,26 @@
 		},
 		{
 			"Name": "GameplayStateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		},
+		{
+			"Name": "McpAutomationBridge",
+			"Enabled": true
+		},
+		{
+			"Name": "ArticyXImporter",
 			"Enabled": true
 		}
 	]

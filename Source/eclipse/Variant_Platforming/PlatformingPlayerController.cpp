@@ -30,7 +30,7 @@ void APlatformingPlayerController::BeginPlay()
 
 		} else {
 
-			UE_LOG(Logeclipse, Error, TEXT("Could not spawn mobile controls widget."));
+			UE_LOG(LogEclipse, Error, TEXT("Could not spawn mobile controls widget."));
 
 		}
 

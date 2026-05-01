@@ -5,4 +5,4 @@
 
 IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, eclipse, "eclipse" );
 
-DEFINE_LOG_CATEGORY(Logeclipse)
+DEFINE_LOG_CATEGORY(LogEclipse)

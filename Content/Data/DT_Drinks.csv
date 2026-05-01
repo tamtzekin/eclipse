@@ -1,0 +1,11 @@
+Name,DisplayName,Icon,Price,Cooling,Thirst,StatBoost,Description,QuestFlag,bIsVip
+water,Water,💧,1,20,30,,+30 Thirst / -20 Heat,,False
+beer,Beer,🍺,3,15,50,word,+50 Thirst / -15 Heat / +1 WORD,,False
+espresso_martini,Espresso Martini,☕,5,5,10,word,+10 Thirst / -5 Heat / +1 WORD,,False
+red_bull_vodka,Red Bull Vodka,⚡,6,10,35,rhythm,+35 Thirst / -10 Heat / +1 RHYTHM,,False
+champagne,Champagne,🥂,10,25,80,word,+80 Thirst / -25 Heat / +1 WORD,,False
+negroni,Negroni,🍸,8,10,25,shadow,+25 Thirst / -10 Heat / +1 SHADOW,,True
+old_fashioned,Old Fashioned,🥃,10,12,30,shadow,+30 Thirst / -12 Heat / +1 SHADOW,,True
+dom_perignon,Dom Pérignon,🍾,25,30,90,word,+90 Thirst / -30 Heat / +1 WORD,,True
+whiskey_sour,Whiskey Sour,🧊,12,18,40,rhythm,+40 Thirst / -18 Heat / +1 RHYTHM,,True
+angels_hair,Angel's Hair,👼,15,15,40,,"A silver drink. For ""messengers"".",hasHair,True

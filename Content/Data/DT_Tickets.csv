@@ -1,0 +1,10 @@
+Name,RoomKey,Number,bIsWild,Description
+ticket_1_1_jacket,Cloak,14,False,Jacket
+ticket_1_1_wild,Cloak,7,True,"Wildcard ?7 — matches Beret(27) or Chain(67)"
+ticket_2_1_beret,Bar,27,False,Beret
+ticket_2_1_scarf,Bar,42,False,Scarf
+ticket_2_2_hoodie,Club,31,False,Hoodie
+ticket_2_2_wild,Club,7,True,"Wildcard ?7 — matches Beret(27) or Chain(67)"
+ticket_2_3_cap,Bathroom,53,False,Cap
+ticket_3_1_chain,Vip,67,False,Chain
+ticket_2_0_scarf,Smoking,42,False,Scarf

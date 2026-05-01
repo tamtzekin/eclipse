@@ -18,13 +18,27 @@ public class eclipse : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"SlateCore",
+			"NavigationSystem",
+			"GameplayTasks"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"RenderCore"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"eclipse",
+			// Eclipse port (Justin) — added Phase 0
+			"eclipse/Player",
+			"eclipse/NPC",
+			"eclipse/Room",
+			"eclipse/Subsystems",
+			"eclipse/Data",
+			"eclipse/Save",
+			// Template variant code — left in for now, can be deleted with the
+			// matching .cpp/.h files once we no longer need it as reference.
 			"eclipse/Variant_Platforming",
 			"eclipse/Variant_Platforming/Animation",
 			"eclipse/Variant_Combat",
@@ -40,8 +54,9 @@ public class eclipse : ModuleRules
 			"eclipse/Variant_SideScrolling/UI"
 		});
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		// Articy plugin runtime — uncomment after the Articy Importer plugin is
+		// installed locally (Marketplace) and confirmed in the .uproject.
+		// PublicDependencyModuleNames.Add("ArticyRuntime");
 
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

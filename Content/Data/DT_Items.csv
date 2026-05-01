@@ -1,0 +1,7 @@
+Name,Id,DisplayName,Icon,Description,TintColor,Type,Effect_SpeedMult,Effect_CoolRate,Effect_HeatGainMult,Effect_ThirstDrainMult,Effect_bMotionBlur,Effect_bRevealNPCs,Effect_bDarken,Effect_bCharisma,Duration,StatBoost,QuestFlag
+tablet,tablet,TABLET,💊,+Speed / Motion blur / +1 RHYTHM,"(R=0.318,G=0.933,B=0.988,A=1)",Consumable,1.6,1.0,1.0,1.0,True,False,False,False,15,rhythm,
+drink,drink,DRINK,🍸,Reveal crowd / -Speed / +1 WORD,"(R=0.071,G=0.412,B=0.800,A=1)",Held,0.7,1.0,1.0,1.0,False,True,False,False,0,word,
+sunglasses,sunglasses,SUNGLASSES,🕶️,+Cooling / -Speed / Darker / +1 SHADOW,"(R=1,G=1,B=1,A=1)",Held,0.7,1.5,1.0,1.0,False,False,True,False,0,shadow,
+cigarette,cigarette,CIGARETTE,🚬,+1 SHADOW,"(R=0.667,G=0.667,B=0.667,A=1)",Consumable,1.0,1.0,1.0,1.0,False,False,False,False,0,shadow,
+wristband,wristband,RED WRISTBAND,🔴,VIP Access,"(R=1,G=0.267,B=0.267,A=1)",Special,1.0,1.0,1.0,1.0,False,False,False,False,0,,
+angeleye,angeleye,ANGEL'S EYE,👁,"A cold, glassy sphere. It stares back.","(R=0.878,G=0.910,B=1.000,A=1)",Quest,1.0,1.0,1.0,1.0,False,False,False,False,0,,
