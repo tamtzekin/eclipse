@@ -28,6 +28,18 @@ public class eclipse : ModuleRules
 			"RenderCore"
 		});
 
+		// Editor-only dependencies — only linked when building the editor target
+		// so we can populate WBP designer trees from C++ via UEclipseUiBuilder.
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"UMGEditor",       // UWidgetBlueprint
+				"UnrealEd",        // BlueprintEditor utilities
+				"AssetTools",
+				"Kismet"
+			});
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"eclipse",
 			// Eclipse port (Justin) — added Phase 0
@@ -37,6 +49,8 @@ public class eclipse : ModuleRules
 			"eclipse/Subsystems",
 			"eclipse/Data",
 			"eclipse/Save",
+			"eclipse/Items",
+			"eclipse/UI",
 			// Template variant code — left in for now, can be deleted with the
 			// matching .cpp/.h files once we no longer need it as reference.
 			"eclipse/Variant_Platforming",

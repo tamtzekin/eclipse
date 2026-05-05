@@ -31,9 +31,9 @@ struct FEclipseDialogueNodeView
 	UPROPERTY(BlueprintReadOnly) TArray<FEclipseDialogueChoice> Choices;
 };
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FEclipseDialogueOpened, AEclipseNpcCharacter* /*Npc*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FEclipseDialogueNodeChanged, const FEclipseDialogueNodeView& /*Node*/);
-DECLARE_MULTICAST_DELEGATE(FEclipseDialogueClosed);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueOpened,      AEclipseNpcCharacter*, Npc);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueNodeChanged, FEclipseDialogueNodeView, Node);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseDialogueClosed);
 
 /**
  * Articy runtime wrapper. Mirrors the JS articyDB + getEntryNode +
@@ -75,8 +75,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	const FEclipseDialogueNodeView& GetCurrentNodeView() const { return CurrentNode; }
 
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueOpened       OnDialogueOpened;
+
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueNodeChanged  OnNodeChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueClosed       OnDialogueClosed;
 
 	/**
@@ -102,4 +107,8 @@ private:
 
 	// menuAction dispatcher (enterStall / giveTabs / startGame / etc.)
 	void DispatchMenuAction(FName ActionName);
+
+	// Populate CurrentNode from a synthetic node ID, advancing through any
+	// player-choice fragments to the next NPC speech fragment.
+	void AdvanceToNode(FName NodeId);
 };

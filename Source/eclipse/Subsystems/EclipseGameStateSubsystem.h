@@ -30,7 +30,7 @@ struct FEclipseMetNpc
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName DialogueId;
 };
 
-DECLARE_MULTICAST_DELEGATE(FEclipseGameStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
 
 /**
  * Holds player meta-state across levels. Exposed to UMG via delegates so the
@@ -104,6 +104,7 @@ public:
 	void RecordMetNPC(FName Name, FName DialogueId);
 
 	// Broadcast whenever any state field changes — UMG widgets bind once.
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
 
 	// Convenience for tests / Blueprint:

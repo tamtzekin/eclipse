@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "NPC/EclipseNpcCharacter.h"
+#include "Items/EclipseItemActor.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 
@@ -54,7 +55,26 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		OnNearTalkableChanged.Broadcast(NearTalkable);
 	}
 
-	// TODO(slice): same loop for items (AEclipseItemActor or similar tag).
+	// ── Nearest item ──
+	AEclipseItemActor* BestItem = nullptr;
+	float BestItemDistSq = FLT_MAX;
+	for (TActorIterator<AEclipseItemActor> It(World); It; ++It)
+	{
+		AEclipseItemActor* Item = *It;
+		if (Item->bPickedUp || Item->IsHidden()) continue;
+		const float DistSq = FVector::DistSquared(Item->GetActorLocation(), PlayerPos);
+		const float R = Item->PickupRadius;
+		if (DistSq < R * R && DistSq < BestItemDistSq)
+		{
+			BestItem = Item;
+			BestItemDistSq = DistSq;
+		}
+	}
+	if (BestItem != NearItem)
+	{
+		NearItem = BestItem;
+		OnNearItemChanged.Broadcast(NearItem);
+	}
 }
 
 bool UEclipseInteractSubsystem::TryInteract()
@@ -74,9 +94,10 @@ bool UEclipseInteractSubsystem::TryInteract()
 			return Dlg->OpenDialogue(NearTalkable);
 		}
 	}
-	if (NearItem)
+	if (AEclipseItemActor* Item = Cast<AEclipseItemActor>(NearItem))
 	{
-		// TODO(slice): trigger pickup on AEclipseItemActor.
+		Item->Pickup();
+		return true;
 	}
 	return false;
 }

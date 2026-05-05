@@ -1,0 +1,113 @@
+// Copyright (c) ECLIPSE. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Engine/Font.h"
+#include "Fonts/SlateFontInfo.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateColor.h"
+#include "Math/Color.h"
+
+/**
+ * Centralised UI tokens — colors and fonts pulled directly from the HTML
+ * prototype's CSS. Keep this file as the single source of truth so both
+ * widgets and any future styling stays in sync.
+ *
+ * Source: /Users/j/code/dungeon-prototype/index.html
+ */
+namespace EclipseUI
+{
+	// ── Colors (CSS values in comments) ──────────────────────────────────────
+	inline const FLinearColor Cyan        = FLinearColor(0.318f, 0.933f, 0.988f, 1.f); // #51eefc
+	inline const FLinearColor CyanDim     = FLinearColor(0.318f, 0.933f, 0.988f, 0.5f);
+	inline const FLinearColor Cream       = FLinearColor(0.945f, 0.929f, 0.851f, 1.f); // #f1ecd9 chalk
+	inline const FLinearColor CreamDim    = FLinearColor(0.945f, 0.929f, 0.851f, 0.85f);
+	inline const FLinearColor Slate       = FLinearColor(0.055f, 0.059f, 0.071f, 1.f); // #0e0f12
+	inline const FLinearColor SlateDeep   = FLinearColor(0.031f, 0.035f, 0.047f, 1.f); // #08090c
+	inline const FLinearColor PanelBg     = FLinearColor(0.024f, 0.055f, 0.141f, 0.6f); // rgba(6,14,36,0.6)
+	inline const FLinearColor PanelBorder = FLinearColor(0.102f, 0.227f, 0.361f, 1.f); // #1a3a5c
+	inline const FLinearColor BarTrack    = FLinearColor(0.051f, 0.106f, 0.180f, 1.f); // #0d1b2e
+	inline const FLinearColor HeatLow     = FLinearColor(0.078f, 0.235f, 0.549f, 1.f); // #143c8c
+	inline const FLinearColor HeatHigh    = Cyan;
+	inline const FLinearColor LabelHeat   = FLinearColor(0.427f, 0.604f, 0.780f, 1.f); // #6d9ac7
+	inline const FLinearColor LabelThirst = Cyan;
+
+	// ── Fonts ────────────────────────────────────────────────────────────────
+	// Loaded from /Game/Justin/UI/Fonts. UE 5.6's AssetImportTask creates the
+	// UFontFace .uasset, but Slate text widgets want a UFont composite that
+	// wraps the face. UEclipseUiBuilder::BuildFontComposite generates the
+	// composite once; we then load that composite from these paths.
+	inline UFont* GetBMSPA()
+	{
+		static TWeakObjectPtr<UFont> Cache;
+		if (!Cache.IsValid())
+			Cache = LoadObject<UFont>(nullptr, TEXT("/Game/Justin/UI/Fonts/BMSPA_Font.BMSPA_Font"));
+		return Cache.Get();
+	}
+	inline UFont* GetRodinPro()
+	{
+		static TWeakObjectPtr<UFont> Cache;
+		if (!Cache.IsValid())
+			Cache = LoadObject<UFont>(nullptr, TEXT("/Game/Justin/UI/Fonts/RodinPro_Font.RodinPro_Font"));
+		return Cache.Get();
+	}
+
+	inline FSlateFontInfo MakeBMSPA(int32 Size, float LetterSpacingPx = 0.f)
+	{
+		FSlateFontInfo Info;
+		if (UFont* F = GetBMSPA())
+		{
+			Info = FSlateFontInfo(F, Size, FName("Default"));
+		}
+		else
+		{
+			Info.Size = Size;
+		}
+		// Slate's LetterSpacing is in 1/1000th em units; CSS px ~= 62.5 * px.
+		Info.LetterSpacing = (int32)(LetterSpacingPx * 62.5f);
+		return Info;
+	}
+	inline FSlateFontInfo MakeRodin(int32 Size, float LetterSpacingPx = 0.f)
+	{
+		FSlateFontInfo Info;
+		if (UFont* F = GetRodinPro())
+		{
+			Info = FSlateFontInfo(F, Size, FName("Default"));
+		}
+		else
+		{
+			Info.Size = Size;
+		}
+		Info.LetterSpacing = (int32)(LetterSpacingPx * 62.5f);
+		return Info;
+	}
+
+	// ── Brush helpers ────────────────────────────────────────────────────────
+	// Use RoundedBox even for "solid" fills — Box mode requires a texture and
+	// renders as nothing if no resource is assigned. RoundedBox is procedural,
+	// so we get a flat coloured rectangle with zero corner radius.
+	inline FSlateBrush SolidBrush(const FLinearColor& Color)
+	{
+		FSlateBrush B;
+		B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+		B.TintColor = FSlateColor(Color);
+		B.OutlineSettings.Color        = FSlateColor(FLinearColor::Transparent);
+		B.OutlineSettings.Width        = 0.f;
+		B.OutlineSettings.CornerRadii  = FVector4(0,0,0,0);
+		B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		return B;
+	}
+	inline FSlateBrush RoundedBrush(const FLinearColor& Fill, const FLinearColor& Outline,
+		float OutlineWidth = 1.f, float CornerRadius = 4.f)
+	{
+		FSlateBrush B;
+		B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+		B.TintColor = FSlateColor(Fill);
+		B.OutlineSettings.Color        = FSlateColor(Outline);
+		B.OutlineSettings.Width        = OutlineWidth;
+		B.OutlineSettings.CornerRadii  = FVector4(CornerRadius, CornerRadius, CornerRadius, CornerRadius);
+		B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		return B;
+	}
+}

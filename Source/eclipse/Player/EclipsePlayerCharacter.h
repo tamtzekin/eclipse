@@ -63,4 +63,20 @@ protected:
 	void OnInteract(const FInputActionValue& Value);
 	void OnHighlightStart(const FInputActionValue& Value);
 	void OnHighlightEnd(const FInputActionValue& Value);
+
+public:
+	// Smoothly rotate the character to face the given world position. Used by
+	// EclipseDialogueSubsystem on OpenDialogue — matches the JS prototype's
+	// over-the-shoulder transition before the dialogue panel slides in.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Camera")
+	void StartFaceTarget(const FVector& WorldTarget);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Camera")
+	void StopFaceTarget();
+
+	virtual void Tick(float DeltaTime) override;
+
+private:
+	bool    bFacingTarget = false;
+	FVector FaceTargetLocation = FVector::ZeroVector;
 };

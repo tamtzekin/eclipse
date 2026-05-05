@@ -85,6 +85,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Visuals")
 	float Lightness = 40.f;
 
+	// ── Dialogue portrait — shown stuck to the left of the dialogue panel ──
+	// Drag a Texture2D from /Game/Justin/Characters/Portraits onto this in the
+	// level instance to give the NPC a face during conversations.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Portrait")
+	TObjectPtr<class UTexture2D> PortraitTexture;
+
+	// ── Speech bubble (?, !, …) — floats above the NPC head in 3D space ──
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|UI")
+	TObjectPtr<class UWidgetComponent> BubbleWidget;
+
+	// Override the bubble widget class in BP if you want a custom layout
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|UI")
+	TSubclassOf<class UEclipseSpeechBubbleWidget> BubbleWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
+	void RefreshBubble(bool bMuted = false);
+
 protected:
 	virtual void BeginPlay() override;
 };

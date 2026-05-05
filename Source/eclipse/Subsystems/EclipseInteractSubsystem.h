@@ -9,9 +9,9 @@
 class AEclipseNpcCharacter;
 class AActor;
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FEclipseNearTalkableChanged, AEclipseNpcCharacter* /*Npc*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FEclipseNearItemChanged,     AActor* /*Item*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FEclipseHighlightToggled,    bool /*bOn*/);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseNearTalkableChanged, AEclipseNpcCharacter*, Npc);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseNearItemChanged,     AActor*,               Item);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseHighlightToggled,    bool,                  bOn);
 
 /**
  * World-level subsystem that runs the JS `nearTalkable` / `nearItem` per-frame
@@ -50,8 +50,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Interact")
 	AActor* GetNearItem() const { return NearItem; }
 
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Interact")
 	FEclipseNearTalkableChanged OnNearTalkableChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Interact")
 	FEclipseNearItemChanged     OnNearItemChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Interact")
 	FEclipseHighlightToggled    OnHighlightToggled;
 
 private:
