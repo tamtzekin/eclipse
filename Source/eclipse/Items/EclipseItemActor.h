@@ -67,8 +67,12 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 private:
+	UFUNCTION()
+	void HandleHighlightToggled(bool bActive);
+
 	float LifetimeSeconds = 0.f;
 };

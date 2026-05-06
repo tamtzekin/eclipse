@@ -106,5 +106,8 @@ void UEclipseInteractSubsystem::SetHighlightActive(bool bActive)
 {
 	if (bHighlightActive == bActive) return;
 	bHighlightActive = bActive;
+	UE_LOG(LogEclipse, Log, TEXT("[TAB] SetHighlightActive(%s) — broadcasting to %d listeners"),
+		bActive ? TEXT("true") : TEXT("false"),
+		OnHighlightToggled.GetAllObjects().Num());
 	OnHighlightToggled.Broadcast(bActive);
 }

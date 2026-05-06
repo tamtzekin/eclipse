@@ -3,7 +3,24 @@
 #include "EclipseItemActor.h"
 #include "Eclipse.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseInteractSubsystem.h"
+
+namespace
+{
+	UMaterialInterface* GetHighlightOverlay()
+	{
+		static TWeakObjectPtr<UMaterialInterface> Cache;
+		if (!Cache.IsValid())
+		{
+			Cache = LoadObject<UMaterialInterface>(nullptr,
+				TEXT("/Game/Justin/Materials/M_HighlightOverlay.M_HighlightOverlay"));
+		}
+		return Cache.Get();
+	}
+}
 
 AEclipseItemActor::AEclipseItemActor()
 {
@@ -17,6 +34,41 @@ AEclipseItemActor::AEclipseItemActor()
 void AEclipseItemActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
+	{
+		IS->OnHighlightToggled.AddDynamic(this, &AEclipseItemActor::HandleHighlightToggled);
+	}
+}
+
+void AEclipseItemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* W = GetWorld())
+	{
+		if (UEclipseInteractSubsystem* IS = W->GetSubsystem<UEclipseInteractSubsystem>())
+		{
+			IS->OnHighlightToggled.RemoveDynamic(this, &AEclipseItemActor::HandleHighlightToggled);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void AEclipseItemActor::HandleHighlightToggled(bool bActive)
+{
+	UE_LOG(LogEclipse, Log, TEXT("[TAB] Item '%s' HandleHighlightToggled(%s)"),
+		*ItemId.ToString(), bActive ? TEXT("on") : TEXT("off"));
+
+	const bool bSuppress = bPickedUp || IsHidden();
+	const bool bShow     = bActive && !bSuppress;
+
+	// Pulsing cyan rim-glow overlay on the mesh.
+	UMaterialInterface* Overlay = bShow ? GetHighlightOverlay() : nullptr;
+	TArray<UMeshComponent*> Meshes;
+	GetComponents<UMeshComponent>(Meshes);
+	for (UMeshComponent* M : Meshes)
+	{
+		if (M) M->SetOverlayMaterial(Overlay);
+	}
 }
 
 void AEclipseItemActor::Tick(float DeltaTime)
@@ -35,9 +87,7 @@ void AEclipseItemActor::Tick(float DeltaTime)
 	// Hover pulse: bob ±4 cm at 2 Hz (mirrors JS wristband sin-float)
 	const float PulseZ = FMath::Sin(LifetimeSeconds * 2.0f) * 4.0f;
 	FVector Loc = GetActorLocation();
-	Loc.Z = GetActorLocation().Z + PulseZ * DeltaTime; // gentle incremental offset
-	// Note: for a clean hover, set Z in BeginPlay and apply absolute offset instead.
-	// For the slice this subtle drift is enough.
+	Loc.Z = GetActorLocation().Z + PulseZ * DeltaTime;
 }
 
 void AEclipseItemActor::Pickup_Implementation()
@@ -65,8 +115,11 @@ void AEclipseItemActor::Pickup_Implementation()
 		}
 	}
 
-	// Hide + disable after pickup
+	// Hide + clear overlay after pickup
 	SetActorHiddenInGame(true);
 	SetActorTickEnabled(false);
+	TArray<UMeshComponent*> Meshes;
+	GetComponents<UMeshComponent>(Meshes);
+	for (UMeshComponent* M : Meshes) if (M) M->SetOverlayMaterial(nullptr);
 	UE_LOG(LogEclipse, Log, TEXT("ItemActor '%s' picked up."), *ItemId.ToString());
 }

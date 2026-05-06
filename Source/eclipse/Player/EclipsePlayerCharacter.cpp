@@ -148,14 +148,20 @@ void AEclipsePlayerCharacter::OnInteract(const FInputActionValue& /*Value*/)
 
 void AEclipsePlayerCharacter::OnHighlightStart(const FInputActionValue& /*Value*/)
 {
+	UE_LOG(LogEclipse, Log, TEXT("[TAB] OnHighlightStart fired"));
 	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
 	{
 		IS->SetHighlightActive(true);
+	}
+	else
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("[TAB] InteractSubsystem not found"));
 	}
 }
 
 void AEclipsePlayerCharacter::OnHighlightEnd(const FInputActionValue& /*Value*/)
 {
+	UE_LOG(LogEclipse, Log, TEXT("[TAB] OnHighlightEnd fired"));
 	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
 	{
 		IS->SetHighlightActive(false);
