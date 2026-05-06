@@ -111,6 +111,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|State")
 	void NotifyChanged() { OnStateChanged.Broadcast(); }
 
+	// ── Save / Load ──
+	// Single-slot autosave at "ECLIPSE_AUTOSAVE" (user index 0). Persists every
+	// serializable field above; called by EclipseGameInstance::Shutdown for
+	// quit-autosave and Init for load-on-boot.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	bool SaveCurrent();
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	bool TryLoadCurrent();
+
 	// Inventory cap (matches JS)
 	static constexpr int32 InventoryMax = 6;
 };

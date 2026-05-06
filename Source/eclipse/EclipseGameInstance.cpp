@@ -2,19 +2,30 @@
 
 #include "EclipseGameInstance.h"
 #include "Eclipse.h"
+#include "Subsystems/EclipseGameStateSubsystem.h"
 
 void UEclipseGameInstance::Init()
 {
 	Super::Init();
 	UE_LOG(LogEclipse, Log, TEXT("EclipseGameInstance::Init — booting subsystems"));
-	// TODO(slice): trigger SaveGame load on the GameStateSubsystem if a slot exists.
-	// Subsystems auto-instantiate on first GetSubsystem() call; we just need to
-	// reach for them once during boot to ensure construction happens early.
+
+	// Touch the GameStateSubsystem so it's instantiated before we ask it to load,
+	// then attempt to restore from the autosave slot. Returns false if no slot
+	// exists yet (fresh install / first run), in which case the defaults stand.
+	if (UEclipseGameStateSubsystem* GS = GetSubsystem<UEclipseGameStateSubsystem>())
+	{
+		GS->TryLoadCurrent();
+	}
 }
 
 void UEclipseGameInstance::Shutdown()
 {
 	UE_LOG(LogEclipse, Log, TEXT("EclipseGameInstance::Shutdown — autosave"));
-	// TODO(slice): autosave via UEclipseGameStateSubsystem on quit.
+
+	if (UEclipseGameStateSubsystem* GS = GetSubsystem<UEclipseGameStateSubsystem>())
+	{
+		GS->SaveCurrent();
+	}
+
 	Super::Shutdown();
 }
