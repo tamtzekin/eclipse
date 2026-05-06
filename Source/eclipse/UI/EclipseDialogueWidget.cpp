@@ -52,13 +52,13 @@ bool UEclipseDialogueWidget::Initialize()
 		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.97f)));
 		Panel->SetPadding(FMargin(18.f, 14.f));
 
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(Panel))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(Panel))
 		{
 			// 480 wide, full-height, anchored to right edge
-			Slot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
-			Slot->SetAlignment(FVector2D(1.f, 0.f));
-			Slot->SetPosition(FVector2D(0.f, 0.f));
-			Slot->SetSize(FVector2D(480.f, 0.f));
+			CSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
+			CSlot->SetAlignment(FVector2D(1.f, 0.f));
+			CSlot->SetPosition(FVector2D(0.f, 0.f));
+			CSlot->SetSize(FVector2D(480.f, 0.f));
 		}
 
 		// ── Vertical column inside panel: speaker, body, choices ───────────
@@ -125,13 +125,13 @@ bool UEclipseDialogueWidget::Initialize()
 		CloseLabel->SetJustification(ETextJustify::Center);
 		CloseButton->SetContent(CloseLabel);
 
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(CloseButton))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(CloseButton))
 		{
-			Slot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
-			Slot->SetAlignment(FVector2D(1.f, 0.f));
-			Slot->SetPosition(FVector2D(-18.f, 14.f));
-			Slot->SetSize(FVector2D(28.f, 28.f));
-			Slot->SetZOrder(2);
+			CSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
+			CSlot->SetAlignment(FVector2D(1.f, 0.f));
+			CSlot->SetPosition(FVector2D(-18.f, 14.f));
+			CSlot->SetSize(FVector2D(28.f, 28.f));
+			CSlot->SetZOrder(2);
 		}
 	}
 
@@ -520,7 +520,7 @@ void UEclipseDialogueWidget::OnCloseClicked()
 		DS->CloseDialogue();
 }
 
-// Slot callbacks
+// CSlot callbacks
 void UEclipseDialogueWidget::OnChoice0() { MakeChoice(0); }
 void UEclipseDialogueWidget::OnChoice1() { MakeChoice(1); }
 void UEclipseDialogueWidget::OnChoice2() { MakeChoice(2); }

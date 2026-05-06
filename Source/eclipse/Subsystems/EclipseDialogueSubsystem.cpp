@@ -214,12 +214,17 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	AddChoice(AN_SC1, TEXT("[Give ×4 Tabs]"),     {AN_SAVED}, TEXT("giveTabs"));
 	AddChoice(AN_SC2, TEXT("[Leave it to die]"),  {AN_LEFT});
 
+	// AN_SAVED — angel encounter resolved favourably. The player picks a single
+	// "Continue" choice that fires startGame → chapter transition + autosave.
+	const FName AN_SC_CONTINUE(TEXT("0x0100000000001041"));
 	AddNPC(AN_SAVED,
 		TEXT("Warmth returns. The angel's wings unfold, pale gold. \"…thank you, messenger.\" It sleeps."),
-		{});
+		{AN_SC_CONTINUE});
+	AddChoice(AN_SC_CONTINUE, TEXT("[Step out of the stall]"), {}, TEXT("startGame"));
+
 	AddNPC(AN_LEFT,
 		TEXT("You turn your back. Something small and cold winks out behind you."),
-		{});
+		{AN_SC_CONTINUE});
 
 	AddDialogue(AN_DLG, AN_INTRO);
 
@@ -578,10 +583,24 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 	}
 	else if (ActionName == TEXT("startGame"))
 	{
-		// Finish intro, transition to Chapter 1.
-		State->Chapter = 1;
-		State->NotifyChanged();
-		// TODO(slice): fire level-transition or hide intro overlay.
+		// Finish intro / current chapter, transition forwards.
+		State->OnChapterTransition();   // increments Chapter + clears failed-choice cache
+
+		// Fire a chapter-card overlay through the GameStateSubsystem delegate.
+		// EclipseChapterCardWidget listens; ChapterCard fades in 0.6s, holds
+		// 2.4s, fades out 0.8s.
+		const FString TitleStr = FString::Printf(TEXT("CHAPTER %d"), State->Chapter);
+		// First-chapter title — easy to extend with a per-chapter table later.
+		FText Title = (State->Chapter == 1)
+			? FText::FromString(TEXT("Night Begins"))
+			: FText::FromString(FString::Printf(TEXT("Chapter %d"), State->Chapter));
+		State->ShowChapterCard(Title);
+
+		// Close any open dialogue so the card has the screen.
+		CloseDialogue();
+
+		// Autosave at chapter boundaries — feels like a "checkpoint reached" beat.
+		State->SaveCurrent();
 	}
 }
 

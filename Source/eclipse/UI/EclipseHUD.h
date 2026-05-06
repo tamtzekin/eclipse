@@ -10,6 +10,7 @@ class UEclipseInteractWidget;
 class UEclipseDialogueWidget;
 class UEclipseHUDWidget;
 class UEclipseVnPortraitsWidget;
+class UEclipseChapterCardWidget;
 
 /**
  * Eclipse HUD — creates and owns all screen-space UMG widgets for the slice.
@@ -43,6 +44,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Eclipse|UI")
 	TSubclassOf<UEclipseVnPortraitsWidget> VnPortraitsWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Eclipse|UI")
+	TSubclassOf<UEclipseChapterCardWidget> ChapterCardWidgetClass;
+
 	// ── Live references (read from BP if needed) ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|UI")
 	TObjectPtr<UEclipseInteractWidget> InteractWidget;
@@ -55,4 +59,7 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|UI")
 	TObjectPtr<UEclipseVnPortraitsWidget> VnPortraitsWidget;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|UI")
+	TObjectPtr<UEclipseChapterCardWidget> ChapterCardWidget;
 };

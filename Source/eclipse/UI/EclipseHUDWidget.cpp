@@ -54,11 +54,11 @@ bool UEclipseHUDWidget::Initialize()
 		CrosshairBrush.OutlineSettings.Width        = 1.5f;
 		CrosshairBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
 		CrosshairImage->SetBrush(CrosshairBrush);
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(CrosshairImage))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(CrosshairImage))
 		{
-			Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			Slot->SetAlignment(FVector2D(0.5f, 0.5f));
-			Slot->SetSize(FVector2D(12.f, 12.f));
+			CSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			CSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			CSlot->SetSize(FVector2D(12.f, 12.f));
 		}
 
 		// ── HUD container — bottom-right ────────────────────────────────────
@@ -69,12 +69,12 @@ bool UEclipseHUDWidget::Initialize()
 		HudBg->SetBrush(RoundedBrush(PanelBg, PanelBorder, /*Outline=*/1.f, /*Radius=*/0.f));
 		HudBg->SetPadding(FMargin(12.f, 10.f));
 
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(HudBg))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(HudBg))
 		{
-			Slot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
-			Slot->SetAlignment(FVector2D(1.f, 1.f));
-			Slot->SetAutoSize(true);
-			Slot->SetPosition(FVector2D(-20.f, -20.f));
+			CSlot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
+			CSlot->SetAlignment(FVector2D(1.f, 1.f));
+			CSlot->SetAutoSize(true);
+			CSlot->SetPosition(FVector2D(-20.f, -20.f));
 		}
 
 		// Inner horizontal layout: portrait | heat-cluster | thirst-cluster
@@ -103,10 +103,10 @@ bool UEclipseHUDWidget::Initialize()
 		PortraitSize->SetHeightOverride(112.f);
 		PortraitSize->AddChild(PortraitFrame);
 
-		if (UHorizontalBoxSlot* Slot = Row->AddChildToHorizontalBox(PortraitSize))
+		if (UHorizontalBoxSlot* CSlot = Row->AddChildToHorizontalBox(PortraitSize))
 		{
-			Slot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-			Slot->SetVerticalAlignment(VAlign_Center);
+			CSlot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+			CSlot->SetVerticalAlignment(VAlign_Center);
 		}
 
 		// Portrait label until art is in
@@ -123,10 +123,10 @@ bool UEclipseHUDWidget::Initialize()
 		// ── Heat cluster (label above bar) ──
 		UVerticalBox* HeatCluster = WidgetTree->ConstructWidget<UVerticalBox>(
 			UVerticalBox::StaticClass(), TEXT("HeatCluster"));
-		if (UHorizontalBoxSlot* Slot = Row->AddChildToHorizontalBox(HeatCluster))
+		if (UHorizontalBoxSlot* CSlot = Row->AddChildToHorizontalBox(HeatCluster))
 		{
-			Slot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-			Slot->SetVerticalAlignment(VAlign_Bottom);
+			CSlot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+			CSlot->SetVerticalAlignment(VAlign_Bottom);
 		}
 
 		UTextBlock* HeatLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -158,9 +158,9 @@ bool UEclipseHUDWidget::Initialize()
 		// ── Thirst cluster ──
 		UVerticalBox* ThirstCluster = WidgetTree->ConstructWidget<UVerticalBox>(
 			UVerticalBox::StaticClass(), TEXT("ThirstCluster"));
-		if (UHorizontalBoxSlot* Slot = Row->AddChildToHorizontalBox(ThirstCluster))
+		if (UHorizontalBoxSlot* CSlot = Row->AddChildToHorizontalBox(ThirstCluster))
 		{
-			Slot->SetVerticalAlignment(VAlign_Bottom);
+			CSlot->SetVerticalAlignment(VAlign_Bottom);
 		}
 
 		UTextBlock* ThirstLabel = WidgetTree->ConstructWidget<UTextBlock>(

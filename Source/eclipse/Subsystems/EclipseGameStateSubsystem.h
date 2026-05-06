@@ -31,6 +31,7 @@ struct FEclipseMetNpc
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const FText&, Title);
 
 /**
  * Holds player meta-state across levels. Exposed to UMG via delegates so the
@@ -106,6 +107,15 @@ public:
 	// Broadcast whenever any state field changes — UMG widgets bind once.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
+
+	// Broadcast when a chapter card / title overlay should slide in. The
+	// EclipseChapterCardWidget listens for this; gameplay code calls
+	// ShowChapterCard() to fire it.
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|UI")
+	FEclipseChapterCardRequested OnChapterCardRequested;
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
+	void ShowChapterCard(const FText& Title) { OnChapterCardRequested.Broadcast(Title); }
 
 	// Convenience for tests / Blueprint:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|State")

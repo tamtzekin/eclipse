@@ -7,20 +7,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
-
-namespace
-{
-	UMaterialInterface* GetHighlightOverlay()
-	{
-		static TWeakObjectPtr<UMaterialInterface> Cache;
-		if (!Cache.IsValid())
-		{
-			Cache = LoadObject<UMaterialInterface>(nullptr,
-				TEXT("/Game/Justin/Materials/M_HighlightOverlay.M_HighlightOverlay"));
-		}
-		return Cache.Get();
-	}
-}
+#include "UI/EclipseUiStyle.h"
 
 AEclipseItemActor::AEclipseItemActor()
 {
@@ -62,7 +49,7 @@ void AEclipseItemActor::HandleHighlightToggled(bool bActive)
 	const bool bShow     = bActive && !bSuppress;
 
 	// Pulsing cyan rim-glow overlay on the mesh.
-	UMaterialInterface* Overlay = bShow ? GetHighlightOverlay() : nullptr;
+	UMaterialInterface* Overlay = bShow ? EclipseUI::GetHighlightOverlay() : nullptr;
 	TArray<UMeshComponent*> Meshes;
 	GetComponents<UMeshComponent>(Meshes);
 	for (UMeshComponent* M : Meshes)
@@ -111,6 +98,23 @@ void AEclipseItemActor::Pickup_Implementation()
 			else if (ItemId != NAME_None)
 			{
 				State->AddItem(ItemId);
+			}
+
+			// Apply the configured QuestFlag onto the quest state. Names match
+			// the JS prototype's flag keys ("hasHair", "hasEye"); the dialogue
+			// subsystem reads State->Quest.bHasHair / bHasEye to pick the right
+			// AngelSeeker branch.
+			if (QuestFlag == TEXT("hasHair"))
+			{
+				State->Quest.bHasHair = true;
+				State->NotifyChanged();
+				UE_LOG(LogEclipse, Log, TEXT("ItemActor '%s': Quest.bHasHair = true"), *ItemId.ToString());
+			}
+			else if (QuestFlag == TEXT("hasEye"))
+			{
+				State->Quest.bHasEye = true;
+				State->NotifyChanged();
+				UE_LOG(LogEclipse, Log, TEXT("ItemActor '%s': Quest.bHasEye = true"), *ItemId.ToString());
 			}
 		}
 	}

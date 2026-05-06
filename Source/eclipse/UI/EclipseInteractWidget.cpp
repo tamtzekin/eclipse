@@ -36,11 +36,11 @@ bool UEclipseInteractWidget::Initialize()
 		// Bottom-center, ~75% down — matches HTML #interact-3d which is positioned
 		// at the screen-projected NPC head, but as a debug fallback we anchor at
 		// 50%/85% so it's always visible while we develop.
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(PromptText))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(PromptText))
 		{
-			Slot->SetAnchors(FAnchors(0.5f, 0.85f, 0.5f, 0.85f));
-			Slot->SetAlignment(FVector2D(0.5f, 0.5f));
-			Slot->SetAutoSize(true);
+			CSlot->SetAnchors(FAnchors(0.5f, 0.85f, 0.5f, 0.85f));
+			CSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			CSlot->SetAutoSize(true);
 		}
 
 		// Font: BMSPA, large, with letter-spacing (CSS letter-spacing: 2px)

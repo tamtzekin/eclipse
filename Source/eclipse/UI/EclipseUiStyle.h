@@ -8,6 +8,7 @@
 #include "Styling/SlateBrush.h"
 #include "Styling/SlateColor.h"
 #include "Math/Color.h"
+#include "Materials/MaterialInterface.h"
 
 /**
  * Centralised UI tokens — colors and fonts pulled directly from the HTML
@@ -98,6 +99,19 @@ namespace EclipseUI
 		B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
 		return B;
 	}
+	// Shared TAB-hold rim-glow material — applied via SetOverlayMaterial on
+	// every UMeshComponent of NPCs / Items. Cached on first call.
+	inline UMaterialInterface* GetHighlightOverlay()
+	{
+		static TWeakObjectPtr<UMaterialInterface> Cache;
+		if (!Cache.IsValid())
+		{
+			Cache = LoadObject<UMaterialInterface>(nullptr,
+				TEXT("/Game/Justin/Materials/M_HighlightOverlay.M_HighlightOverlay"));
+		}
+		return Cache.Get();
+	}
+
 	inline FSlateBrush RoundedBrush(const FLinearColor& Fill, const FLinearColor& Outline,
 		float OutlineWidth = 1.f, float CornerRadius = 4.f)
 	{

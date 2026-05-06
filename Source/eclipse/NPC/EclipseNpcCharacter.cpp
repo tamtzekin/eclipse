@@ -8,20 +8,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
 #include "UI/EclipseSpeechBubbleWidget.h"
-
-namespace
-{
-	UMaterialInterface* GetHighlightOverlay()
-	{
-		static TWeakObjectPtr<UMaterialInterface> Cache;
-		if (!Cache.IsValid())
-		{
-			Cache = LoadObject<UMaterialInterface>(nullptr,
-				TEXT("/Game/Justin/Materials/M_HighlightOverlay.M_HighlightOverlay"));
-		}
-		return Cache.Get();
-	}
-}
+#include "UI/EclipseUiStyle.h"
 
 AEclipseNpcCharacter::AEclipseNpcCharacter()
 {
@@ -93,7 +80,7 @@ void AEclipseNpcCharacter::HandleHighlightToggled(bool bActive)
 	// Pulsing cyan rim-glow overlay on every mesh component. The overlay slot
 	// is rendered as a separate translucent pass over the mesh, so the user's
 	// existing materials are not mutated.
-	UMaterialInterface* Overlay = bShow ? GetHighlightOverlay() : nullptr;
+	UMaterialInterface* Overlay = bShow ? EclipseUI::GetHighlightOverlay() : nullptr;
 	TArray<UMeshComponent*> Meshes;
 	GetComponents<UMeshComponent>(Meshes);
 	for (UMeshComponent* M : Meshes)

@@ -6,6 +6,7 @@
 #include "EclipseDialogueWidget.h"
 #include "EclipseHUDWidget.h"
 #include "EclipseVnPortraitsWidget.h"
+#include "EclipseChapterCardWidget.h"
 
 void AEclipseHUD::BeginPlay()
 {
@@ -38,9 +39,16 @@ void AEclipseHUD::BeginPlay()
 		if (DialogueWidget) DialogueWidget->AddToViewport(10);
 	}
 
-	UE_LOG(LogEclipse, Log, TEXT("EclipseHUD: widgets created — Interact=%d Dialogue=%d HUD=%d Vn=%d"),
+	// Chapter card sits ABOVE everything so transitions cover dialogue + HUD.
+	if (!ChapterCardWidgetClass)
+		ChapterCardWidgetClass = UEclipseChapterCardWidget::StaticClass();
+	ChapterCardWidget = CreateWidget<UEclipseChapterCardWidget>(PC, ChapterCardWidgetClass);
+	if (ChapterCardWidget) ChapterCardWidget->AddToViewport(50);
+
+	UE_LOG(LogEclipse, Log, TEXT("EclipseHUD: widgets created — Interact=%d Dialogue=%d HUD=%d Vn=%d ChapterCard=%d"),
 		InteractWidget != nullptr,
 		DialogueWidget != nullptr,
 		HUDWidget != nullptr,
-		VnPortraitsWidget != nullptr);
+		VnPortraitsWidget != nullptr,
+		ChapterCardWidget != nullptr);
 }

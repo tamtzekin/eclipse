@@ -41,11 +41,11 @@ bool UEclipseSpeechBubbleWidget::Initialize()
 		Size->SetMinDesiredHeight(26.f);
 		Size->AddChild(BubbleBg);
 
-		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(Size))
+		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(Size))
 		{
-			Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			Slot->SetAlignment(FVector2D(0.5f, 0.5f));
-			Slot->SetAutoSize(true);
+			CSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			CSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			CSlot->SetAutoSize(true);
 		}
 
 		BubbleText = WidgetTree->ConstructWidget<UTextBlock>(
