@@ -111,4 +111,13 @@ private:
 	// Populate CurrentNode from a synthetic node ID, advancing through any
 	// player-choice fragments to the next NPC speech fragment.
 	void AdvanceToNode(FName NodeId);
+
+	// "enterStall" implementation — closes the AngelSeeker dialogue, spawns or
+	// reuses an Angel NPC near the seeker, then opens the Angel dialogue tree
+	// (Dlg_Angel = 0x0100000000001000) after a short transition delay so the
+	// camera can pan around / fade.
+	void EnterStallTransition();
+
+	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> CachedAngel;
+	FTimerHandle EnterStallTimer;
 };

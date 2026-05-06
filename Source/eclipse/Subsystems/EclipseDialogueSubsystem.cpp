@@ -6,7 +6,11 @@
 #include "Player/EclipsePlayerCharacter.h"
 #include "EclipseGameStateSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "TimerManager.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Synthetic dialogue node store — lives here until Articy exports are done.
@@ -553,11 +557,14 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 
 	if (ActionName == TEXT("enterStall"))
 	{
-		// Player enters the pink stall to meet the Angel.
-		// Sets quest Stage → "saved" if they already had both items.
-		State->Quest.Stage = TEXT("saved");
+		// Player enters the pink stall to meet the Angel. The Angel quest
+		// stage flips to "ready" — only "saved" once tabs are given OR the
+		// angel battle resolves favourably.
+		State->Quest.Stage = TEXT("ready");
 		State->NotifyChanged();
-		// TODO(slice): trigger camera transition / Angel dialogue open.
+
+		// Trigger the camera/dialogue transition into the Angel encounter.
+		EnterStallTransition();
 	}
 	else if (ActionName == TEXT("giveTabs"))
 	{
@@ -576,4 +583,112 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 		State->NotifyChanged();
 		// TODO(slice): fire level-transition or hide intro overlay.
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  EnterStallTransition — the slice's payoff beat.
+//
+//  When the player picks "Open the stall and enter" with the Hair + Eye in
+//  inventory, we:
+//   1. Close the AngelSeeker dialogue (panel slides out)
+//   2. Find an existing Angel NPC in the world OR spawn one near the seeker
+//   3. After a 0.6 s pause (faux camera transition), open the Angel dialogue
+//      tree (Dlg_Angel) — OpenDialogue() will trigger StartFaceTarget so the
+//      camera swings around to look at the Angel
+//
+//  The Angel itself is invisible — it's a "presence" inside the stall. The
+//  panel + voice carry the moment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void UEclipseDialogueSubsystem::EnterStallTransition()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// 1. Close the current (AngelSeeker) dialogue cleanly.
+	CloseDialogue();
+
+	// 2. Find or spawn the Angel NPC.
+	if (!::IsValid(CachedAngel.Get()))
+	{
+		// First: look for one already in the world (designer may have placed one).
+		for (TActorIterator<AEclipseNpcCharacter> It(World); It; ++It)
+		{
+			if (It->NpcName == FName(TEXT("ANGEL")))
+			{
+				CachedAngel = *It;
+				break;
+			}
+		}
+
+		// Otherwise, spawn one a short distance in front of the AngelSeeker so
+		// the player's OTS rotation will swing the camera into the stall area.
+		if (!::IsValid(CachedAngel.Get()))
+		{
+			FVector SpawnLoc(0.f, 0.f, 178.f);
+			FRotator SpawnRot = FRotator::ZeroRotator;
+			for (TActorIterator<AEclipseNpcCharacter> It(World); It; ++It)
+			{
+				if (It->bIsAngelSeeker)
+				{
+					SpawnLoc = It->GetActorLocation()
+					         + It->GetActorForwardVector() * 220.f;
+					SpawnRot = It->GetActorRotation() + FRotator(0.f, 180.f, 0.f);
+					break;
+				}
+			}
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AEclipseNpcCharacter* Angel = World->SpawnActor<AEclipseNpcCharacter>(
+				AEclipseNpcCharacter::StaticClass(), SpawnLoc, SpawnRot, Params);
+
+			if (Angel)
+			{
+				Angel->NpcName     = FName(TEXT("ANGEL"));
+				Angel->DialogueId  = FName(TEXT("0x0100000000001000"));
+				Angel->bTalkable   = true;
+				Angel->bIsKeyNPC   = true;
+				Angel->bStationary = true;
+				Angel->bIsHidden   = false;
+				Angel->TalkRadius  = 100.f;
+				// Invisible — the Angel is a felt presence, not a visible body.
+				if (USkeletalMeshComponent* Mesh = Angel->GetMesh())
+				{
+					Mesh->SetVisibility(false, true);
+				}
+				if (UCapsuleComponent* Cap = Angel->GetCapsuleComponent())
+				{
+					Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				}
+				CachedAngel = Angel;
+				UE_LOG(LogEclipse, Log, TEXT("Spawned Angel at %s"), *SpawnLoc.ToString());
+			}
+		}
+	}
+
+	if (!::IsValid(CachedAngel.Get()))
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("EnterStallTransition: failed to obtain Angel"));
+		return;
+	}
+
+	// 3. Schedule the dialogue open after a brief transition delay.
+	//    During this gap the player's input is already restored (CloseDialogue
+	//    re-enabled it), but most players will pause to read the panel-out;
+	//    if you'd prefer to lock movement, set bIgnoreMoveInput here.
+	TWeakObjectPtr<UEclipseDialogueSubsystem> WeakThis(this);
+	World->GetTimerManager().SetTimer(EnterStallTimer,
+		[WeakThis]()
+		{
+			if (UEclipseDialogueSubsystem* This = WeakThis.Get())
+			{
+				if (IsValid(This->CachedAngel.Get()))
+				{
+					This->OpenDialogue(This->CachedAngel.Get());
+				}
+			}
+		},
+		/*Delay=*/0.6f, /*Loop=*/false);
 }
