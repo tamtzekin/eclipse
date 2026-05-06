@@ -23,7 +23,7 @@ Saved/
 *.user
 *.userosscache
 *.usertasks
-vsconfig
+*.vsconfig
 
 # ── Mac / Xcode ──
 *.xcodeproj/
