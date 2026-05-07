@@ -46,6 +46,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
 	void StopMusic(float FadeOutSeconds = 1.f);
 
+	// Global music multiplier — 0.0 mutes all music tracks, 1.0 plays at the
+	// asset's authored level. Lives separately from PlayMusic's per-call
+	// VolumeMultiplier so we can ship the slice with music wired-up but
+	// silent (default = 0) and unmute later from one call site.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
+	void SetMusicVolume(float Volume);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
+	float GetMusicVolume() const { return MusicVolume; }
+
 	// ── Sliced one-shot ──
 	// Plays a small chunk of a sound starting at StartTime, optionally stopping
 	// after Duration seconds with a tiny fade-out so the cut isn't a click.
@@ -64,4 +74,9 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> CurrentMusic;
+
+	// Default to 0 — slice ships with music silent; designer or a debug
+	// console command can SetMusicVolume(1.0) once the mix is dialled in.
+	UPROPERTY()
+	float MusicVolume = 0.0f;
 };

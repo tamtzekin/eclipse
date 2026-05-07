@@ -23,6 +23,8 @@ class ECLIPSE_API AEclipseBaseRoom : public AActor
 public:
 	AEclipseBaseRoom();
 
+	virtual void BeginPlay() override;
+
 	// Stable identifier for save/load + debug teleport ("Bathroom", "Bar", etc.)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room")
 	FName RoomKey = NAME_None;
@@ -30,9 +32,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room")
 	FText DisplayName;
 
-	// Music cue for this room (set in BP child / level instance).
+	// Music cue for this room (set in BP child / level instance). Auto-plays
+	// on BeginPlay via UEclipseAudioSubsystem. Soft-pointer so the asset only
+	// loads on level enter, not at editor boot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Audio")
 	TSoftObjectPtr<class USoundBase> MusicCue;
+
+	// Crossfade time when this room's music takes over from the previous track.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Audio")
+	float MusicFadeInSeconds = 1.5f;
 
 	// Whether this room blocks NPC talk-while-frozen (heat=0). Default true.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Behavior")

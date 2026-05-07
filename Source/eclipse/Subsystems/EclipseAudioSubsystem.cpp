@@ -65,10 +65,23 @@ void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds)
 
 	if (CurrentMusic)
 	{
-		CurrentMusic->FadeIn(FadeInSeconds, /*FadeVolumeLevel=*/1.f);
-		UE_LOG(LogEclipse, Log, TEXT("Audio: PlayMusic '%s' fade-in %.1fs"),
-			*Sound->GetName(), FadeInSeconds);
+		// Fade up to the global MusicVolume multiplier — 0 keeps the track
+		// silent (slice currently ships muted; flip via SetMusicVolume later).
+		CurrentMusic->FadeIn(FadeInSeconds, /*FadeVolumeLevel=*/MusicVolume);
+		UE_LOG(LogEclipse, Log, TEXT("Audio: PlayMusic '%s' fade-in %.1fs vol=%.2f"),
+			*Sound->GetName(), FadeInSeconds, MusicVolume);
 	}
+}
+
+void UEclipseAudioSubsystem::SetMusicVolume(float Volume)
+{
+	MusicVolume = FMath::Clamp(Volume, 0.f, 1.f);
+	// Adjust live track immediately if one is playing.
+	if (CurrentMusic)
+	{
+		CurrentMusic->AdjustVolume(/*Time=*/0.5f, MusicVolume);
+	}
+	UE_LOG(LogEclipse, Log, TEXT("Audio: SetMusicVolume %.2f"), MusicVolume);
 }
 
 void UEclipseAudioSubsystem::StopMusic(float FadeOutSeconds)
