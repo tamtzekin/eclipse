@@ -666,6 +666,89 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Main-menu WBP — boot screen with NEW GAME / CONTINUE / QUIT.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		UBorder* Panel = New<UBorder>(Tree, TEXT("MainMenuPanel"));
+		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 1.f)));
+		Panel->SetPadding(FMargin(0.f));
+		Panel->SetHorizontalAlignment(HAlign_Fill);
+		Panel->SetVerticalAlignment(VAlign_Center);
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f));
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("MainMenuColumn"));
+		Panel->SetContent(Column);
+
+		// Big title
+		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("MainMenuTitle"));
+		Title->SetText(FText::FromString(TEXT("ECLIPSE")));
+		Title->SetFont(MakeBMSPA(200, 18.f));
+		Title->SetColorAndOpacity(FSlateColor(Cyan));
+		Title->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 96.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		auto MakeBtn = [&](const FString& Label, FName WidgetName)
+		{
+			UButton* Btn = New<UButton>(Tree, WidgetName);
+			FButtonStyle BS;
+			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
+			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
+			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
+			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			Btn->SetStyle(BS);
+
+			UTextBlock* T = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
+			T->SetText(FText::FromString(Label));
+			T->SetFont(MakeRodin(56));
+			T->SetColorAndOpacity(FSlateColor(Cream));
+			T->SetJustification(ETextJustify::Center);
+			Btn->SetContent(T);
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
+			{
+				VS->SetPadding(FMargin(0.f, 16.f));
+				VS->SetHorizontalAlignment(HAlign_Fill);
+			}
+		};
+		MakeBtn(TEXT("NEW GAME"), TEXT("NewGameBtn"));
+		MakeBtn(TEXT("CONTINUE"), TEXT("ContinueBtn"));
+		MakeBtn(TEXT("QUIT"),     TEXT("QuitBtn"));
+
+		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
+		StatusText->SetText(FText::GetEmpty());
+		StatusText->SetFont(MakeRodin(28));
+		StatusText->SetColorAndOpacity(FSlateColor(CreamDim));
+		StatusText->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
+		{
+			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Build a UFont composite that wraps a UFontFace
 // ─────────────────────────────────────────────────────────────────────────────
 

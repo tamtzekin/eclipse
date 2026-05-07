@@ -9,13 +9,52 @@
 #include "eclipse.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/EclipsePauseMenuWidget.h"
+#include "UI/EclipseMainMenuActor.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Components/InputComponent.h"
+#include "EngineUtils.h"
 
 void AeclipsePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// ── Reset gameplay input every BeginPlay. ──
+	// Slate input mode lives on the LocalPlayer (not the PC) and persists
+	// across OpenLevel — so a UI-only mode set by the main-menu / pause-menu
+	// widget keeps the new gameplay PC's pawn frozen unless we explicitly
+	// flip it back. Same for cursor state and ignore-input flags.
+	//
+	// EXCEPT in menu levels: if an AEclipseMainMenuActor exists in the world,
+	// the level is going to immediately open a UI overlay and own input mode
+	// itself — skip the gameplay reset there or we fight the menu for cursor
+	// state and the player can't click buttons.
+	if (IsLocalPlayerController())
+	{
+		bool bMenuLevel = false;
+		if (UWorld* W = GetWorld())
+		{
+			for (TActorIterator<AEclipseMainMenuActor> It(W); It; ++It)
+			{
+				bMenuLevel = true;
+				break;
+			}
+		}
+
+		if (!bMenuLevel)
+		{
+			FInputModeGameOnly Mode;
+			SetInputMode(Mode);
+			SetShowMouseCursor(false);
+			SetIgnoreMoveInput(false);
+			SetIgnoreLookInput(false);
+			UE_LOG(LogEclipse, Log, TEXT("PC::BeginPlay — gameplay input reset"));
+		}
+		else
+		{
+			UE_LOG(LogEclipse, Log, TEXT("PC::BeginPlay — menu level detected, skipping input reset"));
+		}
+	}
 
 	// only spawn touch controls on local player controllers
 	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())

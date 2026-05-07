@@ -373,9 +373,17 @@ void UEclipsePauseMenuWidget::RefreshSlotLabels()
 
 void UEclipsePauseMenuWidget::OnMainMenu()
 {
+	// Unpause first so OpenLevel doesn't hit the paused-world fast-path,
+	// then reset the LocalPlayer's input mode so the OUTGOING UIOnly mode
+	// from this menu doesn't leak into the next level's PC.
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		FInputModeGameOnly Mode;
+		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(true);   // L_MainMenu wants cursor; OK to keep on
+	}
 	if (UWorld* W = GetWorld())
 	{
-		// Unpause first so OpenLevel doesn't hit the paused-world fast-path.
 		UGameplayStatics::SetGamePaused(W, false);
 		UGameplayStatics::OpenLevel(W, MainMenuLevelName);
 	}
