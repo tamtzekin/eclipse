@@ -47,6 +47,22 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StatusText;
 
+	// ── Main list / slot picker ── separate vertical boxes inside the panel,
+	// only one visible at a time. SlotPicker contains the 3 slot rows + a back
+	// button, hidden by default; ShowSlotPicker(true) reveals it.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UVerticalBox> MainList;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UVerticalBox> SlotPicker;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SlotPickerTitle;
+
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Slot0Btn;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Slot1Btn;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Slot2Btn;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> SlotBackBtn;
+
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Slot0Btn_Label;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Slot1Btn_Label;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Slot2Btn_Label;
+
 	// Level to open when Main Menu is clicked. Soft-pointer so we don't pull
 	// the menu level into every other level's cooked content.
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|UI")
@@ -59,9 +75,23 @@ private:
 	UFUNCTION() void OnMainMenu();
 	UFUNCTION() void OnQuit();
 
+	UFUNCTION() void OnSlot0();
+	UFUNCTION() void OnSlot1();
+	UFUNCTION() void OnSlot2();
+	UFUNCTION() void OnSlotBack();
+
+	void HandleSlot(int32 SlotIndex);
+	void RefreshSlotLabels();
+	void ShowSlotPicker(bool bSaveMode);
+	void ShowMainList();
+
 	void SetStatus(const FString& Msg);
 
 	// Build the widget tree if the WBP didn't ship one — same fallback
 	// pattern as DialogueWidget / HUDWidget.
 	void BuildFallbackTree();
+
+	// Sub-state for the slot picker. true = Save mode (writes), false = Load mode (reads).
+	bool bSlotMode = false;
+	bool bSaveMode = true;
 };

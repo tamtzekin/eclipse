@@ -4,6 +4,9 @@
 #include "Eclipse.h"
 #include "Save/EclipseSaveGame.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 
 void UEclipseGameStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -109,38 +112,131 @@ void UEclipseGameStateSubsystem::RecordMetNPC(FName Name, FName DialogueId)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Save / Load — single-slot autosave at "ECLIPSE_AUTOSAVE", user index 0.
+//  Save / Load — autosave at "ECLIPSE_AUTOSAVE" + manual slots
+//  ("ECLIPSE_SLOT_0/1/2"). Both reuse the snapshot helpers below; the only
+//  difference is the slot string.
 //
 //  Triggered by UEclipseGameInstance::Init (load) and ::Shutdown (save). The
 //  save object mirrors the serializable fields on this subsystem.
 // ─────────────────────────────────────────────────────────────────────────────
 
+namespace
+{
+	// Build the SaveGame from current subsystem + world state.
+	UEclipseSaveGame* CreateSnapshot(UEclipseGameStateSubsystem& GS, UWorld* W)
+	{
+		UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
+			UGameplayStatics::CreateSaveGameObject(UEclipseSaveGame::StaticClass()));
+		if (!Save) return nullptr;
+
+		Save->Word              = GS.Word;
+		Save->Rhythm            = GS.Rhythm;
+		Save->Shadow            = GS.Shadow;
+		Save->Heat              = GS.Heat;
+		Save->Thirst            = GS.Thirst;
+		Save->Inventory         = GS.Inventory;
+		Save->EquippedClothing  = GS.EquippedClothing;
+		Save->Tokens            = GS.Tokens;
+		Save->bHasWristband     = GS.bHasWristband;
+		Save->Quest             = GS.Quest;
+		Save->MetNPCs           = GS.MetNPCs;
+		Save->bVipAccessGranted = GS.bVipAccessGranted;
+		Save->Chapter           = GS.Chapter;
+		Save->SavedAt           = FDateTime::Now();
+
+		if (W)
+		{
+			for (TActorIterator<AActor> It(W); It; ++It)
+			{
+				AActor* A = *It;
+				if (A && A->GetClass()->GetName().Contains(TEXT("EclipseBaseRoom")))
+				{
+					if (FNameProperty* P = FindFProperty<FNameProperty>(A->GetClass(), TEXT("RoomKey")))
+					{
+						Save->CurrentLevelKey = *P->ContainerPtrToValuePtr<FName>(A);
+					}
+					if (FTextProperty* P = FindFProperty<FTextProperty>(A->GetClass(), TEXT("DisplayName")))
+					{
+						Save->RoomDisplayName = P->ContainerPtrToValuePtr<FText>(A)->ToString();
+					}
+					break;
+				}
+			}
+			if (APlayerController* PC = W->GetFirstPlayerController())
+			{
+				if (APawn* Pawn = PC->GetPawn())
+				{
+					Save->PlayerWorldLocation = Pawn->GetActorLocation();
+					Save->PlayerWorldRotation = Pawn->GetActorRotation();
+				}
+			}
+		}
+		return Save;
+	}
+
+	// Restore subsystem state from a SaveGame. bImmediateTeleport tells the
+	// caller whether the player got moved now or needs a pending-teleport queue.
+	void ApplySnapshot(UEclipseGameStateSubsystem& GS, UEclipseSaveGame* Save,
+		UWorld* W, bool& bImmediateTeleport)
+	{
+		bImmediateTeleport = false;
+		GS.Word              = Save->Word;
+		GS.Rhythm            = Save->Rhythm;
+		GS.Shadow            = Save->Shadow;
+		GS.Heat              = Save->Heat;
+		GS.Thirst            = Save->Thirst;
+		GS.Inventory         = Save->Inventory;
+		GS.EquippedClothing  = Save->EquippedClothing;
+		GS.Tokens            = Save->Tokens;
+		GS.bHasWristband     = Save->bHasWristband;
+		GS.Quest             = Save->Quest;
+		GS.MetNPCs           = Save->MetNPCs;
+		GS.bVipAccessGranted = Save->bVipAccessGranted;
+		GS.Chapter           = Save->Chapter;
+
+		if (W)
+		{
+			FName CurrentRoom;
+			for (TActorIterator<AActor> It(W); It; ++It)
+			{
+				AActor* A = *It;
+				if (A && A->GetClass()->GetName().Contains(TEXT("EclipseBaseRoom")))
+				{
+					if (FNameProperty* P = FindFProperty<FNameProperty>(A->GetClass(), TEXT("RoomKey")))
+					{
+						CurrentRoom = *P->ContainerPtrToValuePtr<FName>(A);
+						break;
+					}
+				}
+			}
+			if (CurrentRoom == Save->CurrentLevelKey)
+			{
+				if (APlayerController* PC = W->GetFirstPlayerController())
+				{
+					if (APawn* Pawn = PC->GetPawn())
+					{
+						Pawn->SetActorLocationAndRotation(Save->PlayerWorldLocation,
+							Save->PlayerWorldRotation, false, nullptr, ETeleportType::TeleportPhysics);
+						PC->SetControlRotation(Save->PlayerWorldRotation);
+						bImmediateTeleport = true;
+					}
+				}
+			}
+		}
+	}
+}
+
 bool UEclipseGameStateSubsystem::SaveCurrent()
 {
-	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
-		UGameplayStatics::CreateSaveGameObject(UEclipseSaveGame::StaticClass()));
+	UEclipseSaveGame* Save = CreateSnapshot(*this, GetWorld());
 	if (!Save) return false;
-
-	Save->Word              = Word;
-	Save->Rhythm            = Rhythm;
-	Save->Shadow            = Shadow;
-	Save->Heat              = Heat;
-	Save->Thirst            = Thirst;
-	Save->Inventory         = Inventory;
-	Save->EquippedClothing  = EquippedClothing;
-	Save->Tokens            = Tokens;
-	Save->bHasWristband     = bHasWristband;
-	Save->Quest             = Quest;
-	Save->MetNPCs           = MetNPCs;
-	Save->bVipAccessGranted = bVipAccessGranted;
-	Save->Chapter           = Chapter;
 
 	const bool bOk = UGameplayStatics::SaveGameToSlot(Save,
 		UEclipseSaveGame::SlotName, UEclipseSaveGame::UserIndex);
-
 	UE_LOG(LogEclipse, Log,
-		TEXT("SaveCurrent → %s (Heat=%.0f Thirst=%.0f Chapter=%d Inv=%d)"),
-		bOk ? TEXT("OK") : TEXT("FAILED"), Heat, Thirst, Chapter, Inventory.Num());
+		TEXT("SaveCurrent → %s (Room=%s Loc=%s)"),
+		bOk ? TEXT("OK") : TEXT("FAILED"),
+		*Save->CurrentLevelKey.ToString(), *Save->PlayerWorldLocation.ToString());
 	return bOk;
 }
 
@@ -162,23 +258,122 @@ bool UEclipseGameStateSubsystem::TryLoadCurrent()
 		return false;
 	}
 
-	Word              = Save->Word;
-	Rhythm            = Save->Rhythm;
-	Shadow            = Save->Shadow;
-	Heat              = Save->Heat;
-	Thirst            = Save->Thirst;
-	Inventory         = Save->Inventory;
-	EquippedClothing  = Save->EquippedClothing;
-	Tokens            = Save->Tokens;
-	bHasWristband     = Save->bHasWristband;
-	Quest             = Save->Quest;
-	MetNPCs           = Save->MetNPCs;
-	bVipAccessGranted = Save->bVipAccessGranted;
-	Chapter           = Save->Chapter;
-
+	bool bImmediate = false;
+	ApplySnapshot(*this, Save, GetWorld(), bImmediate);
+	if (!bImmediate)
+	{
+		bPendingTeleport         = true;
+		PendingTeleportLocation  = Save->PlayerWorldLocation;
+		PendingTeleportRotation  = Save->PlayerWorldRotation;
+	}
 	NotifyChanged();
-	UE_LOG(LogEclipse, Log,
-		TEXT("TryLoadCurrent: restored (Heat=%.0f Thirst=%.0f Chapter=%d Inv=%d)"),
-		Heat, Thirst, Chapter, Inventory.Num());
+	UE_LOG(LogEclipse, Log, TEXT("TryLoadCurrent: restored Room=%s teleported=%s"),
+		*Save->CurrentLevelKey.ToString(), bImmediate ? TEXT("now") : TEXT("pending"));
 	return true;
+}
+
+bool UEclipseGameStateSubsystem::SaveToSlot(int32 SlotIndex)
+{
+	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("SaveToSlot: invalid slot %d"), SlotIndex);
+		return false;
+	}
+	UEclipseSaveGame* Save = CreateSnapshot(*this, GetWorld());
+	if (!Save) return false;
+
+	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
+	const bool bOk = UGameplayStatics::SaveGameToSlot(Save, SlotName, UEclipseSaveGame::UserIndex);
+	UE_LOG(LogEclipse, Log, TEXT("SaveToSlot[%d] -> %s (Room=%s Loc=%s)"),
+		SlotIndex, bOk ? TEXT("OK") : TEXT("FAILED"),
+		*Save->CurrentLevelKey.ToString(), *Save->PlayerWorldLocation.ToString());
+	return bOk;
+}
+
+bool UEclipseGameStateSubsystem::LoadFromSlot(int32 SlotIndex)
+{
+	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return false;
+	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
+	if (!UGameplayStatics::DoesSaveGameExist(SlotName, UEclipseSaveGame::UserIndex))
+	{
+		UE_LOG(LogEclipse, Log, TEXT("LoadFromSlot[%d]: empty"), SlotIndex);
+		return false;
+	}
+	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
+		UGameplayStatics::LoadGameFromSlot(SlotName, UEclipseSaveGame::UserIndex));
+	if (!Save) return false;
+
+	bool bImmediate = false;
+	ApplySnapshot(*this, Save, GetWorld(), bImmediate);
+	if (!bImmediate)
+	{
+		bPendingTeleport         = true;
+		PendingTeleportLocation  = Save->PlayerWorldLocation;
+		PendingTeleportRotation  = Save->PlayerWorldRotation;
+	}
+	NotifyChanged();
+	UE_LOG(LogEclipse, Log, TEXT("LoadFromSlot[%d] -> OK (teleported=%s)"),
+		SlotIndex, bImmediate ? TEXT("now") : TEXT("pending"));
+	return true;
+}
+
+FEclipseSaveSlotInfo UEclipseGameStateSubsystem::GetSlotInfo(int32 SlotIndex) const
+{
+	FEclipseSaveSlotInfo Info;
+	Info.SlotIndex = SlotIndex;
+	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return Info;
+
+	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
+	if (!UGameplayStatics::DoesSaveGameExist(SlotName, UEclipseSaveGame::UserIndex))
+	{
+		Info.DisplayLabel = FString::Printf(TEXT("SLOT %d  ·  EMPTY"), SlotIndex + 1);
+		return Info;
+	}
+
+	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
+		UGameplayStatics::LoadGameFromSlot(SlotName, UEclipseSaveGame::UserIndex));
+	if (!Save) return Info;
+
+	Info.bExists           = true;
+	Info.RoomDisplayName   = Save->RoomDisplayName.IsEmpty() ? Save->CurrentLevelKey.ToString() : Save->RoomDisplayName;
+	Info.CurrentLevelKey   = Save->CurrentLevelKey;
+	Info.Chapter           = Save->Chapter;
+	Info.SavedAt           = Save->SavedAt;
+
+	const FString TimeStr = Save->SavedAt.ToString(TEXT("%Y-%m-%d %H:%M"));
+	Info.DisplayLabel = FString::Printf(TEXT("SLOT %d  ·  %s  ·  CH %d  ·  %s"),
+		SlotIndex + 1,
+		Info.RoomDisplayName.IsEmpty() ? TEXT("?") : *Info.RoomDisplayName,
+		Info.Chapter,
+		*TimeStr);
+	return Info;
+}
+
+bool UEclipseGameStateSubsystem::DeleteSlot(int32 SlotIndex)
+{
+	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return false;
+	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
+	const bool bOk = UGameplayStatics::DeleteGameInSlot(SlotName, UEclipseSaveGame::UserIndex);
+	UE_LOG(LogEclipse, Log, TEXT("DeleteSlot[%d] -> %s"), SlotIndex, bOk ? TEXT("OK") : TEXT("FAILED"));
+	return bOk;
+}
+
+void UEclipseGameStateSubsystem::ConsumePendingTeleport(APawn* Pawn)
+{
+	if (!bPendingTeleport || !Pawn) return;
+
+	Pawn->SetActorLocationAndRotation(PendingTeleportLocation, PendingTeleportRotation,
+		/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+	if (AController* C = Pawn->GetController())
+	{
+		C->SetControlRotation(PendingTeleportRotation);
+	}
+
+	UE_LOG(LogEclipse, Log,
+		TEXT("ConsumePendingTeleport: pawn %s -> Loc=%s Rot=%s"),
+		*Pawn->GetName(), *PendingTeleportLocation.ToString(), *PendingTeleportRotation.ToString());
+
+	bPendingTeleport = false;
+	PendingTeleportLocation = FVector::ZeroVector;
+	PendingTeleportRotation = FRotator::ZeroRotator;
 }

@@ -30,6 +30,21 @@ struct FEclipseMetNpc
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName DialogueId;
 };
 
+/** Lightweight summary of a save slot for UI display. */
+USTRUCT(BlueprintType)
+struct FEclipseSaveSlotInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly) bool bExists = false;
+	UPROPERTY(BlueprintReadOnly) int32 SlotIndex = 0;
+	UPROPERTY(BlueprintReadOnly) FString RoomDisplayName;
+	UPROPERTY(BlueprintReadOnly) FName CurrentLevelKey;
+	UPROPERTY(BlueprintReadOnly) int32 Chapter = 0;
+	UPROPERTY(BlueprintReadOnly) FDateTime SavedAt = FDateTime(0);
+	UPROPERTY(BlueprintReadOnly) FString DisplayLabel;   // pre-formatted for menu
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const FText&, Title);
 
@@ -145,6 +160,40 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
 	bool TryLoadCurrent();
+
+	// Manual slot save/load — slot index 0..NumManualSlots-1. The autosave
+	// slot is independent (used by GameInstance + dialogue startGame).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	bool SaveToSlot(int32 SlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	bool LoadFromSlot(int32 SlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	struct FEclipseSaveSlotInfo GetSlotInfo(int32 SlotIndex) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	bool DeleteSlot(int32 SlotIndex);
+
+	// World transform restore. SaveCurrent captures the active player pawn's
+	// location/rotation + the room key. TryLoadCurrent restores them if the
+	// pawn is in the same level; otherwise it stores them in PendingTeleport*
+	// for AEclipsePlayerCharacter::BeginPlay to consume after the new level
+	// loads. (Cross-level loads need OpenLevel — not done automatically here;
+	// the menu's MainMenu/Load buttons can OpenLevel(CurrentLevelKey) first.)
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Save")
+	bool bPendingTeleport = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Save")
+	FVector PendingTeleportLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Save")
+	FRotator PendingTeleportRotation = FRotator::ZeroRotator;
+
+	// Apply (and clear) PendingTeleport* onto the given pawn. No-op if no
+	// pending teleport is queued. Called from AEclipsePlayerCharacter::BeginPlay.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
+	void ConsumePendingTeleport(class APawn* Pawn);
 
 	// Inventory cap (matches JS)
 	static constexpr int32 InventoryMax = 6;

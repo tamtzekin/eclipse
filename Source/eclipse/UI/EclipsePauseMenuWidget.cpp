@@ -180,8 +180,9 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 		VS->SetHorizontalAlignment(HAlign_Center);
 	}
 
-	// Helper to build a button row — full-width, big font.
-	auto MakeBtn = [&](const FString& Label, FName WidgetName) -> UButton*
+	// Helper that builds a button + label, parented to a given vertical box.
+	auto MakeBtnIn = [&](UVerticalBox* Parent, const FString& Label, FName WidgetName,
+		int32 FontSize = 56, TObjectPtr<UTextBlock>* OutLabel = nullptr) -> UButton*
 	{
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 		FButtonStyle BS;
@@ -192,14 +193,16 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 		Btn->SetStyle(BS);
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 
-		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
 		T->SetText(FText::FromString(Label));
-		T->SetFont(MakeRodin(56));
+		T->SetFont(MakeRodin(FontSize));
 		T->SetColorAndOpacity(FSlateColor(Cream));
 		T->SetJustification(ETextJustify::Center);
 		Btn->SetContent(T);
+		if (OutLabel) *OutLabel = T;
 
-		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
+		if (UVerticalBoxSlot* VS = Parent->AddChildToVerticalBox(Btn))
 		{
 			VS->SetPadding(FMargin(0.f, 14.f));
 			VS->SetHorizontalAlignment(HAlign_Fill);
@@ -207,13 +210,44 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 		return Btn;
 	};
 
-	ResumeBtn   = MakeBtn(TEXT("RESUME"),     TEXT("ResumeBtn"));
-	SaveBtn     = MakeBtn(TEXT("SAVE"),       TEXT("SaveBtn"));
-	LoadBtn     = MakeBtn(TEXT("LOAD"),       TEXT("LoadBtn"));
-	MainMenuBtn = MakeBtn(TEXT("MAIN MENU"),  TEXT("MainMenuBtn"));
-	QuitBtn     = MakeBtn(TEXT("QUIT"),       TEXT("QuitBtn"));
+	// ── Main list: Resume / Save / Load / Main Menu / Quit ──
+	MainList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainList"));
+	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(MainList))
+	{
+		VS->SetHorizontalAlignment(HAlign_Fill);
+	}
+	ResumeBtn   = MakeBtnIn(MainList, TEXT("RESUME"),     TEXT("ResumeBtn"));
+	SaveBtn     = MakeBtnIn(MainList, TEXT("SAVE"),       TEXT("SaveBtn"));
+	LoadBtn     = MakeBtnIn(MainList, TEXT("LOAD"),       TEXT("LoadBtn"));
+	MainMenuBtn = MakeBtnIn(MainList, TEXT("MAIN MENU"),  TEXT("MainMenuBtn"));
+	QuitBtn     = MakeBtnIn(MainList, TEXT("QUIT"),       TEXT("QuitBtn"));
 
-	// Status line — reports save/load result.
+	// ── Slot picker: 3 slot rows + Back. Hidden until OnSave/OnLoad. ──
+	SlotPicker = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SlotPicker"));
+	SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(SlotPicker))
+	{
+		VS->SetHorizontalAlignment(HAlign_Fill);
+	}
+
+	SlotPickerTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotPickerTitle"));
+	SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
+	SlotPickerTitle->SetFont(MakeBMSPA(48, 8.f));
+	SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
+	SlotPickerTitle->SetJustification(ETextJustify::Center);
+	if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
+	{
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 32.f));
+		VS->SetHorizontalAlignment(HAlign_Center);
+	}
+
+	// Slot row labels are filled in by RefreshSlotLabels() at runtime.
+	Slot0Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 36, &Slot0Btn_Label);
+	Slot1Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 36, &Slot1Btn_Label);
+	Slot2Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 36, &Slot2Btn_Label);
+	SlotBackBtn = MakeBtnIn(SlotPicker, TEXT("BACK"), TEXT("SlotBackBtn"), 40);
+
+	// Status line — reports save/load result. Lives below both sub-states.
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatusText"));
 	StatusText->SetText(FText::GetEmpty());
 	StatusText->SetFont(MakeRodin(28));
@@ -234,6 +268,21 @@ void UEclipsePauseMenuWidget::NativeConstruct()
 	if (LoadBtn)     LoadBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnLoad);
 	if (MainMenuBtn) MainMenuBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnMainMenu);
 	if (QuitBtn)     QuitBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnQuit);
+
+	if (Slot0Btn)    Slot0Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot0);
+	if (Slot1Btn)    Slot1Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot1);
+	if (Slot2Btn)    Slot2Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot2);
+	if (SlotBackBtn) SlotBackBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlotBack);
+
+	// Force MouseDown click-method on each — single-click select like dialogue.
+	UButton* AllBtns[] = { ResumeBtn, SaveBtn, LoadBtn, MainMenuBtn, QuitBtn,
+	                       Slot0Btn, Slot1Btn, Slot2Btn, SlotBackBtn };
+	for (UButton* B : AllBtns) if (B) B->SetClickMethod(EButtonClickMethod::MouseDown);
+
+	// Start in main-list view; pre-fill slot labels so the picker is responsive
+	// the first time the user opens it.
+	ShowMainList();
+	RefreshSlotLabels();
 }
 
 FReply UEclipsePauseMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -247,16 +296,79 @@ void UEclipsePauseMenuWidget::OnResume() { Close(); }
 
 void UEclipsePauseMenuWidget::OnSave()
 {
-	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	const bool bOk = GS && GS->SaveCurrent();
-	SetStatus(bOk ? TEXT("Saved.") : TEXT("Save failed."));
+	ShowSlotPicker(/*bSaveMode=*/true);
 }
 
 void UEclipsePauseMenuWidget::OnLoad()
 {
+	ShowSlotPicker(/*bSaveMode=*/false);
+}
+
+void UEclipsePauseMenuWidget::OnSlot0() { HandleSlot(0); }
+void UEclipsePauseMenuWidget::OnSlot1() { HandleSlot(1); }
+void UEclipsePauseMenuWidget::OnSlot2() { HandleSlot(2); }
+void UEclipsePauseMenuWidget::OnSlotBack() { ShowMainList(); }
+
+void UEclipsePauseMenuWidget::HandleSlot(int32 SlotIndex)
+{
 	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	const bool bOk = GS && GS->TryLoadCurrent();
-	SetStatus(bOk ? TEXT("Loaded.") : TEXT("No save found."));
+	if (!GS) { SetStatus(TEXT("State subsystem missing.")); return; }
+
+	bool bOk = false;
+	if (bSaveMode)
+	{
+		bOk = GS->SaveToSlot(SlotIndex);
+		SetStatus(bOk ? FString::Printf(TEXT("Saved to slot %d."), SlotIndex + 1)
+		             : FString::Printf(TEXT("Save to slot %d failed."), SlotIndex + 1));
+	}
+	else
+	{
+		bOk = GS->LoadFromSlot(SlotIndex);
+		SetStatus(bOk ? FString::Printf(TEXT("Loaded slot %d."), SlotIndex + 1)
+		             : FString::Printf(TEXT("Slot %d empty."), SlotIndex + 1));
+	}
+
+	// Refresh labels so a fresh save reflects in the picker immediately, then
+	// drop the picker back to the main list — feels more like "action done".
+	RefreshSlotLabels();
+	ShowMainList();
+}
+
+void UEclipsePauseMenuWidget::ShowSlotPicker(bool bInSaveMode)
+{
+	bSaveMode = bInSaveMode;
+	bSlotMode = true;
+	if (MainList)        MainList->SetVisibility(ESlateVisibility::Collapsed);
+	if (SlotPicker)      SlotPicker->SetVisibility(ESlateVisibility::Visible);
+	if (SlotPickerTitle) SlotPickerTitle->SetText(FText::FromString(bSaveMode ? TEXT("SAVE GAME") : TEXT("LOAD GAME")));
+	RefreshSlotLabels();
+}
+
+void UEclipsePauseMenuWidget::ShowMainList()
+{
+	bSlotMode = false;
+	if (MainList)   MainList->SetVisibility(ESlateVisibility::Visible);
+	if (SlotPicker) SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UEclipsePauseMenuWidget::RefreshSlotLabels()
+{
+	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return;
+
+	UTextBlock* Labels[] = { Slot0Btn_Label, Slot1Btn_Label, Slot2Btn_Label };
+	UButton*    Btns[]   = { Slot0Btn,   Slot1Btn,   Slot2Btn   };
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const FEclipseSaveSlotInfo Info = GS->GetSlotInfo(i);
+		if (Labels[i]) Labels[i]->SetText(FText::FromString(Info.DisplayLabel));
+		// In Load mode, grey out empty slots so the player can't try to load nothing.
+		if (Btns[i])
+		{
+			const bool bEnabled = bSaveMode || Info.bExists;
+			Btns[i]->SetIsEnabled(bEnabled);
+		}
+	}
 }
 
 void UEclipsePauseMenuWidget::OnMainMenu()

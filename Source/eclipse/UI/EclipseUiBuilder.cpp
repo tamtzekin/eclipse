@@ -566,7 +566,7 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("PauseColumn"));
 		Panel->SetContent(Column);
 
-		// Title — gigantic BMSPA cyan, sits above the buttons
+		// Title — gigantic BMSPA cyan, sits above the button list / slot picker
 		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("PauseTitle"));
 		Title->SetText(FText::FromString(TEXT("PAUSED")));
 		Title->SetFont(MakeBMSPA(160, 14.f));
@@ -578,9 +578,12 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 			VS->SetHorizontalAlignment(HAlign_Center);
 		}
 
-		// Helper to build a button row. HAlign_Fill on the slot makes the
-		// hit target span the whole panel width — full-bleed feel.
-		auto MakeBtn = [&](const FString& Label, FName WidgetName)
+		// MakeBtnIn — accepts an optional explicit label-widget name so the
+		// slot rows can ship labels named "Slot0Label" etc. (matching the
+		// BindWidgetOptional UPROPERTYs on the C++ class). Default falls
+		// back to "<WidgetName>_Label" for non-slot buttons.
+		auto MakeBtnIn = [&](UVerticalBox* Parent, const FString& Label, FName WidgetName,
+			int32 FontSize = 56, FName LabelName = NAME_None)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
@@ -590,28 +593,62 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
 			Btn->SetStyle(BS);
 
-			UTextBlock* T = New<UTextBlock>(Tree,
-				FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
+			const FName ResolvedLabelName = LabelName.IsNone()
+				? FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString()))
+				: LabelName;
+			UTextBlock* T = New<UTextBlock>(Tree, ResolvedLabelName);
 			T->SetText(FText::FromString(Label));
-			T->SetFont(MakeRodin(56));
+			T->SetFont(MakeRodin(FontSize));
 			T->SetColorAndOpacity(FSlateColor(Cream));
 			T->SetJustification(ETextJustify::Center);
 			Btn->SetContent(T);
 
-			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
+			if (UVerticalBoxSlot* VS = Parent->AddChildToVerticalBox(Btn))
 			{
-				VS->SetPadding(FMargin(0.f, 14.f));   // pure vertical breathing — buttons span full width
+				VS->SetPadding(FMargin(0.f, 14.f));
 				VS->SetHorizontalAlignment(HAlign_Fill);
 			}
 		};
 
-		MakeBtn(TEXT("RESUME"),    TEXT("ResumeBtn"));
-		MakeBtn(TEXT("SAVE"),      TEXT("SaveBtn"));
-		MakeBtn(TEXT("LOAD"),      TEXT("LoadBtn"));
-		MakeBtn(TEXT("MAIN MENU"), TEXT("MainMenuBtn"));
-		MakeBtn(TEXT("QUIT"),      TEXT("QuitBtn"));
+		// MainList — Resume/Save/Load/MainMenu/Quit
+		UVerticalBox* MainList = New<UVerticalBox>(Tree, TEXT("MainList"));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(MainList))
+		{
+			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+		MakeBtnIn(MainList, TEXT("RESUME"),    TEXT("ResumeBtn"));
+		MakeBtnIn(MainList, TEXT("SAVE"),      TEXT("SaveBtn"));
+		MakeBtnIn(MainList, TEXT("LOAD"),      TEXT("LoadBtn"));
+		MakeBtnIn(MainList, TEXT("MAIN MENU"), TEXT("MainMenuBtn"));
+		MakeBtnIn(MainList, TEXT("QUIT"),      TEXT("QuitBtn"));
 
-		// Status line — runtime sets save/load result here.
+		// SlotPicker — title + 3 slot rows + Back. Hidden by default; the
+		// runtime widget toggles visibility when SAVE/LOAD is clicked.
+		UVerticalBox* SlotPicker = New<UVerticalBox>(Tree, TEXT("SlotPicker"));
+		SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(SlotPicker))
+		{
+			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+		UTextBlock* SlotPickerTitle = New<UTextBlock>(Tree, TEXT("SlotPickerTitle"));
+		SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
+		SlotPickerTitle->SetFont(MakeBMSPA(48, 8.f));
+		SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
+		SlotPickerTitle->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 32.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+		// Labels keep the populator's natural "<WidgetName>_Label" naming —
+		// the C++ UPROPERTYs Slot0Btn_Label / Slot1Btn_Label / Slot2Btn_Label
+		// match this so BindWidgetOptional resolves without any post-rename.
+		MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 36);
+		MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 36);
+		MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 36);
+		MakeBtnIn(SlotPicker, TEXT("BACK"),             TEXT("SlotBackBtn"), 40);
+
+		// Status line — reports save/load result. Lives below both sub-states.
 		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
 		StatusText->SetText(FText::GetEmpty());
 		StatusText->SetFont(MakeRodin(28));

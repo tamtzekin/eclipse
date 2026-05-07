@@ -99,6 +99,19 @@ void AEclipsePlayerCharacter::BeginPlay()
 	{
 		IS->OnHighlightToggled.AddDynamic(this, &AEclipsePlayerCharacter::HandleHighlightToggled);
 	}
+
+	// ── Save-restore teleport ──
+	// If GameStateSubsystem::TryLoadCurrent stashed a pending world transform
+	// (because the load happened before this pawn existed — typical of
+	// load-on-boot / cross-level loads), apply it now. Runs LAST so it
+	// overrides the floor-snap above with the exact saved location.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			GS->ConsumePendingTeleport(this);
+		}
+	}
 }
 
 void AEclipsePlayerCharacter::HandleHighlightToggled(bool bActive)
