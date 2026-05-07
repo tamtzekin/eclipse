@@ -20,6 +20,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/Image.h"
@@ -195,14 +197,25 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SpeakerNameText))
 			S->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
 
-		// Body text (RodinPro, cream)
+		// Body text — primary path is BodyWords (a UWrapBox of per-word
+		// UTextBlocks that fade in cascade-style at runtime; see
+		// EclipseDialogueWidget::StartBodyAnimation). BodyText is left in the
+		// tree as a hidden legacy fallback so designers can still pull a single
+		// text block from the WBP if they need to disable the animation.
+		UWrapBox* BodyWords = New<UWrapBox>(Tree, TEXT("BodyWords"));
+		BodyWords->SetInnerSlotPadding(FVector2D(0.f, 0.f));
+		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BodyWords))
+			S->SetPadding(FMargin(0.f, 4.f, 0.f, 14.f));
+
+		// Hidden fallback — never rendered when BodyWords is bound.
 		UTextBlock* BodyText = New<UTextBlock>(Tree, TEXT("BodyText"));
 		BodyText->SetFont(MakeRodin(18));
 		BodyText->SetColorAndOpacity(FSlateColor(Cream));
 		BodyText->SetAutoWrapText(true);
-		BodyText->SetText(FText::FromString(TEXT("Body text appears here. Edit in the WBP designer or via SetText() in C++.")));
+		BodyText->SetVisibility(ESlateVisibility::Collapsed);
+		BodyText->SetText(FText::GetEmpty());
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BodyText))
-			S->SetPadding(FMargin(0.f, 4.f, 0.f, 14.f));
+			S->SetPadding(FMargin(0.f));
 
 		// Divider line
 		UBorder* Divider = New<UBorder>(Tree, TEXT("ChoicesDivider"));

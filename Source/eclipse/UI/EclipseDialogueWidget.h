@@ -13,6 +13,7 @@ class UVerticalBox;
 class UButton;
 class UBorder;
 class UImage;
+class UWrapBox;
 
 /**
  * Right-side dialogue panel. Binds to EclipseDialogueSubsystem delegates.
@@ -44,6 +45,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> BodyText;
+
+	// Word-by-word fade-in container. When bound, body text is rendered as a
+	// wrap-box of per-word UTextBlocks whose alpha is animated in NativeTick.
+	// If null at runtime we fall back to setting BodyText (legacy single block).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWrapBox> BodyWords;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> ChoicesBox;
@@ -118,4 +125,50 @@ private:
 	// Keyboard input — W/S/Up/Down navigate, E/Enter confirm.
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeOnFocusLost(const FFocusEvent& InFocusEvent) override;
+	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
+
+	// ── Word-by-word fade-in animation state ──
+	struct FDlgWord
+	{
+		TObjectPtr<UTextBlock> Block;
+		float SpawnDelay = 0.f;   // seconds from anim start
+	};
+
+	UPROPERTY()
+	TArray<TObjectPtr<UTextBlock>> AnimWordBlocks;   // for GC root
+	TArray<float> AnimWordDelays;                    // parallel to AnimWordBlocks
+	TArray<FLinearColor> AnimWordTints;              // parallel — per-word target colour
+
+	// Per-choice reveal timing: each button stays Collapsed until DialogueAnimTime
+	// reaches its corresponding reveal-time, then snaps to Visible. This is what
+	// keeps the choice rows from popping in alongside the body — they only
+	// surface after the body has finished cascading.
+	UPROPERTY()
+	TArray<TObjectPtr<UButton>> ChoiceRevealButtons;
+	TArray<float> ChoiceRevealDelays;
+
+	float DialogueAnimTime  = 0.f;
+	bool  bDialogueAnimating = false;
+
+	// Total wall-clock seconds the body animation will take (used to delay
+	// the choice rows so they cascade in after the body completes).
+	float BodyAnimTotalTime = 0.f;
+
+	// Tunables — slower than the chat-typer default so the prose has weight.
+	// Designer can tweak these per-WBP without a recompile.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Animation")
+	float WordSpawnInterval = 0.11f;   // ~9 words/sec — readable, not breathless
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Animation")
+	float WordFadeDuration  = 0.32f;   // each word fades over ~320ms
+
+	void StartBodyAnimation(const FString& BodyString);
+
+	// Adds word-by-word fade-in to a single choice row. Replaces the static
+	// PreText label with a UWrapBox of per-word UTextBlocks (or finds an
+	// existing one created on a previous run) and registers each word in
+	// AnimWordBlocks with the supplied start-delay + per-word stagger.
+	void AnimateChoiceText(class UTextBlock* Label, int32 ChoiceIndex,
+	                       const FString& Text, const FLinearColor& TargetTint,
+	                       float StartDelay);
 };

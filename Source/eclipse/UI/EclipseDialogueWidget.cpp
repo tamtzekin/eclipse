@@ -6,6 +6,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/PanelWidget.h"
 #include "Components/Border.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -15,6 +16,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
 #include "NPC/EclipseNpcCharacter.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
@@ -147,6 +150,94 @@ void UEclipseDialogueWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// ── Runtime injection of BodyWords if the WBP didn't ship one. ──
+	// Has to run AFTER Super::Initialize() — i.e. here, not in our Initialize
+	// override — because that's when the WBP's BindWidgetOptional bindings
+	// (BodyText, BodyWords, etc.) are resolved. Doing this in Initialize()
+	// before Super sees BodyText==null and the injection silently skips, which
+	// is exactly why the body text was loading instantly: HandleNodeChanged
+	// fell back to the legacy "BodyText->SetText" path because BodyWords was
+	// never created.
+	if (!BodyWords && BodyText && WidgetTree)
+	{
+		if (UPanelWidget* Parent = BodyText->GetParent())
+		{
+			BodyWords = WidgetTree->ConstructWidget<UWrapBox>(
+				UWrapBox::StaticClass(), TEXT("BodyWords_Runtime"));
+			BodyWords->SetInnerSlotPadding(FVector2D(0.f, 0.f));
+
+			// Append the wrap box to the column, then shift it into the same
+			// slot index BodyText occupied so the visual layout is preserved.
+			const int32 BodyIdx = Parent->GetChildIndex(BodyText);
+			Parent->AddChild(BodyWords);
+			Parent->ShiftChild(FMath::Max(0, BodyIdx), BodyWords);
+
+			if (UVerticalBoxSlot* S = Cast<UVerticalBoxSlot>(BodyWords->Slot))
+			{
+				S->SetPadding(FMargin(0.f, 4.f, 0.f, 14.f));
+			}
+
+			// Hide the static text block — the animated wrap box replaces it.
+			BodyText->SetVisibility(ESlateVisibility::Collapsed);
+			BodyText->SetText(FText::GetEmpty());
+
+			UE_LOG(LogEclipse, Log, TEXT("Dlg: BodyWords injected at runtime (parent=%s, idx=%d)"),
+				*Parent->GetName(), BodyIdx);
+		}
+		else
+		{
+			UE_LOG(LogEclipse, Warning, TEXT("Dlg: BodyText has no parent — cannot inject BodyWords."));
+		}
+	}
+	else
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Dlg: BodyWords inject skipped — BodyWords=%s BodyText=%s"),
+			BodyWords ? TEXT("already-bound") : TEXT("null"),
+			BodyText  ? TEXT("BOUND")          : TEXT("null"));
+	}
+
+	// ── Force the canonical column order. ──
+	// Belt-and-braces: regardless of how the WBP was authored, what
+	// PopulateDialogueWBP wrote, or any prior runtime injection, walk the
+	// vertical box parent of BodyWords and slot every known child into the
+	// expected order. This is what guarantees the choices stay UNDER the body
+	// — without it the layout depends on whatever ShiftChild left behind,
+	// which can drift if the asset was previously saved with a different
+	// layout.
+	{
+		UVerticalBox* Col = nullptr;
+		if (BodyWords)               Col = Cast<UVerticalBox>(BodyWords->GetParent());
+		if (!Col && BodyText)        Col = Cast<UVerticalBox>(BodyText->GetParent());
+		if (!Col && ChoicesBox)      Col = Cast<UVerticalBox>(ChoicesBox->GetParent());
+
+		if (Col)
+		{
+			auto MoveTo = [Col](UWidget* W, int32 Idx)
+			{
+				if (W && Col->GetChildIndex(W) != INDEX_NONE)
+				{
+					Col->ShiftChild(Idx, W);
+				}
+			};
+
+			int32 Idx = 0;
+			MoveTo(SpeakerNameText, Idx++);
+			MoveTo(BodyWords,       Idx++);
+			MoveTo(BodyText,        Idx++);
+
+			// Divider can be either ChoicesDividerSize (SizeBox wrapper) or
+			// the raw ChoicesDivider Border, depending on which populator
+			// version baked the asset.
+			UWidget* Div = WidgetTree ? WidgetTree->FindWidget(TEXT("ChoicesDividerSize")) : nullptr;
+			if (!Div && WidgetTree) Div = WidgetTree->FindWidget(TEXT("ChoicesDivider"));
+			MoveTo(Div, Idx++);
+
+			MoveTo(ChoicesBox, Idx++);
+
+			UE_LOG(LogEclipse, Log, TEXT("Dlg: Column re-ordered (%d children)"), Col->GetChildrenCount());
+		}
+	}
+
 	// Hidden until a dialogue opens
 	SetVisibility(ESlateVisibility::Collapsed);
 
@@ -241,8 +332,27 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 	if (SpeakerNameText)
 		SpeakerNameText->SetText(FText::FromName(Node.SpeakerName));
 
-	if (BodyText)
+	// Body text — preferred path is the word-by-word fade-in via BodyWords
+	// (UWrapBox of per-word UTextBlocks). If the WBP doesn't have BodyWords
+	// bound, fall back to setting BodyText directly (legacy single block).
+	UE_LOG(LogEclipse, Log, TEXT("Dlg: HandleNodeChanged — BodyWords=%s BodyText=%s"),
+		BodyWords ? TEXT("BOUND") : TEXT("null"),
+		BodyText  ? TEXT("BOUND") : TEXT("null"));
+	if (BodyWords)
+	{
+		// Hide the static BodyText (if it's still in the tree from older WBP
+		// templates) so the animated wrap-box is the only thing rendering.
+		if (BodyText)
+		{
+			BodyText->SetText(FText::GetEmpty());
+			BodyText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		StartBodyAnimation(Node.Body.ToString());
+	}
+	else if (BodyText)
+	{
 		BodyText->SetText(Node.Body);
+	}
 
 	RebuildChoices(Node.Choices);
 }
@@ -253,6 +363,17 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (SpeakerNameText) SpeakerNameText->SetText(FText::GetEmpty());
 	if (BodyText)        BodyText->SetText(FText::GetEmpty());
 	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+
+	// Tear down the per-word animation state so we don't keep ticking dead
+	// references on the next NativeTick.
+	bDialogueAnimating = false;
+	DialogueAnimTime = 0.f;
+	if (BodyWords) BodyWords->ClearChildren();
+	AnimWordBlocks.Reset();
+	AnimWordDelays.Reset();
+	AnimWordTints.Reset();
+	ChoiceRevealButtons.Reset();
+	ChoiceRevealDelays.Reset();
 
 	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
@@ -307,6 +428,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	if (PreBtns[0] != nullptr)
 	{
 		ChoiceButtons.Reset();
+		ChoiceRevealButtons.Reset();
+		ChoiceRevealDelays.Reset();
 		for (int32 i = 0; i < MaxSlots; ++i)
 		{
 			UButton*    Btn   = PreBtns[i];
@@ -336,24 +459,47 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			if (i < Choices.Num())
 			{
 				const FEclipseDialogueChoice& Choice = Choices[i];
-				Btn->SetVisibility(ESlateVisibility::Visible);
 				Btn->SetIsEnabled(Choice.bAvailable);
-				if (Label)
+
+				FString S = Choice.Text.ToString();
+				if (!Choice.bAvailable) S += TEXT("  (need more)");
+				const FLinearColor Tint = Choice.bAvailable
+					? Cream
+					: FLinearColor(0.35f, 0.35f, 0.35f, 1.f);
+
+				// Each choice row stays Collapsed until the body has finished
+				// cascading; then they ripple in one-by-one. NativeTick flips
+				// these to Visible once DialogueAnimTime crosses StartDelay.
+				const float ChoiceStagger = 0.12f;   // s between rows
+				const float StartDelay    = BodyAnimTotalTime + ChoiceStagger * static_cast<float>(i);
+
+				if (BodyWords)
 				{
-					FString S = Choice.Text.ToString();
-					if (!Choice.bAvailable) S += TEXT("  (need more)");
+					Btn->SetVisibility(ESlateVisibility::Collapsed);
+					AnimateChoiceText(Label, i, S, Tint, StartDelay);
+
+					ChoiceRevealButtons.Add(Btn);
+					ChoiceRevealDelays.Add(StartDelay);
+				}
+				else if (Label)
+				{
+					// No body animation infra at all — just set the static label.
+					Btn->SetVisibility(ESlateVisibility::Visible);
 					Label->SetText(FText::FromString(S));
-					// Always (re)set the color so a previous unavailable run
-					// doesn't leave the slot greyed out for the next dialogue.
-					Label->SetColorAndOpacity(FSlateColor(Choice.bAvailable
-						? Cream
-						: FLinearColor(0.35f, 0.35f, 0.35f, 1.f)));
+					Label->SetColorAndOpacity(FSlateColor(Tint));
 				}
 				ChoiceButtons.Add(Btn);
 			}
 			else
 			{
 				Btn->SetVisibility(ESlateVisibility::Collapsed);
+				// Also collapse any leftover word-wrap from a previous node
+				// with more choices, so empty rows don't take vertical space.
+				const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), i));
+				if (UWidget* W = WidgetTree ? WidgetTree->FindWidget(WBName) : nullptr)
+				{
+					W->SetVisibility(ESlateVisibility::Collapsed);
+				}
 			}
 		}
 		// Default selection on first available
@@ -564,3 +710,177 @@ void UEclipseDialogueWidget::OnChoice1() { MakeChoice(1); }
 void UEclipseDialogueWidget::OnChoice2() { MakeChoice(2); }
 void UEclipseDialogueWidget::OnChoice3() { MakeChoice(3); }
 void UEclipseDialogueWidget::OnChoice4() { MakeChoice(4); }
+
+// ─────────────────────────────────────────────────────────────
+//  Word-by-word fade-in body animation
+//
+//  Splits the body string on whitespace and constructs one UTextBlock per
+//  word inside BodyWords (a UWrapBox). Each block starts at alpha 0 and
+//  fades to 1 over WordFadeDuration, with each successive word delayed by
+//  WordSpawnInterval so the line cascades in left-to-right.
+// ─────────────────────────────────────────────────────────────
+
+void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
+{
+	using namespace EclipseUI;
+
+	if (!BodyWords || !WidgetTree) return;
+
+	// Wipe previous run — also wipes any choice-row words from the prior node.
+	BodyWords->ClearChildren();
+	AnimWordBlocks.Reset();
+	AnimWordDelays.Reset();
+	AnimWordTints.Reset();
+
+	// ParseIntoArrayWS splits on any whitespace and discards empty entries.
+	TArray<FString> Words;
+	BodyString.ParseIntoArrayWS(Words);
+
+	for (int32 i = 0; i < Words.Num(); ++i)
+	{
+		UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("DlgWord_%d"), i)));
+
+		// Trailing space is part of the word so the wrap-box can break naturally.
+		Block->SetText(FText::FromString(Words[i] + TEXT(" ")));
+		Block->SetFont(MakeRodin(/*Size=*/18));
+
+		// Start fully transparent — NativeTick will lerp this up.
+		FLinearColor Start = Cream; Start.A = 0.f;
+		Block->SetColorAndOpacity(FSlateColor(Start));
+
+		if (UWrapBoxSlot* WS = BodyWords->AddChildToWrapBox(Block))
+		{
+			// Tiny vertical breathing so descenders don't kiss the next line.
+			WS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+		}
+
+		AnimWordBlocks.Add(Block);
+		AnimWordDelays.Add(static_cast<float>(i) * WordSpawnInterval);
+		AnimWordTints.Add(Cream);
+	}
+
+	// Total time the body takes to fully resolve = last_word_delay + fade_duration.
+	BodyAnimTotalTime = (Words.Num() > 0)
+		? (static_cast<float>(Words.Num() - 1) * WordSpawnInterval + WordFadeDuration)
+		: 0.f;
+
+	DialogueAnimTime  = 0.f;
+	bDialogueAnimating = AnimWordBlocks.Num() > 0;
+
+	UE_LOG(LogEclipse, Log, TEXT("Dlg: StartBodyAnimation — %d words, total=%.2fs, anim=%s"),
+		AnimWordBlocks.Num(), BodyAnimTotalTime, bDialogueAnimating ? TEXT("ON") : TEXT("OFF"));
+}
+
+void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIndex,
+	const FString& Text, const FLinearColor& TargetTint, float StartDelay)
+{
+	using namespace EclipseUI;
+	if (!Label || !WidgetTree) return;
+
+	UPanelWidget* Parent = Label->GetParent();
+	if (!Parent) return;
+
+	// Hide the static label — the wrap box of words will replace its visual role.
+	Label->SetText(FText::GetEmpty());
+	Label->SetVisibility(ESlateVisibility::Collapsed);
+
+	// Find/construct a wrap box parked next to the label. Re-using lets the
+	// WrapBox persist between dialogue nodes so we don't churn allocations.
+	const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), ChoiceIndex));
+	UWrapBox* WB = Cast<UWrapBox>(WidgetTree->FindWidget(WBName));
+	if (!WB)
+	{
+		WB = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), WBName);
+		Parent->AddChild(WB);
+		const int32 LabelIdx = Parent->GetChildIndex(Label);
+		Parent->ShiftChild(FMath::Max(0, LabelIdx), WB);
+
+		// HBox slot tweaks: take the remaining horizontal space, top-align so
+		// long wrapped choices don't drift off-centre relative to the circle.
+		if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(WB->Slot))
+		{
+			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			HS->SetVerticalAlignment(VAlign_Center);
+		}
+	}
+	WB->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	WB->ClearChildren();
+
+	TArray<FString> Words;
+	Text.ParseIntoArrayWS(Words);
+
+	for (int32 wi = 0; wi < Words.Num(); ++wi)
+	{
+		UTextBlock* W = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
+		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
+		W->SetFont(MakeRodin(/*Size=*/15));
+
+		FLinearColor Start = TargetTint; Start.A = 0.f;
+		W->SetColorAndOpacity(FSlateColor(Start));
+		WB->AddChildToWrapBox(W);
+
+		AnimWordBlocks.Add(W);
+		AnimWordDelays.Add(StartDelay + static_cast<float>(wi) * WordSpawnInterval);
+		AnimWordTints.Add(TargetTint);
+	}
+
+	bDialogueAnimating = true;
+}
+
+void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
+{
+	Super::NativeTick(InGeometry, DeltaSeconds);
+
+	if (!bDialogueAnimating) return;
+
+	DialogueAnimTime += DeltaSeconds;
+
+	bool bAllDone = true;
+
+	// ── Per-choice button reveal ──────────────────────────────────────────
+	// Each button stays Collapsed (zero layout) until the body finishes and
+	// its own staggered delay is reached; then it pops to Visible and the
+	// per-word fade inside it starts running.
+	for (int32 i = 0; i < ChoiceRevealButtons.Num(); ++i)
+	{
+		UButton* B = ChoiceRevealButtons[i];
+		if (!B) continue;
+		const float RevealAt = ChoiceRevealDelays.IsValidIndex(i) ? ChoiceRevealDelays[i] : 0.f;
+		if (B->GetVisibility() == ESlateVisibility::Collapsed && DialogueAnimTime >= RevealAt)
+		{
+			B->SetVisibility(ESlateVisibility::Visible);
+		}
+		// Keep the animation flag alive while there are still hidden rows
+		// pending — even if every word block is currently transparent and
+		// counted as "not done" by the loop below, this guards against a
+		// short body that finishes its words before the choice reveal time.
+		if (DialogueAnimTime < RevealAt) bAllDone = false;
+	}
+
+	// ── Per-word fade ─────────────────────────────────────────────────────
+	const int32 N = AnimWordBlocks.Num();
+	for (int32 i = 0; i < N; ++i)
+	{
+		UTextBlock* Block = AnimWordBlocks[i];
+		if (!Block) continue;
+
+		const float Delay  = (AnimWordDelays.IsValidIndex(i) ? AnimWordDelays[i] : 0.f);
+		const FLinearColor Tint = (AnimWordTints.IsValidIndex(i) ? AnimWordTints[i] : EclipseUI::Cream);
+		const float t = (DialogueAnimTime - Delay) / FMath::Max(0.0001f, WordFadeDuration);
+		const float Alpha = FMath::Clamp(t, 0.f, 1.f);
+
+		FLinearColor C = Tint; C.A = Alpha;
+		Block->SetColorAndOpacity(FSlateColor(C));
+
+		if (Alpha < 1.f) bAllDone = false;
+	}
+
+	if (bAllDone)
+	{
+		bDialogueAnimating = false;
+	}
+}
