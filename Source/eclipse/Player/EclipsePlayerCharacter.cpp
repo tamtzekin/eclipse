@@ -4,6 +4,7 @@
 #include "Eclipse.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
@@ -62,6 +63,21 @@ void AEclipsePlayerCharacter::BeginPlay()
 			}
 		}
 	}
+
+	// Cache camera defaults so the TAB-hold zoom can lerp back precisely.
+	if (SpringArm) DefaultArmLength = SpringArm->TargetArmLength;
+	if (Camera)    DefaultFOV       = Camera->FieldOfView;
+
+	// Subscribe to the InteractSubsystem TAB toggle so we can drive the zoom.
+	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
+	{
+		IS->OnHighlightToggled.AddDynamic(this, &AEclipsePlayerCharacter::HandleHighlightToggled);
+	}
+}
+
+void AEclipsePlayerCharacter::HandleHighlightToggled(bool bActive)
+{
+	bHighlightZoomActive = bActive;
 }
 
 void AEclipsePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -164,5 +180,44 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToTarget.Y, ToTarget.X)), 0.f);
 		const FRotator NewRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
 		SetActorRotation(NewRot);
+	}
+
+	// ── TAB-hold zoom + fisheye-focus post-process ──
+	{
+		const float Target = bHighlightZoomActive ? 1.f : 0.f;
+		HighlightZoomAlpha = FMath::FInterpTo(HighlightZoomAlpha, Target, DeltaTime, /*Speed=*/8.f);
+
+		if (SpringArm)
+		{
+			SpringArm->TargetArmLength = FMath::Lerp(DefaultArmLength, 250.f, HighlightZoomAlpha);
+		}
+		if (Camera)
+		{
+			// Pinch FOV in slightly for the "look at this thing" feel.
+			Camera->SetFieldOfView(FMath::Lerp(DefaultFOV, 70.f, HighlightZoomAlpha));
+
+			// Layer in vignette + chromatic-aberration via the camera's local
+			// PostProcessSettings. bOverride_ flags are required for the values
+			// to win over the scene's existing PP volume / fallback.
+			FPostProcessSettings& PP = Camera->PostProcessSettings;
+			PP.bOverride_VignetteIntensity  = true;
+			PP.VignetteIntensity            = FMath::Lerp(0.4f, 1.6f, HighlightZoomAlpha);
+			PP.bOverride_SceneFringeIntensity = true;
+			PP.SceneFringeIntensity         = FMath::Lerp(0.f, 4.f, HighlightZoomAlpha);
+			PP.bOverride_ChromaticAberrationStartOffset = true;
+			PP.ChromaticAberrationStartOffset = 0.f;
+		}
+
+		// Hide the player mesh once the camera has pulled in past 30% of the
+		// zoom — by that point the character body would otherwise clip the
+		// camera. Net effect: TAB-held reads as a first-person view.
+		if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+		{
+			const bool bWantVisible = HighlightZoomAlpha < 0.3f;
+			if (PlayerMesh->IsVisible() != bWantVisible)
+			{
+				PlayerMesh->SetVisibility(bWantVisible, /*bPropagateToChildren=*/true);
+			}
+		}
 	}
 }

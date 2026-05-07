@@ -79,4 +79,18 @@ public:
 private:
 	bool    bFacingTarget = false;
 	FVector FaceTargetLocation = FVector::ZeroVector;
+
+	// ── TAB-hold focus zoom ──
+	// Subscribed to UEclipseInteractSubsystem::OnHighlightToggled. While true,
+	// Tick lerps SpringArm length, camera FOV, and a few PostProcess settings
+	// (vignette + chromatic aberration) to a "scope-in / fisheye focus" look.
+	UFUNCTION()
+	void HandleHighlightToggled(bool bActive);
+
+	bool  bHighlightZoomActive = false;
+	float HighlightZoomAlpha   = 0.f;   // 0..1 lerped per Tick
+
+	// Cached defaults captured at BeginPlay so we can lerp back precisely.
+	float DefaultArmLength = 400.f;
+	float DefaultFOV       = 90.f;
 };
