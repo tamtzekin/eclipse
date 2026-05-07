@@ -71,6 +71,18 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ChoiceText_3;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ChoiceText_4;
 
+	// ── Sound assets (designer-assigned in WBP_Dialogue defaults) ──
+	// All optional — if null, AudioSubsystem::PlayUI no-ops. Wire actual
+	// sound waves once the audio assets land.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
+	TObjectPtr<class USoundBase> DialogueOpenSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
+	TObjectPtr<class USoundBase> DialogueChoiceSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
+	TObjectPtr<class USoundBase> DialogueCloseSound;
+
 private:
 	UFUNCTION()
 	void HandleDialogueOpened(AEclipseNpcCharacter* Npc);

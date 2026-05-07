@@ -52,6 +52,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|UI")
 	float FadeOutSeconds = 0.8f;
 
+	// Sting played once on Show(). Optional — null is no-op.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
+	TObjectPtr<class USoundBase> ChapterStingSound;
+
 private:
 	enum class EPhase : uint8 { Idle, FadeIn, Hold, FadeOut };
 	EPhase Phase = EPhase::Idle;

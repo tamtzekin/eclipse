@@ -7,6 +7,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "UI/EclipseUiStyle.h"
 
 AEclipseItemActor::AEclipseItemActor()
@@ -140,6 +141,15 @@ void AEclipseItemActor::Pickup_Implementation()
 				State->NotifyChanged();
 				UE_LOG(LogEclipse, Log, TEXT("ItemActor '%s': Quest.bHasEye = true"), *ItemId.ToString());
 			}
+		}
+	}
+
+	// Audio cue at the pickup location.
+	if (UGameInstance* GI = World->GetGameInstance())
+	{
+		if (UEclipseAudioSubsystem* Audio = GI->GetSubsystem<UEclipseAudioSubsystem>())
+		{
+			Audio->PlaySFXAt(PickupSound, GetActorLocation());
 		}
 	}
 

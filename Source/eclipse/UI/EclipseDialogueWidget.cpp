@@ -17,6 +17,7 @@
 #include "Components/SizeBox.h"
 #include "NPC/EclipseNpcCharacter.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Dialogue panel — right-anchored, 480px wide, chalk-on-slate look.
@@ -185,6 +186,12 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 {
 	SetVisibility(ESlateVisibility::Visible);
 
+	// Audio cue on dialogue open. Null-safe — no-op without an assigned sound.
+	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->PlayUI(DialogueOpenSound);
+	}
+
 	// Swap in the speaker portrait if one is assigned on the NPC.
 	if (SpeakerPortrait)
 	{
@@ -246,6 +253,11 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (SpeakerNameText) SpeakerNameText->SetText(FText::GetEmpty());
 	if (BodyText)        BodyText->SetText(FText::GetEmpty());
 	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+
+	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->PlayUI(DialogueCloseSound);
+	}
 
 	// Path A — designer pre-built rows: just collapse, never remove from tree.
 	// (Calling ClearChildren() would orphan the bound buttons so subsequent
@@ -532,6 +544,10 @@ void UEclipseDialogueWidget::NativeOnFocusLost(const FFocusEvent& InFocusEvent)
 
 void UEclipseDialogueWidget::MakeChoice(int32 Index)
 {
+	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->PlayUI(DialogueChoiceSound);
+	}
 	if (UEclipseDialogueSubsystem* DS = GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
 		DS->MakeChoice(Index);
 }

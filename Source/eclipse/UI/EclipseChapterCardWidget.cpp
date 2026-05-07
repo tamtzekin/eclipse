@@ -11,6 +11,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 
 bool UEclipseChapterCardWidget::Initialize()
 {
@@ -103,6 +104,12 @@ void UEclipseChapterCardWidget::Show(const FText& Title)
 	Phase = EPhase::FadeIn;
 	PhaseSeconds = 0.f;
 	UE_LOG(LogEclipse, Log, TEXT("ChapterCard: Show '%s'"), *Title.ToString());
+
+	// One-shot sting on chapter transition (designer-assigned in WBP defaults).
+	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->PlayUI(ChapterStingSound);
+	}
 }
 
 void UEclipseChapterCardWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)

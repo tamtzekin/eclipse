@@ -65,6 +65,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
 	float RotationSpeedYaw = 60.f; // degrees/sec
 
+	// Sound played at the item's location on Pickup. Null-safe — no-op if unset.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
+	TObjectPtr<class USoundBase> PickupSound;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
