@@ -46,6 +46,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
 	void StopMusic(float FadeOutSeconds = 1.f);
 
+	// ── Sliced one-shot ──
+	// Plays a small chunk of a sound starting at StartTime, optionally stopping
+	// after Duration seconds with a tiny fade-out so the cut isn't a click.
+	// Used by the dialogue widget to splice short "mumble" syllables out of
+	// angel_voice.ogg as each word fades in. PitchMultiplier randomizes the
+	// timbre. Returns the spawned AudioComponent (caller can keep it for
+	// further control, or ignore — bAutoDestroy is on).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
+	UAudioComponent* PlaySliced(USoundBase* Sound,
+	                            float StartTime = 0.f,
+	                            float Duration  = 0.f,
+	                            float PitchMultiplier  = 1.f,
+	                            float VolumeMultiplier = 1.f,
+	                            float FadeOutSeconds   = 0.04f);
+
 private:
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> CurrentMusic;

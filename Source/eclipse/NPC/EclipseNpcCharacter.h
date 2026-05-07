@@ -91,6 +91,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Portrait")
 	TObjectPtr<class UTexture2D> PortraitTexture;
 
+	// ── Per-NPC "mumble" voice — sliced into syllables as each dialogue word
+	//    fades in. Null = silent (most NPCs). Only the Angel ships with a
+	//    mumble track today (/Game/Audio/angel_voice). Designer-assignable so
+	//    individual NPCs can have their own voice character later.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Audio")
+	TObjectPtr<class USoundBase> MumbleSound;
+
 	// ── Step-aside: NPC slides out of the way once the player triggers a quest
 	//    beat (e.g. AngelSeeker after "Open the stall and enter"). The offset
 	//    is added to her spawn location captured at BeginPlay; tune in the

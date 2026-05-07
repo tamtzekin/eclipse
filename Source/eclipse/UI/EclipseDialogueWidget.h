@@ -14,6 +14,7 @@ class UButton;
 class UBorder;
 class UImage;
 class UWrapBox;
+class UAudioComponent;
 
 /**
  * Right-side dialogue panel. Binds to EclipseDialogueSubsystem delegates.
@@ -90,6 +91,55 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
 	TObjectPtr<class USoundBase> DialogueCloseSound;
 
+	// "Mumble" voice — sliced into syllable-sized chunks as each dialogue word
+	// fades in. Default loaded from /Game/Audio/angel_voice if this is null at
+	// NativeConstruct time (so designers don't have to wire it up manually).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio|Mumble")
+	TObjectPtr<class USoundBase> DialogueMumbleSound;
+
+	// Min/max length of each splice, seconds. Longer than the trigger spacing
+	// (3 words × 0.11s = 0.33s) so consecutive slices substantially overlap —
+	// the AudioSubsystem fades each slice out over MumbleSliceFadeOutSeconds
+	// so the overlap reads as a smooth crossfade between melody fragments.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumbleSliceMinSeconds = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumbleSliceMaxSeconds = 0.85f;
+
+	// Tail fade applied at the end of every slice. A longer tail makes
+	// consecutive slices crossfade smoothly into a continuous vocal-melody
+	// feel; a short tail (~0.04) gives a more obvious chopped-up texture.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumbleSliceFadeOutSeconds = 0.18f;
+
+	// Fire one slice every Nth word, not every word. 1 = chatter (per-word),
+	// 3 = phrase-feel (default — matches "mumble per few words" pacing), 5+
+	// would feel sparse. Counted across the global word stream (body + choices).
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble", meta = (ClampMin = "1", ClampMax = "10"))
+	int32 MumbleWordsPerSlice = 3;
+
+	// Pitch range — keep tight (1.0 / 1.0) so the underlying melody of the
+	// source clip survives the slicing. Spread these out (e.g. 0.85 / 1.25)
+	// for a more stylised "garbled mumble" feel that breaks pitch continuity.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumblePitchMin = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumblePitchMax = 1.0f;
+
+	// Volume multiplier for each mumble slice. The angel_voice asset is loud
+	// at full pitch — keep this below 1 so it sits under any music.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumbleVolume = 0.6f;
+
+	// Approximate playable length of the source clip (seconds). Each slice's
+	// random StartTime is drawn from [0, MumbleSourceLength - MaxSlice]. The
+	// shipped angel_voice.uasset is ~20.75 s — leave the default a touch
+	// shorter so we never run off the end. Override per-WBP if you swap clips.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
+	float MumbleSourceLength = 20.0f;
+
 private:
 	UFUNCTION()
 	void HandleDialogueOpened(AEclipseNpcCharacter* Npc);
@@ -138,6 +188,7 @@ private:
 	TArray<TObjectPtr<UTextBlock>> AnimWordBlocks;   // for GC root
 	TArray<float> AnimWordDelays;                    // parallel to AnimWordBlocks
 	TArray<FLinearColor> AnimWordTints;              // parallel — per-word target colour
+	TArray<bool>  AnimWordMumbleFired;               // parallel — guard for one-shot mumble per word
 
 	// Per-choice reveal timing: each button stays Collapsed until DialogueAnimTime
 	// reaches its corresponding reveal-time, then snaps to Visible. This is what
@@ -149,6 +200,17 @@ private:
 
 	float DialogueAnimTime  = 0.f;
 	bool  bDialogueAnimating = false;
+
+	// Cursor through the mumble source clip. Advances by each slice's duration
+	// so consecutive slices play sequential chunks of the file — preserves the
+	// underlying melody. Wraps to 0 once the cursor would overrun the clip.
+	float MumbleCursor = 0.f;
+
+	// Live mumble slices spawned by PlayMumbleSlice. Tracked so we can cut
+	// them all off the instant the dialogue text finishes animating — without
+	// this they'd keep playing past the visible body, which feels wrong (the
+	// voice should stop the moment the text is fully revealed).
+	TArray<TWeakObjectPtr<UAudioComponent>> ActiveMumbleSlices;
 
 	// Total wall-clock seconds the body animation will take (used to delay
 	// the choice rows so they cascade in after the body completes).
@@ -171,4 +233,9 @@ private:
 	void AnimateChoiceText(class UTextBlock* Label, int32 ChoiceIndex,
 	                       const FString& Text, const FLinearColor& TargetTint,
 	                       float StartDelay);
+
+	// Fires a single random-pitch slice of DialogueMumbleSound. Picks a random
+	// StartTime within the source clip, a random duration between
+	// MumbleSliceMin/MaxSeconds, and a random pitch in MumblePitchMin/Max.
+	void PlayMumbleSlice();
 };

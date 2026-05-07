@@ -78,3 +78,45 @@ void UEclipseAudioSubsystem::StopMusic(float FadeOutSeconds)
 	CurrentMusic = nullptr;
 	UE_LOG(LogEclipse, Log, TEXT("Audio: StopMusic fade-out %.1fs"), FadeOutSeconds);
 }
+
+UAudioComponent* UEclipseAudioSubsystem::PlaySliced(USoundBase* Sound,
+	float StartTime, float Duration, float PitchMultiplier, float VolumeMultiplier,
+	float FadeOutSeconds)
+{
+	if (!Sound) return nullptr;
+	UWorld* World = GetWorld();
+	if (!World) return nullptr;
+
+	// SpawnSound2D returns a transient UAudioComponent that bAutoDestroy will
+	// clean up once playback ends. We hand that lifetime over and just stop
+	// the source after Duration via the world timer manager.
+	UAudioComponent* C = UGameplayStatics::SpawnSound2D(
+		World, Sound,
+		VolumeMultiplier,
+		PitchMultiplier,
+		FMath::Max(0.f, StartTime),
+		/*ConcurrencyOverride=*/nullptr,
+		/*bPersistAcrossLevelTransition=*/false,
+		/*bAutoDestroy=*/true);
+
+	if (C && Duration > 0.f)
+	{
+		// Stop with a fade so consecutive slices crossfade into each other —
+		// short fade (~0.04s) gives a chopped texture, longer (~0.18s) reads
+		// as a continuous vocal melody. We capture a weak handle so we don't
+		// keep the component alive past auto-destroy.
+		TWeakObjectPtr<UAudioComponent> Weak = C;
+		const float Fade = FMath::Max(0.01f, FadeOutSeconds);
+		FTimerHandle Handle;
+		World->GetTimerManager().SetTimer(Handle,
+			FTimerDelegate::CreateLambda([Weak, Fade]()
+			{
+				if (UAudioComponent* Live = Weak.Get())
+				{
+					Live->FadeOut(Fade, /*FadeVolumeLevel=*/0.f);
+				}
+			}),
+			Duration, /*bLoop=*/false);
+	}
+	return C;
+}

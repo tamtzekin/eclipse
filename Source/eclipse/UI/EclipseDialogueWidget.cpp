@@ -21,6 +21,8 @@
 #include "NPC/EclipseNpcCharacter.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
+#include "Sound/SoundBase.h"
+#include "Components/AudioComponent.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Dialogue panel — right-anchored, 480px wide, chalk-on-slate look.
@@ -149,6 +151,10 @@ bool UEclipseDialogueWidget::Initialize()
 void UEclipseDialogueWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	// Note: DialogueMumbleSound is no longer auto-loaded here. It's now sourced
+	// per-conversation from the speaking NPC's MumbleSound property in
+	// HandleDialogueOpened — null for most NPCs, angel_voice for AngelSeeker.
 
 	// ── Runtime injection of BodyWords if the WBP didn't ship one. ──
 	// Has to run AFTER Super::Initialize() — i.e. here, not in our Initialize
@@ -283,6 +289,37 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 		Audio->PlayUI(DialogueOpenSound);
 	}
 
+	// ── Per-NPC mumble voice ──
+	// The mumble track is sourced from the speaking NPC's MumbleSound — null
+	// for most NPCs, which gives them a silent dialogue cascade. Only the
+	// Angel (matched by NpcName, NOT bIsAngelSeeker — that flag is set on the
+	// bathroom girl who SEEKS the angel) gets a hard-coded fallback to the
+	// canonical /Game/Audio/angel_voice clip if her BP forgot to wire it up.
+	const bool bSpeakerIsAngel = Npc && (Npc->NpcName == FName(TEXT("Angel")));
+
+	DialogueMumbleSound = Npc ? Npc->MumbleSound.Get() : nullptr;
+	if (!DialogueMumbleSound && bSpeakerIsAngel)
+	{
+		DialogueMumbleSound = LoadObject<USoundBase>(nullptr,
+			TEXT("/Game/Audio/angel_voice.angel_voice"));
+	}
+	// If we resolved a sound but the speaker is NOT angel and the designer
+	// hasn't given them their own mumble, drop it — defensive safety in case
+	// stale state slips through.
+	if (DialogueMumbleSound && !bSpeakerIsAngel && (!Npc || !Npc->MumbleSound))
+	{
+		DialogueMumbleSound = nullptr;
+	}
+
+	// Reset the playback cursor so each new conversation starts at the top
+	// of the source clip — the melody plays in order from word one.
+	MumbleCursor = 0.f;
+	UE_LOG(LogEclipse, Log, TEXT("Dlg: opened with NPC '%s' (NpcName='%s') angel=%s mumble=%s"),
+		Npc ? *Npc->GetName() : TEXT("<null>"),
+		Npc ? *Npc->NpcName.ToString() : TEXT("<null>"),
+		bSpeakerIsAngel ? TEXT("YES") : TEXT("no"),
+		DialogueMumbleSound ? TEXT("set") : TEXT("none"));
+
 	// Swap in the speaker portrait if one is assigned on the NPC.
 	if (SpeakerPortrait)
 	{
@@ -372,6 +409,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
 	AnimWordTints.Reset();
+	AnimWordMumbleFired.Reset();
 	ChoiceRevealButtons.Reset();
 	ChoiceRevealDelays.Reset();
 
@@ -379,6 +417,22 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	{
 		Audio->PlayUI(DialogueCloseSound);
 	}
+
+	// Drop the mumble reference so the next conversation re-evaluates which
+	// NPC is speaking — otherwise a previously-angel widget would keep playing
+	// angel_voice for any subsequent NPC.
+	DialogueMumbleSound = nullptr;
+	MumbleCursor = 0.f;
+
+	// Cut any still-ringing mumble slices when the panel closes.
+	for (TWeakObjectPtr<UAudioComponent>& Weak : ActiveMumbleSlices)
+	{
+		if (UAudioComponent* Live = Weak.Get())
+		{
+			Live->FadeOut(0.06f, 0.f);
+		}
+	}
+	ActiveMumbleSlices.Reset();
 
 	// Path A — designer pre-built rows: just collapse, never remove from tree.
 	// (Calling ClearChildren() would orphan the bound buttons so subsequent
@@ -731,6 +785,18 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
 	AnimWordTints.Reset();
+	AnimWordMumbleFired.Reset();
+
+	// Cut any in-flight mumble slices from the previous node (user may have
+	// clicked a choice mid-cascade, leaving slices ringing). Quick fade.
+	for (TWeakObjectPtr<UAudioComponent>& Weak : ActiveMumbleSlices)
+	{
+		if (UAudioComponent* Live = Weak.Get())
+		{
+			Live->FadeOut(0.06f, 0.f);
+		}
+	}
+	ActiveMumbleSlices.Reset();
 
 	// ParseIntoArrayWS splits on any whitespace and discards empty entries.
 	TArray<FString> Words;
@@ -759,6 +825,7 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 		AnimWordBlocks.Add(Block);
 		AnimWordDelays.Add(static_cast<float>(i) * WordSpawnInterval);
 		AnimWordTints.Add(Cream);
+		AnimWordMumbleFired.Add(false);
 	}
 
 	// Total time the body takes to fully resolve = last_word_delay + fade_duration.
@@ -826,6 +893,7 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 		AnimWordBlocks.Add(W);
 		AnimWordDelays.Add(StartDelay + static_cast<float>(wi) * WordSpawnInterval);
 		AnimWordTints.Add(TargetTint);
+		AnimWordMumbleFired.Add(false);
 	}
 
 	bDialogueAnimating = true;
@@ -876,11 +944,94 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		FLinearColor C = Tint; C.A = Alpha;
 		Block->SetColorAndOpacity(FSlateColor(C));
 
+		// Leading edge: the moment a word's delay is crossed, splice off a
+		// random mumble slice — but only every Nth word so the mumble feels
+		// like phrases rather than chatter. AnimWordMumbleFired keeps it
+		// strictly one-shot per word so we don't retrigger across frames.
+		if (t > 0.f && AnimWordMumbleFired.IsValidIndex(i) && !AnimWordMumbleFired[i])
+		{
+			AnimWordMumbleFired[i] = true;
+			const int32 Stride = FMath::Max(1, MumbleWordsPerSlice);
+			if (i % Stride == 0)
+			{
+				PlayMumbleSlice();
+			}
+		}
+
 		if (Alpha < 1.f) bAllDone = false;
 	}
 
 	if (bAllDone)
 	{
 		bDialogueAnimating = false;
+
+		// Cut the voice off the moment text animation finishes. Without this
+		// the last slice would keep ringing past the visible body. We use a
+		// quick fade (60ms) rather than a hard stop to avoid clicks.
+		for (TWeakObjectPtr<UAudioComponent>& Weak : ActiveMumbleSlices)
+		{
+			if (UAudioComponent* Live = Weak.Get())
+			{
+				Live->FadeOut(/*FadeOut=*/0.06f, /*FadeVolumeLevel=*/0.f);
+			}
+		}
+		ActiveMumbleSlices.Reset();
 	}
+}
+
+void UEclipseDialogueWidget::PlayMumbleSlice()
+{
+	if (!DialogueMumbleSound)
+	{
+		UE_LOG(LogEclipse, Verbose, TEXT("Dlg: PlayMumbleSlice — DialogueMumbleSound null, skipping"));
+		return;
+	}
+
+	UEclipseAudioSubsystem* Audio = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>()
+		: nullptr;
+	if (!Audio)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("Dlg: PlayMumbleSlice — AudioSubsystem missing"));
+		return;
+	}
+
+	// Slice duration — random within [Min, Max] for organic pacing, but the
+	// START time is sequential so the underlying melody surfaces. Each slice
+	// picks up where the previous one ended; when we'd overrun the end of the
+	// clip we wrap back to 0.
+	const float MinD = FMath::Max(0.01f, MumbleSliceMinSeconds);
+	const float MaxD = FMath::Max(MinD,  MumbleSliceMaxSeconds);
+	const float Duration = FMath::FRandRange(MinD, MaxD);
+
+	const float SrcLen   = FMath::Max(0.f, MumbleSourceLength);
+	const float StartTime = MumbleCursor;
+
+	// Advance the cursor for next time. Wrap to 0 if the next slice (assuming
+	// max-length) wouldn't fit before the end of the source.
+	MumbleCursor += Duration;
+	if (SrcLen > 0.f && (MumbleCursor + MaxD) > SrcLen)
+	{
+		MumbleCursor = 0.f;
+	}
+
+	// Pitch — defaults are 1.0/1.0 so the melody plays straight. If the
+	// designer widens the range we still apply per-slice randomness.
+	const float Pitch = (FMath::IsNearlyEqual(MumblePitchMin, MumblePitchMax))
+		? MumblePitchMin
+		: FMath::FRandRange(MumblePitchMin, MumblePitchMax);
+
+	UAudioComponent* C = Audio->PlaySliced(DialogueMumbleSound, StartTime, Duration,
+		Pitch, MumbleVolume, MumbleSliceFadeOutSeconds);
+
+	// Track the live slice so the moment dialogue animation finishes we can
+	// cut it off (otherwise the in-flight slice keeps playing past the visible
+	// text, which feels wrong — voice should stop when the text is done).
+	if (C)
+	{
+		ActiveMumbleSlices.Add(C);
+	}
+
+	UE_LOG(LogEclipse, Verbose, TEXT("Dlg: mumble — start=%.2f dur=%.2f pitch=%.2f fade=%.2f cursor->%.2f"),
+		StartTime, Duration, Pitch, MumbleSliceFadeOutSeconds, MumbleCursor);
 }
