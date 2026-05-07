@@ -31,6 +31,10 @@ AEclipseNpcCharacter::AEclipseNpcCharacter()
 void AEclipseNpcCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Cache the spawn pose so StepAside() lerps from the right starting point.
+	OriginalLocation = GetActorLocation();
+
 	if (bStationary)
 	{
 		GetCharacterMovement()->DisableMovement();
@@ -89,6 +93,34 @@ void AEclipseNpcCharacter::HandleHighlightToggled(bool bActive)
 		{
 			M->SetOverlayMaterial(Overlay);
 		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  StepAside — quest-triggered slide-out of the way (e.g. AngelSeeker after
+//  the player picks "Open the stall and enter"). Lerps from OriginalLocation
+//  to OriginalLocation + StepAsideOffset over ~1/StepAsideSpeed seconds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void AEclipseNpcCharacter::StepAside()
+{
+	if (bSteppingAside) return;
+	bSteppingAside = true;
+	StepAsideAlpha = 0.f;
+	UE_LOG(LogEclipse, Log, TEXT("NPC '%s' StepAside (offset %s)"),
+		*NpcName.ToString(), *StepAsideOffset.ToString());
+}
+
+void AEclipseNpcCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (bSteppingAside && StepAsideAlpha < 1.f)
+	{
+		StepAsideAlpha = FMath::Min(1.f, StepAsideAlpha + DeltaTime * StepAsideSpeed);
+		const float T = FMath::SmoothStep(0.f, 1.f, StepAsideAlpha);
+		const FVector Target = OriginalLocation + StepAsideOffset;
+		SetActorLocation(FMath::Lerp(OriginalLocation, Target, T));
 	}
 }
 

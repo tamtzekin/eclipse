@@ -91,6 +91,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Portrait")
 	TObjectPtr<class UTexture2D> PortraitTexture;
 
+	// ── Step-aside: NPC slides out of the way once the player triggers a quest
+	//    beat (e.g. AngelSeeker after "Open the stall and enter"). The offset
+	//    is added to her spawn location captured at BeginPlay; tune in the
+	//    level per-NPC so she clears the doorway cleanly.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Quest")
+	FVector StepAsideOffset = FVector(0.f, 200.f, 0.f);   // default: 2m to the right
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Quest")
+	float StepAsideSpeed = 0.7f;   // alpha/sec — 0.7 ≈ ~1.4s to fully step aside
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC|Quest")
+	void StepAside();
+
 	// ── Speech bubble (?, !, …) — floats above the NPC head in 3D space ──
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|UI")
 	TObjectPtr<class UWidgetComponent> BubbleWidget;
@@ -105,8 +118,14 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaTime) override;
 
 private:
 	UFUNCTION()
 	void HandleHighlightToggled(bool bActive);
+
+	// Captured at BeginPlay so StepAside() lerps from the original spawn pose.
+	FVector OriginalLocation = FVector::ZeroVector;
+	bool    bSteppingAside   = false;
+	float   StepAsideAlpha   = 0.f;
 };

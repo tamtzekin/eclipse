@@ -6,8 +6,6 @@
 #include "Player/EclipsePlayerCharacter.h"
 #include "EclipseGameStateSubsystem.h"
 #include "GameFramework/PlayerController.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
@@ -185,15 +183,19 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	const FName AN_SAVED    (TEXT("0x0100000000001033"));
 	const FName AN_LEFT     (TEXT("0x0100000000001034"));
 
+	// Skill thresholds dropped to baseline so the encounter is always playable
+	// with default stats (Word=Rhythm=Shadow=1). Tune later as the rest of the
+	// stat-progression system lands. The intent of the [STAT:N] tags is to
+	// signal "this requires the listed stat" — the actual N can rise later.
 	AddNPC(AN_INTRO,
 		TEXT("The figure turns without turning. A voice that is many voices: \"YOU. WHO SENT YOU?\""),
 		{AN_IC1, AN_IC2, AN_IC3});
-	AddChoice(AN_IC1, TEXT("[WORD:10] I am a messenger of the Mandate."),
-		{AN_CONV_OK}, NAME_None, TEXT("word"),   10);
-	AddChoice(AN_IC2, TEXT("[SHADOW:10] I bring the Hair and the Eye. A gift."),
-		{AN_CONV_OK}, NAME_None, TEXT("shadow"), 10);
-	AddChoice(AN_IC3, TEXT("[RHYTHM:10] Your song drew me down."),
-		{AN_CONV_OK}, NAME_None, TEXT("rhythm"), 10);
+	AddChoice(AN_IC1, TEXT("[WORD:1] I am a messenger of the Mandate."),
+		{AN_CONV_OK}, NAME_None, TEXT("word"),   1);
+	AddChoice(AN_IC2, TEXT("[SHADOW:1] I bring the Hair and the Eye. A gift."),
+		{AN_CONV_OK}, NAME_None, TEXT("shadow"), 1);
+	AddChoice(AN_IC3, TEXT("[RHYTHM:1] Your song drew me down."),
+		{AN_CONV_OK}, NAME_None, TEXT("rhythm"), 1);
 
 	AddNPC(AN_CONV_OK,
 		TEXT("\"…THEN SPEAK THE NAME. PROVE IT.\" Its form fragments, reassembles. Ready for battle."),
@@ -201,12 +203,12 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	AddNPC(AN_BATTLE,
 		TEXT("It circles you, glitching through the walls. \"STRIKE, MESSENGER.\""),
 		{AN_BC1, AN_BC2, AN_BC3});
-	AddChoice(AN_BC1, TEXT("[WORD:14] Recite the forbidden syllables."),
-		{AN_DEFEATED}, NAME_None, TEXT("word"),   14);
-	AddChoice(AN_BC2, TEXT("[SHADOW:14] Overwhelm it with your silence."),
-		{AN_DEFEATED}, NAME_None, TEXT("shadow"), 14);
-	AddChoice(AN_BC3, TEXT("[RHYTHM:14] Match its cadence, beat for beat."),
-		{AN_DEFEATED}, NAME_None, TEXT("rhythm"), 14);
+	AddChoice(AN_BC1, TEXT("[WORD:1] Recite the forbidden syllables."),
+		{AN_DEFEATED}, NAME_None, TEXT("word"),   1);
+	AddChoice(AN_BC2, TEXT("[SHADOW:1] Overwhelm it with your silence."),
+		{AN_DEFEATED}, NAME_None, TEXT("shadow"), 1);
+	AddChoice(AN_BC3, TEXT("[RHYTHM:1] Match its cadence, beat for beat."),
+		{AN_DEFEATED}, NAME_None, TEXT("rhythm"), 1);
 
 	AddNPC(AN_DEFEATED,
 		TEXT("The angel collapses inward, dimming. It whispers: \"I am… cold. I am dying. Feed me the tabs. Four. Please.\""),
@@ -605,18 +607,16 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  EnterStallTransition — the slice's payoff beat.
+//  EnterStallTransition — the AngelSeeker's "open the door" beat.
 //
 //  When the player picks "Open the stall and enter" with the Hair + Eye in
 //  inventory, we:
 //   1. Close the AngelSeeker dialogue (panel slides out)
-//   2. Find an existing Angel NPC in the world OR spawn one near the seeker
-//   3. After a 0.6 s pause (faux camera transition), open the Angel dialogue
-//      tree (Dlg_Angel) — OpenDialogue() will trigger StartFaceTarget so the
-//      camera swings around to look at the Angel
+//   2. Tell the AngelSeeker to step aside (clears the doorway)
 //
-//  The Angel itself is invisible — it's a "presence" inside the stall. The
-//  panel + voice carry the moment.
+//  The Angel itself is a normal NPC placed in the secret room behind the
+//  doorway. The player walks up to it and presses [E] like any other NPC —
+//  the Angel dialogue tree (Dlg_Angel) is NOT auto-triggered from here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void UEclipseDialogueSubsystem::EnterStallTransition()
@@ -624,90 +624,16 @@ void UEclipseDialogueSubsystem::EnterStallTransition()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	// Cache the AngelSeeker reference BEFORE CloseDialogue() nulls ActiveNpc,
+	// so we can also tell her to step aside out of the doorway.
+	AEclipseNpcCharacter* AngelSeeker = ActiveNpc;
+
 	// 1. Close the current (AngelSeeker) dialogue cleanly.
 	CloseDialogue();
 
-	// 2. Find or spawn the Angel NPC.
-	if (!::IsValid(CachedAngel.Get()))
+	// 2. Tell the AngelSeeker to step aside (lerps her out of the doorway).
+	if (AngelSeeker && AngelSeeker->bIsAngelSeeker)
 	{
-		// First: look for one already in the world (designer may have placed one).
-		for (TActorIterator<AEclipseNpcCharacter> It(World); It; ++It)
-		{
-			if (It->NpcName == FName(TEXT("ANGEL")))
-			{
-				CachedAngel = *It;
-				break;
-			}
-		}
-
-		// Otherwise, spawn one a short distance in front of the AngelSeeker so
-		// the player's OTS rotation will swing the camera into the stall area.
-		if (!::IsValid(CachedAngel.Get()))
-		{
-			FVector SpawnLoc(0.f, 0.f, 178.f);
-			FRotator SpawnRot = FRotator::ZeroRotator;
-			for (TActorIterator<AEclipseNpcCharacter> It(World); It; ++It)
-			{
-				if (It->bIsAngelSeeker)
-				{
-					SpawnLoc = It->GetActorLocation()
-					         + It->GetActorForwardVector() * 220.f;
-					SpawnRot = It->GetActorRotation() + FRotator(0.f, 180.f, 0.f);
-					break;
-				}
-			}
-
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride =
-				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AEclipseNpcCharacter* Angel = World->SpawnActor<AEclipseNpcCharacter>(
-				AEclipseNpcCharacter::StaticClass(), SpawnLoc, SpawnRot, Params);
-
-			if (Angel)
-			{
-				Angel->NpcName     = FName(TEXT("ANGEL"));
-				Angel->DialogueId  = FName(TEXT("0x0100000000001000"));
-				Angel->bTalkable   = true;
-				Angel->bIsKeyNPC   = true;
-				Angel->bStationary = true;
-				Angel->bIsHidden   = false;
-				Angel->TalkRadius  = 100.f;
-				// Invisible — the Angel is a felt presence, not a visible body.
-				if (USkeletalMeshComponent* Mesh = Angel->GetMesh())
-				{
-					Mesh->SetVisibility(false, true);
-				}
-				if (UCapsuleComponent* Cap = Angel->GetCapsuleComponent())
-				{
-					Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				}
-				CachedAngel = Angel;
-				UE_LOG(LogEclipse, Log, TEXT("Spawned Angel at %s"), *SpawnLoc.ToString());
-			}
-		}
+		AngelSeeker->StepAside();
 	}
-
-	if (!::IsValid(CachedAngel.Get()))
-	{
-		UE_LOG(LogEclipse, Warning, TEXT("EnterStallTransition: failed to obtain Angel"));
-		return;
-	}
-
-	// 3. Schedule the dialogue open after a brief transition delay.
-	//    During this gap the player's input is already restored (CloseDialogue
-	//    re-enabled it), but most players will pause to read the panel-out;
-	//    if you'd prefer to lock movement, set bIgnoreMoveInput here.
-	TWeakObjectPtr<UEclipseDialogueSubsystem> WeakThis(this);
-	World->GetTimerManager().SetTimer(EnterStallTimer,
-		[WeakThis]()
-		{
-			if (UEclipseDialogueSubsystem* This = WeakThis.Get())
-			{
-				if (IsValid(This->CachedAngel.Get()))
-				{
-					This->OpenDialogue(This->CachedAngel.Get());
-				}
-			}
-		},
-		/*Delay=*/0.6f, /*Loop=*/false);
 }

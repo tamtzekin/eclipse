@@ -112,12 +112,9 @@ private:
 	// player-choice fragments to the next NPC speech fragment.
 	void AdvanceToNode(FName NodeId);
 
-	// "enterStall" implementation — closes the AngelSeeker dialogue, spawns or
-	// reuses an Angel NPC near the seeker, then opens the Angel dialogue tree
-	// (Dlg_Angel = 0x0100000000001000) after a short transition delay so the
-	// camera can pan around / fade.
+	// "enterStall" implementation — closes the AngelSeeker dialogue and tells
+	// her to step aside, clearing the doorway. The Angel itself is a normal
+	// level-placed NPC the player walks up to and talks to via [E]; nothing
+	// auto-opens here.
 	void EnterStallTransition();
-
-	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> CachedAngel;
-	FTimerHandle EnterStallTimer;
 };
