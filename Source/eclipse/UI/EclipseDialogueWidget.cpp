@@ -150,7 +150,10 @@ void UEclipseDialogueWidget::NativeConstruct()
 	SetVisibility(ESlateVisibility::Collapsed);
 
 	if (CloseButton)
+	{
+		CloseButton->SetClickMethod(EButtonClickMethod::MouseDown);
 		CloseButton->OnClicked.AddDynamic(this, &UEclipseDialogueWidget::OnCloseClicked);
+	}
 
 	if (UEclipseDialogueSubsystem* DS = GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
 	{
@@ -202,12 +205,19 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 
 	// Disable player movement while talking — matches JS prototype which freezes
 	// the controller during dialogue.
+	//
+	// SetWidgetToFocus(TakeWidget()) is needed so the FIRST click on a choice
+	// button registers as a click — without an initial focus target, Slate
+	// uses the first click to *give* focus and the second to actually fire
+	// OnClicked. TakeWidget() on the outer dialogue widget is stable because
+	// only ChoicesBox children get rebuilt, not the parent SObjectWidget.
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 	{
-		FInputModeGameAndUI Mode;
+		FInputModeUIOnly Mode;
 		Mode.SetWidgetToFocus(TakeWidget());
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(true);
 		PC->SetIgnoreMoveInput(true);
 		PC->SetIgnoreLookInput(true);
 	}
@@ -215,7 +225,11 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 
 void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 {
-	SetVisibility(ESlateVisibility::Visible);
+	// SelfHitTestInvisible: the root canvas itself ignores hit-testing so only
+	// the actual buttons/panel intercept input. Without this, the fullscreen
+	// canvas would be a hit-test layer over the whole viewport, producing
+	// off-centre hover/click registration on the buttons inside.
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	if (SpeakerNameText)
 		SpeakerNameText->SetText(FText::FromName(Node.SpeakerName));
@@ -253,11 +267,12 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	ChoiceButtons.Reset();
 	SelectedIndex = 0;
 
-	// Restore player input
+	// Restore default gameplay input: cursor hidden, mouse drives the camera.
 	if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
 	{
 		FInputModeGameOnly Mode;
 		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(false);
 		PC->SetIgnoreMoveInput(false);
 		PC->SetIgnoreLookInput(false);
 	}
@@ -285,6 +300,12 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			UButton*    Btn   = PreBtns[i];
 			UTextBlock* Label = PreTexts[i];
 			if (!Btn) continue;
+
+			// Fire on press, not press+release — avoids the "feels like double-
+			// click" symptom from UE's default DownAndUp ClickMethod when
+			// FInputModeUIOnly first-click consumes focus and the second click
+			// finally registers as the press.
+			Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 
 			// Always (re)hook the callback. AddDynamic stringifies the function
 			// name at the macro callsite, so we need an explicit literal per slot
@@ -415,6 +436,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		}
 
 		Btn->SetContent(Row);
+		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 		switch (i)
 		{
 			case 0: Btn->OnClicked.AddDynamic(this, &UEclipseDialogueWidget::OnChoice0); break;
