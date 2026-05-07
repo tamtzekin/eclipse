@@ -364,8 +364,25 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			S->SetPosition(FVector2D(-20.f, -20.f));
 		}
 
+		// HudBg holds a vertical column: [InventoryRibbon] above [HudRow].
+		// The runtime widget rebuilds chip contents per-tick from game state
+		// — the populator just creates the named container so designers can
+		// re-skin it in the WBP if they want.
+		UVerticalBox* HudColumn = New<UVerticalBox>(Tree, TEXT("HudColumn"));
+		HudBg->SetContent(HudColumn);
+
+		UHorizontalBox* InventoryRibbon = New<UHorizontalBox>(Tree, TEXT("InventoryRibbon"));
+		USizeBox* InvSize = New<USizeBox>(Tree, TEXT("InventoryRibbonSize"));
+		InvSize->SetMinDesiredHeight(22.f);
+		InvSize->AddChild(InventoryRibbon);
+		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(InvSize))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+			VS->SetHorizontalAlignment(HAlign_Right);
+		}
+
 		UHorizontalBox* Row = New<UHorizontalBox>(Tree, TEXT("HudRow"));
-		HudBg->SetContent(Row);
+		HudColumn->AddChildToVerticalBox(Row);
 
 		// Portrait
 		UBorder* PortraitFrame = New<UBorder>(Tree, TEXT("PortraitFrame"));

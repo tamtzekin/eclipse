@@ -9,6 +9,7 @@
 class UProgressBar;
 class UTextBlock;
 class UImage;
+class UHorizontalBox;
 
 /**
  * Bottom-right HUD cluster — heat bar, portrait box, thirst bar.
@@ -47,9 +48,16 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CrosshairImage;
 
+	// Horizontal strip above the portrait+meters row that lists picked-up
+	// items as small "chips". Built in Initialize() if the WBP doesn't
+	// provide one. Mirrors the JS prototype's inventory-pill row.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UHorizontalBox> InventoryRibbon;
+
 private:
 	UFUNCTION()
 	void HandleStateChanged();
 
 	void UpdateBars();
+	void UpdateInventory();
 };
