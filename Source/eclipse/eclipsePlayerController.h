@@ -11,9 +11,15 @@ class UUserWidget;
 
 /**
  *  Basic PlayerController class for a third person game
- *  Manages input mappings
+ *  Manages input mappings + Esc-toggled pause menu binding.
+ *
+ *  Was UCLASS(abstract) per the UE template (which assumed a BP subclass would
+ *  always be derived). We need it concrete because BP_EclipseGameMode points
+ *  PlayerControllerClass directly at this C++ class — abstract classes can't
+ *  be spawned at world-init, which is the "Failed to spawn player controller"
+ *  symptom.
  */
-UCLASS(abstract)
+UCLASS()
 class AeclipsePlayerController : public APlayerController
 {
 	GENERATED_BODY()
@@ -41,4 +47,9 @@ protected:
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
 
+	/** Esc-key handler — toggles the pause menu overlay. */
+	void TogglePauseMenu();
+
+	UPROPERTY()
+	TObjectPtr<class UEclipsePauseMenuWidget> ActivePauseMenu;
 };

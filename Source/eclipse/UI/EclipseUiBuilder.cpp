@@ -511,6 +511,124 @@ bool UEclipseUiBuilder::PopulateInteractWBP(const FString& WBPAssetPath)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Pause-menu WBP — fullscreen dim + centred chalk panel + button list
+//
+//   ┌──────────────────────────────────────────┐
+//   │              (dim 55% black)             │
+//   │       ┌───────────────────────┐          │
+//   │       │        PAUSED         │          │
+//   │       │  ───────────────────  │          │
+//   │       │      RESUME           │          │
+//   │       │      SAVE             │          │
+//   │       │      LOAD             │          │
+//   │       │      MAIN MENU        │          │
+//   │       │      QUIT             │          │
+//   │       │     <status>          │          │
+//   │       └───────────────────────┘          │
+//   └──────────────────────────────────────────┘
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		// Fullscreen dim
+		UBorder* Dim = New<UBorder>(Tree, TEXT("Dim"));
+		Dim->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.55f)));
+		Dim->SetPadding(FMargin(0.f));
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Dim))
+		{
+			S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+			S->SetZOrder(0);
+		}
+
+		// Full-bleed chalk panel — Border content stretches full viewport so
+		// the column hits both horizontal edges and the inner buttons can
+		// span the whole width with HAlign_Fill on their slots.
+		UBorder* Panel = New<UBorder>(Tree, TEXT("PausePanel"));
+		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.96f)));
+		Panel->SetPadding(FMargin(0.f));
+		Panel->SetHorizontalAlignment(HAlign_Fill);
+		Panel->SetVerticalAlignment(VAlign_Center);
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f));
+			S->SetZOrder(1);
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("PauseColumn"));
+		Panel->SetContent(Column);
+
+		// Title — gigantic BMSPA cyan, sits above the buttons
+		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("PauseTitle"));
+		Title->SetText(FText::FromString(TEXT("PAUSED")));
+		Title->SetFont(MakeBMSPA(160, 14.f));
+		Title->SetColorAndOpacity(FSlateColor(Cyan));
+		Title->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 80.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		// Helper to build a button row. HAlign_Fill on the slot makes the
+		// hit target span the whole panel width — full-bleed feel.
+		auto MakeBtn = [&](const FString& Label, FName WidgetName)
+		{
+			UButton* Btn = New<UButton>(Tree, WidgetName);
+			FButtonStyle BS;
+			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
+			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
+			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
+			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			Btn->SetStyle(BS);
+
+			UTextBlock* T = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
+			T->SetText(FText::FromString(Label));
+			T->SetFont(MakeRodin(56));
+			T->SetColorAndOpacity(FSlateColor(Cream));
+			T->SetJustification(ETextJustify::Center);
+			Btn->SetContent(T);
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
+			{
+				VS->SetPadding(FMargin(0.f, 14.f));   // pure vertical breathing — buttons span full width
+				VS->SetHorizontalAlignment(HAlign_Fill);
+			}
+		};
+
+		MakeBtn(TEXT("RESUME"),    TEXT("ResumeBtn"));
+		MakeBtn(TEXT("SAVE"),      TEXT("SaveBtn"));
+		MakeBtn(TEXT("LOAD"),      TEXT("LoadBtn"));
+		MakeBtn(TEXT("MAIN MENU"), TEXT("MainMenuBtn"));
+		MakeBtn(TEXT("QUIT"),      TEXT("QuitBtn"));
+
+		// Status line — runtime sets save/load result here.
+		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
+		StatusText->SetText(FText::GetEmpty());
+		StatusText->SetFont(MakeRodin(28));
+		StatusText->SetColorAndOpacity(FSlateColor(CreamDim));
+		StatusText->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
+		{
+			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Build a UFont composite that wraps a UFontFace
 // ─────────────────────────────────────────────────────────────────────────────
 
