@@ -51,6 +51,30 @@ void AEclipsePlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// ── Floor snap ──
+	// Same trick as NPCs / items: line-trace down to the actual floor so the
+	// player doesn't spawn floating or buried when the level's floor isn't at
+	// z=0. Adds the capsule half-height back so the capsule rests on the floor.
+	{
+		const FVector Origin = GetActorLocation();
+		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);
+		const FVector End    = Origin - FVector(0.f, 0.f, 5000.f);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipsePlayerFloorSnap), false, this);
+		Params.bTraceComplex = true;
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		{
+			const float HalfHeight = GetCapsuleComponent()
+				? GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+				: 88.f;
+			FVector Snapped = Origin;
+			Snapped.Z = Hit.ImpactPoint.Z + HalfHeight;
+			SetActorLocation(Snapped, /*bSweep=*/false);
+			UE_LOG(LogEclipse, Log, TEXT("Player floor-snapped: z %.1f → %.1f"),
+				Origin.Z, Snapped.Z);
+		}
+	}
+
 	// Wire up the default Enhanced Input mapping context if assigned (BP override).
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
@@ -117,12 +141,12 @@ void AEclipsePlayerCharacter::OnMove(const FInputActionValue& Value)
 
 void AEclipsePlayerCharacter::OnLook(const FInputActionValue& Value)
 {
-	// Verbatim from the UE 3rd-person template (eclipseCharacter::DoLook).
 	if (GetController())
 	{
 		const FVector2D Axis = Value.Get<FVector2D>();
 		AddControllerYawInput(Axis.X);
-		AddControllerPitchInput(Axis.Y);
+		// Negate Y so mouse-up looks up (non-inverted Y).
+		AddControllerPitchInput(-Axis.Y);
 	}
 }
 

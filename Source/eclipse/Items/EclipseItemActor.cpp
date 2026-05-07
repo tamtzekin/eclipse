@@ -22,6 +22,30 @@ void AEclipseItemActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// ── Floor snap ──
+	// The level's floor isn't at z=0 (each room sits at its own elevation, e.g.
+	// bathroom floor ≈ z=178). Items dropped into the level via SpawnActor or
+	// placed via the editor would otherwise fall to world origin or float at
+	// whatever z the spawn defaults to. Trace down from a bit above the
+	// current location to find the actual floor and rest on it.
+	{
+		const FVector Origin = GetActorLocation();
+		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);
+		const FVector End    = Origin - FVector(0.f, 0.f, 5000.f);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseItemFloorSnap), false, this);
+		Params.bTraceComplex = true;
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		{
+			FVector Snapped = Origin;
+			// +5 cm so the mesh visually rests on the floor, not buried in it.
+			Snapped.Z = Hit.ImpactPoint.Z + 5.f;
+			SetActorLocation(Snapped, /*bSweep=*/false);
+			UE_LOG(LogEclipse, Log, TEXT("Item '%s' floor-snapped: z %.1f → %.1f"),
+				*ItemId.ToString(), Origin.Z, Snapped.Z);
+		}
+	}
+
 	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
 	{
 		IS->OnHighlightToggled.AddDynamic(this, &AEclipseItemActor::HandleHighlightToggled);

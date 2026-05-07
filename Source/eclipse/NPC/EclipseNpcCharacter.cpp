@@ -3,6 +3,7 @@
 #include "EclipseNpcCharacter.h"
 #include "Eclipse.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Components/MeshComponent.h"
 #include "Materials/MaterialInterface.h"
@@ -32,7 +33,32 @@ void AEclipseNpcCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Cache the spawn pose so StepAside() lerps from the right starting point.
+	// ── Floor snap ──
+	// Line-trace down so the NPC rests on the actual floor (which isn't at z=0
+	// in this project — each room sits at its own elevation). Capsule
+	// half-height puts the actor's pivot at the capsule centre, so the floor-z
+	// offset has to add it back.
+	{
+		const FVector Origin = GetActorLocation();
+		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);
+		const FVector End    = Origin - FVector(0.f, 0.f, 5000.f);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseNpcFloorSnap), false, this);
+		Params.bTraceComplex = true;
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		{
+			const float HalfHeight = GetCapsuleComponent()
+				? GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+				: 88.f;
+			FVector Snapped = Origin;
+			Snapped.Z = Hit.ImpactPoint.Z + HalfHeight;
+			SetActorLocation(Snapped, /*bSweep=*/false);
+			UE_LOG(LogEclipse, Log, TEXT("NPC '%s' floor-snapped: z %.1f → %.1f"),
+				*NpcName.ToString(), Origin.Z, Snapped.Z);
+		}
+	}
+
+	// Cache the spawn pose so StepAside() lerps from the right (post-snap) start.
 	OriginalLocation = GetActorLocation();
 
 	if (bStationary)
