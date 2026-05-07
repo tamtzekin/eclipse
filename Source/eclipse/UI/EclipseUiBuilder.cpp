@@ -336,23 +336,8 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
-		// Crosshair (centre)
-		UImage* CrosshairImage = New<UImage>(Tree, TEXT("CrosshairImage"));
-		FSlateBrush Cross;
-		Cross.DrawAs       = ESlateBrushDrawType::RoundedBox;
-		Cross.ImageSize    = FVector2D(12.f, 12.f);
-		Cross.TintColor    = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
-		Cross.OutlineSettings.CornerRadii  = FVector4(6, 6, 6, 6);
-		Cross.OutlineSettings.Color        = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.6f));
-		Cross.OutlineSettings.Width        = 1.5f;
-		Cross.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-		CrosshairImage->SetBrush(Cross);
-		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(CrosshairImage))
-		{
-			S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			S->SetAlignment(FVector2D(0.5f, 0.5f));
-			S->SetSize(FVector2D(12.f, 12.f));
-		}
+		// (Centre crosshair removed — point-and-click interactions don't need
+		// a reticle and the cursor itself is now the aim indicator.)
 
 		// HUD container — bottom-right, navy panel
 		UBorder* HudBg = New<UBorder>(Tree, TEXT("HudBg"));

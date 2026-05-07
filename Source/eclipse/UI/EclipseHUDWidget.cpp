@@ -42,24 +42,9 @@ bool UEclipseHUDWidget::Initialize()
 			UCanvasPanel::StaticClass(), TEXT("Canvas_0"));
 		WidgetTree->RootWidget = Root;
 
-		// ── Crosshair (build first so it's drawn behind everything else) ────
-		CrosshairImage = WidgetTree->ConstructWidget<UImage>(
-			UImage::StaticClass(), TEXT("CrosshairImage"));
-		FSlateBrush CrosshairBrush;
-		CrosshairBrush.DrawAs       = ESlateBrushDrawType::RoundedBox;
-		CrosshairBrush.ImageSize    = FVector2D(12.f, 12.f);
-		CrosshairBrush.TintColor    = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
-		CrosshairBrush.OutlineSettings.CornerRadii  = FVector4(6.f, 6.f, 6.f, 6.f);
-		CrosshairBrush.OutlineSettings.Color        = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.6f));
-		CrosshairBrush.OutlineSettings.Width        = 1.5f;
-		CrosshairBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-		CrosshairImage->SetBrush(CrosshairBrush);
-		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(CrosshairImage))
-		{
-			CSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			CSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			CSlot->SetSize(FVector2D(12.f, 12.f));
-		}
+		// (Centre crosshair removed — pointer-driven interactions don't need a
+		// reticle. The CrosshairImage UPROPERTY is kept so any WBP that still
+		// references it via BindWidgetOptional doesn't break the build.)
 
 		// ── HUD container — bottom-right ────────────────────────────────────
 		// CSS: position:fixed; bottom:20; right:20; bg:rgba(6,14,36,0.6);
