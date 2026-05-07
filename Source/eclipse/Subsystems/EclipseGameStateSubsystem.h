@@ -61,6 +61,21 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Thirst    = 80.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxThirst = 100.f;
 
+	// Passive drain rates (units per second). Tuned so a freshly-spawned
+	// player has ~3 minutes before Thirst empties and ~4 minutes for Heat —
+	// long enough to talk to NPCs and explore without being punished.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
+	float ThirstDrainPerSec = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
+	float HeatDrainPerSec = 0.4f;
+
+	// Called by AEclipsePlayerCharacter::Tick. Drains meters and broadcasts
+	// OnStateChanged at most once per second (throttled so the HUD bars don't
+	// re-render every frame).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	void TickMeters(float DeltaSeconds);
+
 	// ── Inventory ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<FName> Inventory;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<FName> EquippedClothing;
@@ -133,4 +148,8 @@ public:
 
 	// Inventory cap (matches JS)
 	static constexpr int32 InventoryMax = 6;
+
+private:
+	// Throttle accumulator for OnStateChanged broadcasts during meter drain.
+	float MetersBroadcastAccum = 0.f;
 };

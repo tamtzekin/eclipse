@@ -61,6 +61,26 @@ void UEclipseGameStateSubsystem::DrainThirst(float Amount)
 	NotifyChanged();
 }
 
+void UEclipseGameStateSubsystem::TickMeters(float DeltaSeconds)
+{
+	if (DeltaSeconds <= 0.f) return;
+
+	// Drain both meters. Allow values to dip below zero internally for
+	// fractional accuracy then clamp; the bars use the clamped value.
+	Thirst = FMath::Max(0.f, Thirst - ThirstDrainPerSec * DeltaSeconds);
+	Heat   = FMath::Max(0.f, Heat   - HeatDrainPerSec   * DeltaSeconds);
+
+	// Throttle delegate broadcasts to ~1Hz so the HUD doesn't re-bind every
+	// frame. The bar SetPercent inside UpdateBars is cheap, but UMG layout
+	// invalidation still has cost.
+	MetersBroadcastAccum += DeltaSeconds;
+	if (MetersBroadcastAccum >= 1.0f)
+	{
+		MetersBroadcastAccum = 0.f;
+		NotifyChanged();
+	}
+}
+
 void UEclipseGameStateSubsystem::GainHeat(float Amount)
 {
 	Heat = FMath::Clamp(Heat + Amount, 0.f, MaxHeat);

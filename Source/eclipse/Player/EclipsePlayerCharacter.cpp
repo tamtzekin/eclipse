@@ -12,6 +12,8 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
+#include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseDialogueSubsystem.h"
 
 AEclipsePlayerCharacter::AEclipsePlayerCharacter()
 {
@@ -196,6 +198,22 @@ void AEclipsePlayerCharacter::StopFaceTarget()
 void AEclipsePlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// ── Passive Heat / Thirst drain ──
+	// Pause draining while a dialogue is open so reading doesn't punish the
+	// player. Subsystem internally throttles its OnStateChanged broadcasts.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		UEclipseDialogueSubsystem* Dlg = GI->GetSubsystem<UEclipseDialogueSubsystem>();
+		const bool bDialogueOpen = Dlg && Dlg->IsDialogueOpen();
+		if (!bDialogueOpen)
+		{
+			if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+			{
+				State->TickMeters(DeltaTime);
+			}
+		}
+	}
 
 	if (bFacingTarget)
 	{
