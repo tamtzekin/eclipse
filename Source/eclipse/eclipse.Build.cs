@@ -42,7 +42,7 @@ public class eclipse : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"eclipse",
-			// Eclipse port (Justin) — added Phase 0
+			// Eclipse port (Justin)
 			"eclipse/Player",
 			"eclipse/NPC",
 			"eclipse/Room",
@@ -51,21 +51,15 @@ public class eclipse : ModuleRules
 			"eclipse/Save",
 			"eclipse/Items",
 			"eclipse/UI",
-			// Template variant code — left in for now, can be deleted with the
-			// matching .cpp/.h files once we no longer need it as reference.
-			"eclipse/Variant_Platforming",
-			"eclipse/Variant_Platforming/Animation",
+			// UE template Combat variant — kept for now as a future-features
+			// reference (melee, AI enemies, hit reactions, health UI).
+			// Not referenced by gameplay; safe to remove later if unused.
 			"eclipse/Variant_Combat",
 			"eclipse/Variant_Combat/AI",
 			"eclipse/Variant_Combat/Animation",
 			"eclipse/Variant_Combat/Gameplay",
 			"eclipse/Variant_Combat/Interfaces",
-			"eclipse/Variant_Combat/UI",
-			"eclipse/Variant_SideScrolling",
-			"eclipse/Variant_SideScrolling/AI",
-			"eclipse/Variant_SideScrolling/Gameplay",
-			"eclipse/Variant_SideScrolling/Interfaces",
-			"eclipse/Variant_SideScrolling/UI"
+			"eclipse/Variant_Combat/UI"
 		});
 
 		// Articy plugin runtime — uncomment after the Articy Importer plugin is
