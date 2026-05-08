@@ -68,6 +68,19 @@ bool UEclipseHUDWidget::Initialize()
 			UVerticalBox::StaticClass(), TEXT("HudColumn"));
 		HudBg->SetContent(HudColumn);
 
+		// ── Chapter clock readout — top of the cluster, right-aligned. ──
+		// Format: "CH 1 · 1:23". Updated every frame in NativeTick.
+		ChapterClockText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("ChapterClockText"));
+		ChapterClockText->SetText(FText::FromString(TEXT("CH 0 · 0:00")));
+		ChapterClockText->SetFont(MakeBMSPA(13, 3.f));
+		ChapterClockText->SetColorAndOpacity(FSlateColor(Cyan));
+		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(ChapterClockText))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			VS->SetHorizontalAlignment(HAlign_Right);
+		}
+
 		// ── Inventory ribbon — empty until UpdateInventory populates it. ──
 		// Uses a SizeBox to reserve a stable height so the rest of the HUD
 		// doesn't jump up/down when an item is picked up or dropped.
@@ -245,6 +258,47 @@ void UEclipseHUDWidget::NativeConstruct()
 		}
 	}
 
+	// ── Runtime injection of ChapterClockText if the WBP didn't ship one. ──
+	// Mounts the clock readout above the inventory ribbon (or directly above
+	// HudRow if the ribbon's also runtime-injected). Designer can still bake
+	// a designer-styled ChapterClockText into the WBP later — when present,
+	// BindWidgetOptional resolves and this block skips.
+	if (!ChapterClockText && WidgetTree)
+	{
+		using namespace EclipseUI;
+
+		// Find the HudColumn that holds the rest of the HUD. After the
+		// inventory injection above, it's "HudColumn_Runtime"; otherwise
+		// the populator-baked "HudColumn".
+		UVerticalBox* HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn_Runtime")));
+		if (!HudColumn) HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn")));
+
+		if (HudColumn)
+		{
+			ChapterClockText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("ChapterClockText_Runtime"));
+			ChapterClockText->SetText(FText::FromString(TEXT("CH 0  ·  0:00")));
+			ChapterClockText->SetFont(MakeBMSPA(13, 3.f));
+			ChapterClockText->SetColorAndOpacity(FSlateColor(Cyan));
+
+			HudColumn->AddChild(ChapterClockText);
+			HudColumn->ShiftChild(0, ChapterClockText);   // top of the column
+
+			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(ChapterClockText->Slot))
+			{
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+				VS->SetHorizontalAlignment(HAlign_Right);
+			}
+
+			UE_LOG(LogEclipse, Log, TEXT("HUD: ChapterClockText injected at runtime (parent=%s)"),
+				*HudColumn->GetName());
+		}
+		else
+		{
+			UE_LOG(LogEclipse, Warning, TEXT("HUD: no HudColumn found — ChapterClockText not injected"));
+		}
+	}
+
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
 	{
 		GS->OnStateChanged.AddDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
@@ -368,4 +422,29 @@ void UEclipseHUDWidget::UpdateInventory()
 		// next to the more prominent inventory items.
 		AppendChip(MakeChip(Label, CreamDim));
 	}
+}
+
+void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
+{
+	Super::NativeTick(InGeometry, DeltaSeconds);
+	UpdateChapterClock();
+}
+
+void UEclipseHUDWidget::UpdateChapterClock()
+{
+	if (!ChapterClockText) return;
+	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return;
+
+	// Time-of-day readout — H:MM, 24-hour, starting at 0:00 (midnight) and
+	// counting up. Each in-game *minute* on the clock advances when the
+	// underlying ChapterElapsedSeconds accumulator crosses another 60s of
+	// game-time. Wraps every 24 hours so the display stays a real clock
+	// rather than drifting to "25:00" after a long session.
+	const float Elapsed     = FMath::Max(0.f, GS->ChapterElapsedSeconds);
+	const int32 TotalMins   = FMath::FloorToInt(Elapsed / 60.f);
+	const int32 HourOfDay   = (TotalMins / 60) % 24;
+	const int32 MinOfHour   = TotalMins % 60;
+	ChapterClockText->SetText(FText::FromString(
+		FString::Printf(TEXT("CH %d  ·  %d:%02d"), GS->Chapter, HourOfDay, MinOfHour)));
 }

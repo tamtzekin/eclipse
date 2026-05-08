@@ -54,10 +54,19 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> InventoryRibbon;
 
+	// Chapter clock readout — "CH 1 · 1:23". Updated on every NativeTick
+	// because the clock advances continuously (the meters' 1Hz throttle
+	// would feel choppy here). Designer-styleable in the WBP details panel.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ChapterClockText;
+
 private:
 	UFUNCTION()
 	void HandleStateChanged();
 
+	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
+
 	void UpdateBars();
 	void UpdateInventory();
+	void UpdateChapterClock();
 };

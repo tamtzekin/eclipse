@@ -30,6 +30,7 @@ public:
 	UPROPERTY() TArray<FEclipseMetNpc> MetNPCs;
 	UPROPERTY() bool bVipAccessGranted = false;
 	UPROPERTY() int32 Chapter = 0;
+	UPROPERTY() float ChapterElapsedSeconds = 0.f;
 
 	// World state
 	UPROPERTY() FName CurrentLevelKey;          // e.g. "Bathroom"

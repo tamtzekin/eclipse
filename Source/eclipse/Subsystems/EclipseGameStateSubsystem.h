@@ -48,6 +48,12 @@ struct FEclipseSaveSlotInfo
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const FText&, Title);
 
+// Fires after Chapter is incremented by the clock. Subsystems hook this for
+// NPC shuffle, weather rolls, music swaps, etc. (Currently nothing else
+// subscribes — the hook is exposed so v2+ work can opt in without churning
+// the chapter advance code.)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterAdvanced, int32, NewChapter);
+
 /**
  * Holds player meta-state across levels. Exposed to UMG via delegates so the
  * HUD widgets re-bind once at construction and react to broadcasts.
@@ -106,6 +112,39 @@ public:
 	// ── Time ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time") int32 Chapter = 0;
 
+	// Chapter clock — accumulates real seconds since the chapter started.
+	// When it crosses GetChapterDurationSeconds() the chapter auto-advances.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
+	float ChapterElapsedSeconds = 0.f;
+
+	// Default clock length per chapter. Designer-tunable; if a
+	// UEclipseChapterDefinition is provided for the current chapter via
+	// SetChapterTable, that asset's Duration overrides this fallback.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time")
+	float DefaultChapterDurationSeconds = 90.f;
+
+	// True while the clock is ticking. Auto-paused during dialogue (the
+	// player character already skips TickMeters when dialogue is open) and
+	// while the world is paused (pause menu).
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
+	bool bClockRunning = true;
+
+	// Real-seconds → game-seconds multiplier applied per TickChapterClock.
+	//   1.0 — real-time (30 real-sec = 0:00:30 game-time)
+	//   2.0 — 2× faster (30 real-sec = 0:01:00 game-time)
+	//   0.5 — half-speed (60 real-sec = 0:00:30 game-time)
+	// Designer-tunable per build. The HUD readout shows H:MM, so a real-time
+	// session naturally takes 60 real-min to advance one game-hour.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time",
+		meta = (ClampMin = "0.05", ClampMax = "20.0"))
+	float ClockScale = 1.0f;
+
+	// Optional table of per-chapter names + durations. Index 0 = Chapter 0,
+	// index 1 = Chapter 1, etc. Beyond the table → default duration + the
+	// fallback "Chapter N" title.
+	UPROPERTY(BlueprintReadWrite, Category = "Eclipse|Time")
+	TArray<TObjectPtr<class UEclipseChapterDefinition>> ChapterTable;
+
 	// ── Mutations (broadcast on change) ──
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool AddItem(FName ItemId);
@@ -128,6 +167,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Quest")
 	void OnChapterTransition();
 
+	// Per-frame clock tick. Hooked from the existing TickMeters call site,
+	// so it auto-pauses when meters are paused (dialogue open, pause menu).
+	void TickChapterClock(float DeltaSeconds);
+
+	// Read the active chapter's duration from the table, or fall back to
+	// DefaultChapterDurationSeconds. Always returns >0.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	float GetChapterDurationSeconds() const;
+
+	// Read the active chapter's title (for the chapter card overlay).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	FText GetChapterTitle() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	void SetClockRunning(bool bRunning) { bClockRunning = bRunning; }
+
+	// Skip directly to the next chapter (debug/cheat). Triggers the same
+	// transition flow as the auto-advance.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	void SkipChapter();
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Quest")
 	bool HasMetNPC(FName Name) const;
 
@@ -146,6 +206,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	void ShowChapterCard(const FText& Title) { OnChapterCardRequested.Broadcast(Title); }
+
+	// Fires once per chapter advance, AFTER Chapter is incremented and the
+	// chapter card has been requested. v2+ subsystems (NPC shuffle, music
+	// swap, weather) hook here.
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Time")
+	FEclipseChapterAdvanced OnChapterAdvanced;
 
 	// Convenience for tests / Blueprint:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|State")

@@ -364,12 +364,24 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			S->SetPosition(FVector2D(-20.f, -20.f));
 		}
 
-		// HudBg holds a vertical column: [InventoryRibbon] above [HudRow].
-		// The runtime widget rebuilds chip contents per-tick from game state
-		// — the populator just creates the named container so designers can
-		// re-skin it in the WBP if they want.
+		// HudBg holds a vertical column:
+		//   [ChapterClockText] above [InventoryRibbon] above [HudRow].
+		// The runtime widget rebuilds chip contents and the clock label
+		// per-tick from game state — the populator just creates the named
+		// containers so designers can re-skin them in the WBP if they want.
 		UVerticalBox* HudColumn = New<UVerticalBox>(Tree, TEXT("HudColumn"));
 		HudBg->SetContent(HudColumn);
+
+		// Chapter clock — top of the column, right-aligned.
+		UTextBlock* ChapterClockText = New<UTextBlock>(Tree, TEXT("ChapterClockText"));
+		ChapterClockText->SetText(FText::FromString(TEXT("CH 0  ·  0:00")));
+		ChapterClockText->SetFont(MakeBMSPA(13, 3.f));
+		ChapterClockText->SetColorAndOpacity(FSlateColor(Cyan));
+		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(ChapterClockText))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			VS->SetHorizontalAlignment(HAlign_Right);
+		}
 
 		UHorizontalBox* InventoryRibbon = New<UHorizontalBox>(Tree, TEXT("InventoryRibbon"));
 		USizeBox* InvSize = New<USizeBox>(Tree, TEXT("InventoryRibbonSize"));
