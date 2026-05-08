@@ -9,7 +9,6 @@
 class UProgressBar;
 class UTextBlock;
 class UImage;
-class UHorizontalBox;
 
 /**
  * Bottom-right HUD cluster — heat bar, portrait box, thirst bar.
@@ -48,12 +47,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CrosshairImage;
 
-	// Horizontal strip above the portrait+meters row that lists picked-up
-	// items as small "chips". Built in Initialize() if the WBP doesn't
-	// provide one. Mirrors the JS prototype's inventory-pill row.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> InventoryRibbon;
-
 	// Chapter clock readout — "CH 1 · 1:23". Updated on every NativeTick
 	// because the clock advances continuously (the meters' 1Hz throttle
 	// would feel choppy here). Designer-styleable in the WBP details panel.
@@ -67,6 +60,5 @@ private:
 	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
 
 	void UpdateBars();
-	void UpdateInventory();
 	void UpdateChapterClock();
 };

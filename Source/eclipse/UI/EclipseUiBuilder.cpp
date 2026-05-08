@@ -22,6 +22,8 @@
 #include "Components/SizeBox.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/Image.h"
@@ -34,6 +36,8 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "UObject/SavePackage.h"
+#include "FileHelpers.h"
 
 namespace
 {
@@ -80,6 +84,19 @@ namespace
 		WBP->MarkPackageDirty();
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
 		FKismetEditorUtilities::CompileBlueprint(WBP);
+
+		// Persist to disk so an editor restart doesn't revert to the stale
+		// on-disk version. Without this the populator's changes only live
+		// in memory until the user manually saves the asset.
+		if (UPackage* Pkg = WBP->GetOutermost())
+		{
+			TArray<UPackage*> ToSave;
+			ToSave.Add(Pkg);
+			const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages(ToSave, /*bOnlyDirty=*/ false);
+			UE_LOG(LogEclipse, Log, TEXT("UiBuilder: save '%s' -> %s"),
+				*AssetPath, bSaved ? TEXT("ok") : TEXT("FAILED"));
+		}
+
 		UE_LOG(LogEclipse, Log, TEXT("UiBuilder: populated '%s'"), *AssetPath);
 		return true;
 	}
@@ -364,11 +381,9 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			S->SetPosition(FVector2D(-20.f, -20.f));
 		}
 
-		// HudBg holds a vertical column:
-		//   [ChapterClockText] above [InventoryRibbon] above [HudRow].
-		// The runtime widget rebuilds chip contents and the clock label
-		// per-tick from game state — the populator just creates the named
-		// containers so designers can re-skin them in the WBP if they want.
+		// HudBg holds a vertical column: [ChapterClockText] above [HudRow].
+		// (Inventory ribbon was removed once the I-key inventory overlay
+		// took over chip display — the HUD only carries clock + meters now.)
 		UVerticalBox* HudColumn = New<UVerticalBox>(Tree, TEXT("HudColumn"));
 		HudBg->SetContent(HudColumn);
 
@@ -380,16 +395,6 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(ChapterClockText))
 		{
 			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
-			VS->SetHorizontalAlignment(HAlign_Right);
-		}
-
-		UHorizontalBox* InventoryRibbon = New<UHorizontalBox>(Tree, TEXT("InventoryRibbon"));
-		USizeBox* InvSize = New<USizeBox>(Tree, TEXT("InventoryRibbonSize"));
-		InvSize->SetMinDesiredHeight(22.f);
-		InvSize->AddChild(InventoryRibbon);
-		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(InvSize))
-		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
 			VS->SetHorizontalAlignment(HAlign_Right);
 		}
 
@@ -754,6 +759,194 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
 			VS->SetHorizontalAlignment(HAlign_Center);
 		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Inventory WBP — full-screen dim + centred chalk panel + held/equipped grid
+//  + detail row + USE/EQUIP/DROP/CLOSE action buttons. Mirrors the runtime
+//  fallback in UEclipseInventoryWidget::BuildFallbackTree so the asset can
+//  be designer-restyled without giving up the named children that the C++
+//  class binds via BindWidgetOptional.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		// Fullscreen dim under the panel
+		UBorder* Dim = New<UBorder>(Tree, TEXT("Dim"));
+		Dim->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.65f)));
+		Dim->SetPadding(FMargin(0.f));
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Dim))
+		{
+			S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f));
+		}
+
+		// Centred chalk panel — Disco Elysium-style slate slab
+		UBorder* Panel = New<UBorder>(Tree, TEXT("InventoryPanel"));
+		Panel->SetBrush(RoundedBrush(
+			FLinearColor(0.039f, 0.043f, 0.059f, 0.97f),
+			FLinearColor(0.945f, 0.929f, 0.851f, 0.85f),
+			1.f, 6.f));
+		Panel->SetPadding(FMargin(36.f, 28.f));
+		Panel->SetHorizontalAlignment(HAlign_Fill);
+		Panel->SetVerticalAlignment(VAlign_Fill);
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			S->SetAlignment(FVector2D(0.5f, 0.5f));
+			S->SetSize(FVector2D(820.f, 560.f));
+			S->SetZOrder(1);
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("InventoryColumn"));
+		Panel->SetContent(Column);
+
+		// ── Tab strip — CONSUMABLES / WEARABLES / KEY ────────────────────
+		UHorizontalBox* TabStrip = New<UHorizontalBox>(Tree, TEXT("TabStrip"));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(TabStrip))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		auto MakeTab = [&](const FString& Label, FName WidgetName)
+		{
+			UButton* Btn = New<UButton>(Tree, WidgetName);
+			FButtonStyle BS;
+			// Tab buttons render flat — selected/unselected styling is set
+			// at runtime by the C++ widget (it tints the inner label colour
+			// to highlight the active tab).
+			BS.Normal   = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.f));
+			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
+			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.10f));
+			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			Btn->SetStyle(BS);
+
+			UTextBlock* T = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
+			T->SetText(FText::FromString(Label));
+			T->SetFont(MakeBMSPA(20, 4.f));
+			T->SetColorAndOpacity(FSlateColor(CreamDim));
+			T->SetJustification(ETextJustify::Center);
+			Btn->SetContent(T);
+
+			if (UHorizontalBoxSlot* HS = TabStrip->AddChildToHorizontalBox(Btn))
+			{
+				HS->SetPadding(FMargin(14.f, 6.f));
+			}
+		};
+
+		MakeTab(TEXT("CONSUMABLES"), TEXT("TabConsumables"));
+		MakeTab(TEXT("WEARABLES"),   TEXT("TabWearables"));
+		MakeTab(TEXT("KEY"),         TEXT("TabKey"));
+
+		// Thin chalk separator under the tabs
+		UBorder* TabUnderline = New<UBorder>(Tree, TEXT("TabUnderline"));
+		TabUnderline->SetBrush(SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.35f)));
+		TabUnderline->SetPadding(FMargin(0.f));
+		USizeBox* UnderlineSize = New<USizeBox>(Tree, TEXT("TabUnderlineSize"));
+		UnderlineSize->SetHeightOverride(1.f);
+		UnderlineSize->AddChild(TabUnderline);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(UnderlineSize))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// ── 6×3 item grid ────────────────────────────────────────────────
+		UUniformGridPanel* ItemGrid = New<UUniformGridPanel>(Tree, TEXT("ItemGrid"));
+		ItemGrid->SetSlotPadding(FMargin(6.f));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(ItemGrid))
+		{
+			VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
+		// Pre-populate 18 empty slot frames so the layout reads even with
+		// no items. Runtime overlays chips for items in the active tab.
+		for (int32 r = 0; r < 3; ++r)
+		{
+			for (int32 c = 0; c < 6; ++c)
+			{
+				UBorder* Slot = New<UBorder>(Tree,
+					FName(*FString::Printf(TEXT("Slot_%d_%d"), r, c)));
+				Slot->SetBrush(RoundedBrush(
+					FLinearColor(0.f, 0.f, 0.f, 0.f),
+					FLinearColor(0.945f, 0.929f, 0.851f, 0.6f),
+					1.f, 2.f));
+				Slot->SetPadding(FMargin(0.f));
+				USizeBox* SlotSize = New<USizeBox>(Tree,
+					FName(*FString::Printf(TEXT("SlotSize_%d_%d"), r, c)));
+				SlotSize->SetWidthOverride(96.f);
+				SlotSize->SetHeightOverride(72.f);
+				SlotSize->AddChild(Slot);
+				if (UUniformGridSlot* GS = ItemGrid->AddChildToUniformGrid(SlotSize, r, c))
+				{
+					GS->SetHorizontalAlignment(HAlign_Center);
+					GS->SetVerticalAlignment(VAlign_Center);
+				}
+			}
+		}
+
+		// ── Detail panel ─────────────────────────────────────────────────
+		UVerticalBox* DetailPanel = New<UVerticalBox>(Tree, TEXT("DetailPanel"));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(DetailPanel))
+			VS->SetPadding(FMargin(0.f, 24.f, 0.f, 0.f));
+
+		UTextBlock* SelectedNameText = New<UTextBlock>(Tree, TEXT("SelectedNameText"));
+		SelectedNameText->SetText(FText::FromString(TEXT("(select an item)")));
+		SelectedNameText->SetFont(MakeBMSPA(20, 4.f));
+		SelectedNameText->SetColorAndOpacity(FSlateColor(Cyan));
+		if (UVerticalBoxSlot* VS = DetailPanel->AddChildToVerticalBox(SelectedNameText))
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+
+		UTextBlock* SelectedDescText = New<UTextBlock>(Tree, TEXT("SelectedDescText"));
+		SelectedDescText->SetText(FText::FromString(TEXT("Click a chip above to inspect it.")));
+		SelectedDescText->SetColorAndOpacity(FSlateColor(CreamDim));
+		SelectedDescText->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* VS = DetailPanel->AddChildToVerticalBox(SelectedDescText))
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+
+		// ── Action row ───────────────────────────────────────────────────
+		UHorizontalBox* Actions = New<UHorizontalBox>(Tree, TEXT("ActionRow"));
+		DetailPanel->AddChildToVerticalBox(Actions);
+
+		auto MakeBtn = [&](const FString& Label, FName WidgetName)
+		{
+			UButton* Btn = New<UButton>(Tree, WidgetName);
+			FButtonStyle BS;
+			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
+			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
+			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
+			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			Btn->SetStyle(BS);
+
+			UTextBlock* T = New<UTextBlock>(Tree, FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
+			T->SetText(FText::FromString(Label));
+			T->SetColorAndOpacity(FSlateColor(Cream));
+			T->SetJustification(ETextJustify::Center);
+			Btn->SetContent(T);
+
+			if (UHorizontalBoxSlot* HS = Actions->AddChildToHorizontalBox(Btn))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetPadding(FMargin(4.f, 8.f));
+			}
+		};
+
+		MakeBtn(TEXT("USE"),    TEXT("UseBtn"));
+		MakeBtn(TEXT("EQUIP"),  TEXT("EquipBtn"));
+		MakeBtn(TEXT("DROP"),   TEXT("DropBtn"));
+		MakeBtn(TEXT("CLOSE"),  TEXT("CloseBtn"));
 	});
 #else
 	(void)WBPAssetPath; return false;

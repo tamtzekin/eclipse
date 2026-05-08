@@ -50,6 +50,12 @@ protected:
 	/** Esc-key handler — toggles the pause menu overlay. */
 	void TogglePauseMenu();
 
+	/** I-key handler — toggles the inventory overlay. */
+	void ToggleInventory();
+
 	UPROPERTY()
 	TObjectPtr<class UEclipsePauseMenuWidget> ActivePauseMenu;
+
+	UPROPERTY()
+	TObjectPtr<class UEclipseInventoryWidget> ActiveInventory;
 };

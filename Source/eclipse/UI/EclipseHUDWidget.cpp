@@ -81,21 +81,6 @@ bool UEclipseHUDWidget::Initialize()
 			VS->SetHorizontalAlignment(HAlign_Right);
 		}
 
-		// ── Inventory ribbon — empty until UpdateInventory populates it. ──
-		// Uses a SizeBox to reserve a stable height so the rest of the HUD
-		// doesn't jump up/down when an item is picked up or dropped.
-		InventoryRibbon = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), TEXT("InventoryRibbon"));
-		USizeBox* InvSize = WidgetTree->ConstructWidget<USizeBox>(
-			USizeBox::StaticClass(), TEXT("InventoryRibbonSize"));
-		InvSize->SetMinDesiredHeight(22.f);
-		InvSize->AddChild(InventoryRibbon);
-		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(InvSize))
-		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-			VS->SetHorizontalAlignment(HAlign_Right);
-		}
-
 		// Inner horizontal layout: portrait | heat-cluster | thirst-cluster
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(), TEXT("HudRow"));
@@ -215,63 +200,17 @@ void UEclipseHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	// ── Runtime injection of InventoryRibbon if the WBP didn't ship one. ──
-	// Same trick as BodyWords on the dialogue widget: legacy WBP layouts only
-	// have HudRow under HudBg. Insert a vertical column and slot the ribbon
-	// above HudRow so the inventory chips work regardless of asset state.
-	if (!InventoryRibbon && WidgetTree)
-	{
-		UWidget* HudRow = WidgetTree->FindWidget(TEXT("HudRow"));
-		UPanelWidget* RowParent = HudRow ? HudRow->GetParent() : nullptr;
-		if (HudRow && RowParent && RowParent->GetClass() != UVerticalBox::StaticClass())
-		{
-			// HudRow currently sits directly inside HudBg (a Border). Wrap
-			// HudRow in a fresh VerticalBox and put the InventoryRibbon as
-			// the first child.
-			if (UBorder* HudBg = Cast<UBorder>(RowParent))
-			{
-				UVerticalBox* HudColumn = WidgetTree->ConstructWidget<UVerticalBox>(
-					UVerticalBox::StaticClass(), TEXT("HudColumn_Runtime"));
-
-				// Reparent HudRow under the new column.
-				HudBg->SetContent(HudColumn);
-				HudColumn->AddChild(HudRow);   // HudRow becomes index 0 here
-
-				InventoryRibbon = WidgetTree->ConstructWidget<UHorizontalBox>(
-					UHorizontalBox::StaticClass(), TEXT("InventoryRibbon_Runtime"));
-				USizeBox* InvSize = WidgetTree->ConstructWidget<USizeBox>(
-					USizeBox::StaticClass(), TEXT("InventoryRibbonSize_Runtime"));
-				InvSize->SetMinDesiredHeight(22.f);
-				InvSize->AddChild(InventoryRibbon);
-
-				HudColumn->AddChild(InvSize);
-				HudColumn->ShiftChild(0, InvSize);   // ribbon above the row
-
-				if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(InvSize->Slot))
-				{
-					VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-					VS->SetHorizontalAlignment(HAlign_Right);
-				}
-
-				UE_LOG(LogEclipse, Log, TEXT("HUD: InventoryRibbon injected at runtime"));
-			}
-		}
-	}
-
 	// ── Runtime injection of ChapterClockText if the WBP didn't ship one. ──
-	// Mounts the clock readout above the inventory ribbon (or directly above
-	// HudRow if the ribbon's also runtime-injected). Designer can still bake
-	// a designer-styled ChapterClockText into the WBP later — when present,
-	// BindWidgetOptional resolves and this block skips.
+	// Mounts the clock readout at the top of the HUD column. Designer can
+	// still bake a designer-styled ChapterClockText into the WBP later —
+	// when present, BindWidgetOptional resolves and this block skips.
 	if (!ChapterClockText && WidgetTree)
 	{
 		using namespace EclipseUI;
 
-		// Find the HudColumn that holds the rest of the HUD. After the
-		// inventory injection above, it's "HudColumn_Runtime"; otherwise
-		// the populator-baked "HudColumn".
-		UVerticalBox* HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn_Runtime")));
-		if (!HudColumn) HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn")));
+		// Find the HudColumn that holds the rest of the HUD — populator
+		// bakes it as "HudColumn".
+		UVerticalBox* HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn")));
 
 		if (HudColumn)
 		{
@@ -305,7 +244,6 @@ void UEclipseHUDWidget::NativeConstruct()
 	}
 
 	UpdateBars();
-	UpdateInventory();
 }
 
 void UEclipseHUDWidget::NativeDestruct()
@@ -321,7 +259,6 @@ void UEclipseHUDWidget::NativeDestruct()
 void UEclipseHUDWidget::HandleStateChanged()
 {
 	UpdateBars();
-	UpdateInventory();
 }
 
 void UEclipseHUDWidget::UpdateBars()
@@ -347,80 +284,6 @@ void UEclipseHUDWidget::UpdateBars()
 	{
 		ThirstBar->SetPercent(FMath::Clamp(ThirstPct, 0.f, 1.f));
 		ThirstBar->SetFillColorAndOpacity(EclipseUI::Cyan);
-	}
-}
-
-void UEclipseHUDWidget::UpdateInventory()
-{
-	using namespace EclipseUI;
-
-	if (!InventoryRibbon || !WidgetTree) return;
-
-	UGameInstance* GI = GetGameInstance();
-	UEclipseGameStateSubsystem* GS = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	if (!GS) return;
-
-	// Drop everything; we'll rebuild from the current inventory state. The
-	// chip count is small (cap = 6 + wristband) so churn is negligible.
-	InventoryRibbon->ClearChildren();
-
-	// Helper — small chalk-tinted Border with a BMSPA label inside, used for
-	// each inventory chip and the wristband marker.
-	auto MakeChip = [&](const FString& Label, const FLinearColor& Tint) -> UWidget*
-	{
-		UBorder* Chip = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-		Chip->SetBrush(RoundedBrush(
-			/*Bg=*/ FLinearColor(Tint.R, Tint.G, Tint.B, 0.10f),
-			/*Outline=*/ FLinearColor(Tint.R, Tint.G, Tint.B, 0.85f),
-			/*OutlineWidth=*/ 1.f,
-			/*Radius=*/ 3.f));
-		Chip->SetPadding(FMargin(8.f, 3.f));
-		Chip->SetHorizontalAlignment(HAlign_Center);
-		Chip->SetVerticalAlignment(VAlign_Center);
-
-		UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		Text->SetText(FText::FromString(Label.ToUpper()));
-		Text->SetFont(MakeBMSPA(11, 3.f));
-		Text->SetColorAndOpacity(FSlateColor(Tint));
-		Chip->SetContent(Text);
-		return Chip;
-	};
-
-	auto AppendChip = [&](UWidget* Chip)
-	{
-		if (UHorizontalBoxSlot* HS = InventoryRibbon->AddChildToHorizontalBox(Chip))
-		{
-			HS->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
-			HS->SetVerticalAlignment(VAlign_Center);
-		}
-	};
-
-	// Wristband sits first — it's the chapter-1 entry token, narratively
-	// distinct from the items the player picks up afterwards.
-	if (GS->bHasWristband)
-	{
-		AppendChip(MakeChip(TEXT("WRISTBAND"), Cyan));
-	}
-
-	// Inventory items in pickup order. ItemId is whatever the ItemActor was
-	// configured with (e.g. "hair", "eye", "drink") — we just uppercase it.
-	for (const FName& Id : GS->Inventory)
-	{
-		AppendChip(MakeChip(Id.ToString(), Cream));
-	}
-
-	// Token currencies — Word / Rhythm / Shadow. Only shown once the player
-	// has any of that token; zero counts stay collapsed so the ribbon doesn't
-	// clutter the chapter-1 view (when all three are zero).
-	static const TCHAR* TokenLabels[] = { TEXT("WORD"), TEXT("RHYTHM"), TEXT("SHADOW") };
-	for (int32 i = 0; i < 3 && i < GS->Tokens.Num(); ++i)
-	{
-		const int32 Count = GS->Tokens[i];
-		if (Count <= 0) continue;
-		const FString Label = FString::Printf(TEXT("%s %d"), TokenLabels[i], Count);
-		// Tokens use a slightly dimmer chalk so they read as secondary state
-		// next to the more prominent inventory items.
-		AppendChip(MakeChip(Label, CreamDim));
 	}
 }
 

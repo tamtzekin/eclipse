@@ -9,7 +9,19 @@
 UENUM(BlueprintType)
 enum class EEclipseItemType : uint8
 {
-	Consumable, Held, Special, Quest
+	// Single-use, consumed on USE (drinks, pills, food). Inventory surfaces
+	// these as a USE button.
+	Usable     UMETA(DisplayName = "Consumable"),
+
+	// Worn until manually unequipped. Effects (heat/cool/drain modifiers)
+	// apply continuously while equipped. Inventory surfaces these as EQUIP.
+	Equippable UMETA(DisplayName = "Wearable"),
+
+	// Quest items — held but not consumable. Dialogue / quest beats read
+	// the item via QuestFlag and decide outcomes. Hair + Eye are Key. The
+	// inventory surfaces these read-only (USE / EQUIP both disabled, only
+	// DROP works — and only if the designer marks them droppable later).
+	Key        UMETA(DisplayName = "Key")
 };
 
 USTRUCT(BlueprintType)
@@ -37,7 +49,7 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FString Icon;            // emoji or short string
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FText Description;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FLinearColor TintColor = FLinearColor::White;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemType Type = EEclipseItemType::Held;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemType Type = EEclipseItemType::Usable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FEclipseItemEffect Effect;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Duration = 0.f;    // 0 = permanent / non-timed
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "word"|"rhythm"|"shadow"|None

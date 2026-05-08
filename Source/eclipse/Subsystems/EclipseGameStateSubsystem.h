@@ -103,6 +103,23 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<int32> Tokens;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") bool bHasWristband = false;
 
+	// Per-item preferred slot index inside the inventory overlay's 6×3 grid
+	// (0..17). Drives sparse "place where I dropped it" layout — items don't
+	// re-pack to the left when neighbours are removed. Cleared on removal /
+	// unequip. Auto-assigned on add when not already set.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory")
+	TMap<FName, int32> ItemSlotPositions;
+
+	// Item / clothing tables — resolved on subsystem init via the soft paths
+	// /Game/Justin/Data/DT_Items and /Game/Justin/Data/DT_Clothing if they
+	// exist. The inventory UI walks Inventory + EquippedClothing FName arrays
+	// and looks up each entry's display row from these tables.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Inventory")
+	TObjectPtr<class UDataTable> ItemTable;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Inventory")
+	TObjectPtr<class UDataTable> ClothingTable;
+
 	// ── Quest ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Quest") FEclipseQuestState Quest;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Quest") TArray<FEclipseMetNpc> MetNPCs;
@@ -157,6 +174,40 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool UnequipClothing(FName ClothingId);
+
+	// Move an item to a new position inside the Inventory array. Used by the
+	// inventory UI's drag-to-reorder. NewIdx is clamped to [0, Inventory.Num()-1].
+	// Returns true if anything actually moved (false for no-op or unknown id).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool ReorderInventory(FName ItemId, int32 NewIdx);
+
+	// Same idea, but for the EquippedClothing array.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool ReorderEquippedClothing(FName ClothingId, int32 NewIdx);
+
+	// Set an item's preferred inventory-grid slot. Persists across open/close
+	// so manual layouts stick. Broadcasts OnStateChanged.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	void SetItemSlot(FName ItemId, int32 SlotIndex);
+
+	// Swap the slot positions of two items. SlotA/SlotB are the slots they
+	// currently occupy (used to seed positions for items that don't yet
+	// have an entry in ItemSlotPositions).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	void SwapItemSlots(FName ItemA, int32 SlotA, FName ItemB, int32 SlotB);
+
+	// Consume an item — applies its row's effect (currently: drink restores
+	// thirst, hair triggers Quest.bHasHair, eye triggers Quest.bHasEye), then
+	// removes it from the inventory. No-op if the item ID isn't held.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool UseItem(FName ItemId);
+
+	// Lookup helpers for the inventory UI.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool GetItemRow(FName ItemId, struct FEclipseItemRow& OutRow) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool GetClothingRow(FName ClothingId, struct FEclipseClothingRow& OutRow) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void DrainThirst(float Amount);

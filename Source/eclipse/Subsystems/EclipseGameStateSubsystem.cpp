@@ -4,6 +4,9 @@
 #include "Eclipse.h"
 #include "Save/EclipseSaveGame.h"
 #include "Data/EclipseChapterDefinition.h"
+#include "Data/EclipseItemDefinition.h"
+#include "Data/EclipseClothingDefinition.h"
+#include "Engine/DataTable.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -16,6 +19,22 @@ void UEclipseGameStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 {
 	Super::Initialize(Collection);
 	UE_LOG(LogEclipse, Log, TEXT("GameStateSubsystem::Initialize"));
+
+	// Auto-load the inventory data tables if they exist on disk and the
+	// designer hasn't already wired them up. The InventoryWidget reads
+	// from these to render display names / descriptions / icons.
+	if (!ItemTable)
+	{
+		ItemTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Justin/Data/DT_Items.DT_Items"));
+		UE_LOG(LogEclipse, Log, TEXT("ItemTable auto-load %s"),
+			ItemTable ? TEXT("OK") : TEXT("not present (designer can author later)"));
+	}
+	if (!ClothingTable)
+	{
+		ClothingTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Justin/Data/DT_Clothing.DT_Clothing"));
+		UE_LOG(LogEclipse, Log, TEXT("ClothingTable auto-load %s"),
+			ClothingTable ? TEXT("OK") : TEXT("not present (designer can author later)"));
+	}
 }
 
 void UEclipseGameStateSubsystem::Deinitialize()
@@ -42,6 +61,7 @@ bool UEclipseGameStateSubsystem::RemoveItem(FName ItemId)
 	const int32 Idx = Inventory.IndexOfByKey(ItemId);
 	if (Idx == INDEX_NONE) return false;
 	Inventory.RemoveAt(Idx);
+	ItemSlotPositions.Remove(ItemId);   // free the grid slot
 	if (ItemId == TEXT("wristband")) bHasWristband = false;
 	NotifyChanged();
 	return true;
@@ -58,8 +78,128 @@ bool UEclipseGameStateSubsystem::EquipClothing(FName ClothingId)
 bool UEclipseGameStateSubsystem::UnequipClothing(FName ClothingId)
 {
 	const int32 N = EquippedClothing.Remove(ClothingId);
-	if (N > 0) NotifyChanged();
+	if (N > 0)
+	{
+		ItemSlotPositions.Remove(ClothingId);
+		NotifyChanged();
+	}
 	return N > 0;
+}
+
+void UEclipseGameStateSubsystem::SetItemSlot(FName ItemId, int32 SlotIndex)
+{
+	if (ItemId.IsNone() || SlotIndex < 0) return;
+	const int32* Existing = ItemSlotPositions.Find(ItemId);
+	if (Existing && *Existing == SlotIndex) return;   // no-op
+	ItemSlotPositions.Add(ItemId, SlotIndex);
+	NotifyChanged();
+}
+
+void UEclipseGameStateSubsystem::SwapItemSlots(FName ItemA, int32 SlotA, FName ItemB, int32 SlotB)
+{
+	if (ItemA.IsNone() || ItemB.IsNone() || ItemA == ItemB) return;
+	// Seed missing entries from the visual slots that the inventory UI
+	// passed in — that way swapping items the player has never moved still
+	// produces a stable map (instead of one item snapping back to slot 0).
+	if (!ItemSlotPositions.Contains(ItemA) && SlotA >= 0) ItemSlotPositions.Add(ItemA, SlotA);
+	if (!ItemSlotPositions.Contains(ItemB) && SlotB >= 0) ItemSlotPositions.Add(ItemB, SlotB);
+
+	const int32 PrevA = ItemSlotPositions.FindRef(ItemA);
+	const int32 PrevB = ItemSlotPositions.FindRef(ItemB);
+	ItemSlotPositions.Add(ItemA, PrevB);
+	ItemSlotPositions.Add(ItemB, PrevA);
+	NotifyChanged();
+}
+
+// Shared helper — pull `ItemId` out of `Array` and re-insert at NewIdx.
+// Returns true iff the array actually changed order. Centralised here so
+// both reorder entry-points share the (slightly fiddly) shift-after-remove
+// math; getting that wrong silently corrupts the order in subtle ways.
+static bool ReorderArray(TArray<FName>& Array, FName ItemId, int32 NewIdx)
+{
+	const int32 OldIdx = Array.IndexOfByKey(ItemId);
+	if (OldIdx == INDEX_NONE) return false;
+	if (Array.Num() <= 1)     return false;
+
+	// Clamp to a valid post-remove insertion point. Remember NewIdx is
+	// expressed against the *current* array (before removal); after we
+	// strip the item, anything to the right shifts left by one.
+	int32 Target = FMath::Clamp(NewIdx, 0, Array.Num() - 1);
+	if (Target == OldIdx) return false;
+
+	Array.RemoveAt(OldIdx);
+	if (Target > OldIdx) --Target;          // adjust for the gap left behind
+	Array.Insert(ItemId, Target);
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::ReorderInventory(FName ItemId, int32 NewIdx)
+{
+	if (!ReorderArray(Inventory, ItemId, NewIdx)) return false;
+	NotifyChanged();
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::ReorderEquippedClothing(FName ClothingId, int32 NewIdx)
+{
+	if (!ReorderArray(EquippedClothing, ClothingId, NewIdx)) return false;
+	NotifyChanged();
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
+{
+	if (!Inventory.Contains(ItemId)) return false;
+
+	// Resolve the row so we can read effects + quest flags. If we don't
+	// have a table yet, just remove the item — designers can wire the
+	// table later.
+	FEclipseItemRow Row;
+	const bool bHasRow = GetItemRow(ItemId, Row);
+	if (bHasRow)
+	{
+		// Key items can't be used — they're held until a dialogue / quest
+		// beat consumes them. The inventory UI greys USE for these too,
+		// but enforce here as well so any caller is safe.
+		if (Row.Type == EEclipseItemType::Key)
+		{
+			UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' refused — Key item, can't be used directly"),
+				*ItemId.ToString());
+			return false;
+		}
+
+		// Usable: drink-style item restores thirst by a fixed amount on use.
+		// (Other Effect fields like HeatGainMult / CoolRate are equip-time
+		// modifiers, applied while an Equippable item is worn — wired up
+		// in a future milestone.)
+		if (Row.Type == EEclipseItemType::Usable)
+		{
+			Thirst = FMath::Clamp(Thirst + 30.f, 0.f, MaxThirst);
+		}
+
+		UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' (type=%d quest='%s')"),
+			*ItemId.ToString(), (int32)Row.Type, *Row.QuestFlag.ToString());
+	}
+
+	return RemoveItem(ItemId);
+}
+
+bool UEclipseGameStateSubsystem::GetItemRow(FName ItemId, FEclipseItemRow& OutRow) const
+{
+	if (!ItemTable) return false;
+	const FEclipseItemRow* Found = ItemTable->FindRow<FEclipseItemRow>(ItemId, TEXT("InventoryUI"));
+	if (!Found) return false;
+	OutRow = *Found;
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::GetClothingRow(FName ClothingId, FEclipseClothingRow& OutRow) const
+{
+	if (!ClothingTable) return false;
+	const FEclipseClothingRow* Found = ClothingTable->FindRow<FEclipseClothingRow>(ClothingId, TEXT("InventoryUI"));
+	if (!Found) return false;
+	OutRow = *Found;
+	return true;
 }
 
 void UEclipseGameStateSubsystem::DrainThirst(float Amount)

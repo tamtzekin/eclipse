@@ -9,6 +9,7 @@
 #include "eclipse.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/EclipsePauseMenuWidget.h"
+#include "UI/EclipseInventoryWidget.h"
 #include "UI/EclipseMainMenuActor.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "InputCoreTypes.h"
@@ -109,12 +110,23 @@ void AeclipsePlayerController::SetupInputComponent()
 		// early-returns in that case.
 		if (InputComponent)
 		{
-			FInputKeyBinding B(FInputChord(EKeys::Escape, false, false, false, false), IE_Pressed);
-			B.bExecuteWhenPaused = true;
-			B.KeyDelegate.GetDelegateForManualSet().BindUObject(
-				this, &AeclipsePlayerController::TogglePauseMenu);
-			InputComponent->KeyBindings.Add(B);
-			UE_LOG(LogEclipse, Log, TEXT("PC: Esc binding installed on %s (InputComponent=%p)"),
+			// Esc → pause menu
+			{
+				FInputKeyBinding B(FInputChord(EKeys::Escape, false, false, false, false), IE_Pressed);
+				B.bExecuteWhenPaused = true;
+				B.KeyDelegate.GetDelegateForManualSet().BindUObject(
+					this, &AeclipsePlayerController::TogglePauseMenu);
+				InputComponent->KeyBindings.Add(B);
+			}
+			// I → inventory
+			{
+				FInputKeyBinding B(FInputChord(EKeys::I, false, false, false, false), IE_Pressed);
+				B.bExecuteWhenPaused = true;
+				B.KeyDelegate.GetDelegateForManualSet().BindUObject(
+					this, &AeclipsePlayerController::ToggleInventory);
+				InputComponent->KeyBindings.Add(B);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I bindings installed on %s (InputComponent=%p)"),
 				*GetName(), (void*)InputComponent);
 		}
 		else
@@ -154,4 +166,37 @@ void AeclipsePlayerController::TogglePauseMenu()
 	ActivePauseMenu = UEclipsePauseMenuWidget::OpenForPlayer(this);
 	UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — OpenForPlayer returned %s"),
 		ActivePauseMenu ? TEXT("OK") : TEXT("nullptr"));
+}
+
+void AeclipsePlayerController::ToggleInventory()
+{
+	UE_LOG(LogEclipse, Log, TEXT("PC: ToggleInventory fired"));
+
+	// Don't open while a dialogue is active — let the dialogue widget keep
+	// its own input ownership. (Mirrors the pause-menu guard.)
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			if (DS->IsDialogueOpen())
+			{
+				UE_LOG(LogEclipse, Log, TEXT("PC: ToggleInventory — dialogue open, ignoring"));
+				return;
+			}
+		}
+	}
+	// Don't double-open over the pause menu either.
+	if (ActivePauseMenu && ActivePauseMenu->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: ToggleInventory — pause menu open, ignoring"));
+		return;
+	}
+
+	if (ActiveInventory && ActiveInventory->IsInViewport())
+	{
+		ActiveInventory->Close();
+		ActiveInventory = nullptr;
+		return;
+	}
+	ActiveInventory = UEclipseInventoryWidget::OpenForPlayer(this);
 }
