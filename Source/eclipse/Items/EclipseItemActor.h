@@ -74,6 +74,12 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
+	// Editor-time auto-snap to whatever surface is below — fires on Construction
+	// (placement, move, paste, OnLoad). Keeps items locked to the floor / shelf
+	// they're meant to sit on so designers can drag them in roughly and have
+	// them rest cleanly on collision. Runtime safety net stays in BeginPlay.
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 private:
 	UFUNCTION()
 	void HandleHighlightToggled(bool bActive);

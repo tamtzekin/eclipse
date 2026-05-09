@@ -19,28 +19,84 @@ AEclipseItemActor::AEclipseItemActor()
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision); // pickup handled by proximity, not hit
 }
 
+// Shared floor-snap helper — line trace down from a point above the actor and
+// drop the actor onto the first blocking hit. Returns true when something
+// caught us; on false the caller may decide to leave the actor where it is or
+// log a warning. Used by both OnConstruction (editor placement) and BeginPlay
+// (runtime safety net).
+namespace
+{
+	bool TraceDownToSurface(AActor* InActor, FVector& OutNewLocation)
+	{
+		if (!InActor || !InActor->GetWorld()) return false;
+
+		const FVector Origin = InActor->GetActorLocation();
+		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);
+		const FVector End    = Origin - FVector(0.f, 0.f, 5000.f);
+
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseItemFloorSnap), false, InActor);
+		Params.bTraceComplex = true;
+
+		FHitResult Hit;
+		if (!InActor->GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		{
+			return false;
+		}
+
+		OutNewLocation = Origin;
+		// +5 cm so the mesh visually rests on the floor, not buried in it.
+		OutNewLocation.Z = Hit.ImpactPoint.Z + 5.f;
+		return true;
+	}
+}
+
+void AEclipseItemActor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	// Only auto-snap in the editor world. PIE / packaged builds rely on
+	// BeginPlay's snap so items can't be missed if a designer placed them
+	// floating without re-saving the level.
+#if WITH_EDITOR
+	if (UWorld* World = GetWorld())
+	{
+		if (!World->IsGameWorld())
+		{
+			FVector Snapped;
+			if (TraceDownToSurface(this, Snapped))
+			{
+				const FVector Before = GetActorLocation();
+				if (!Snapped.Equals(Before, 0.5f))
+				{
+					SetActorLocation(Snapped, /*bSweep=*/false);
+					UE_LOG(LogEclipse, Log, TEXT("Item '%s' editor-snapped: z %.1f → %.1f"),
+						*ItemId.ToString(), Before.Z, Snapped.Z);
+				}
+			}
+			else
+			{
+				UE_LOG(LogEclipse, Warning, TEXT("Item '%s' editor-snap: nothing under (%0.0f,%0.0f) — left floating at z=%.1f"),
+					*ItemId.ToString(), GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+			}
+		}
+	}
+#endif
+}
+
 void AEclipseItemActor::BeginPlay()
 {
 	Super::BeginPlay();
 
 	// ── Floor snap ──
-	// The level's floor isn't at z=0 (each room sits at its own elevation, e.g.
-	// bathroom floor ≈ z=178). Items dropped into the level via SpawnActor or
-	// placed via the editor would otherwise fall to world origin or float at
-	// whatever z the spawn defaults to. Trace down from a bit above the
-	// current location to find the actual floor and rest on it.
+	// Runtime safety net: if a designer placed an item floating, or it was
+	// spawned at runtime via Spawn-from-class, snap it onto the surface below
+	// so it doesn't bob in mid-air. Editor placements get the same treatment
+	// in OnConstruction; this catches anything OnConstruction missed.
 	{
-		const FVector Origin = GetActorLocation();
-		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);
-		const FVector End    = Origin - FVector(0.f, 0.f, 5000.f);
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseItemFloorSnap), false, this);
-		Params.bTraceComplex = true;
-		FHitResult Hit;
-		if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		FVector Snapped;
+		if (TraceDownToSurface(this, Snapped))
 		{
-			FVector Snapped = Origin;
-			// +5 cm so the mesh visually rests on the floor, not buried in it.
-			Snapped.Z = Hit.ImpactPoint.Z + 5.f;
+			const FVector Origin = GetActorLocation();
 			SetActorLocation(Snapped, /*bSweep=*/false);
 			UE_LOG(LogEclipse, Log, TEXT("Item '%s' floor-snapped: z %.1f → %.1f"),
 				*ItemId.ToString(), Origin.Z, Snapped.Z);
