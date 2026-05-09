@@ -29,6 +29,7 @@ struct FEclipseItemEffect
 {
 	GENERATED_BODY()
 
+	// Equip-time modifiers — Equippable items, applied continuously while worn.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float SpeedMult        = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float CoolRate         = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float HeatGainMult     = 1.f;
@@ -37,6 +38,11 @@ struct FEclipseItemEffect
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool  bRevealNPCs      = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool  bDarken          = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool  bCharisma        = false;
+
+	// Use-time effect — Usable items, applied once when consumed via UseItem.
+	// Amount of Thirst restored on use. <=0 disables the USE button entirely
+	// (so empty containers like baggies / empty glasses can't be "consumed").
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float RestoreThirst    = 30.f;
 };
 
 USTRUCT(BlueprintType)

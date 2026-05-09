@@ -32,13 +32,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
 	FText DisplayName;
 
-	/** Optional quest flag set on pickup (e.g. "hasWristband"). */
+	/** Optional quest flag set on pickup (e.g. "hasHair", "hasEye"). The
+	 *  Pickup_Implementation translates known values into Quest.* booleans
+	 *  on the game state. Leave NAME_None for items that don't progress a
+	 *  quest beat directly (e.g. the wristband: AddItem itself flips
+	 *  GameStateSubsystem::bHasWristband when the id is "wristband"). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
 	FName QuestFlag = NAME_None;
-
-	/** If true, calling Pickup() sets bHasWristband on GameStateSubsystem. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
-	bool bIsWristband = false;
 
 	// ── Interact radius (used by InteractSubsystem) ──
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")

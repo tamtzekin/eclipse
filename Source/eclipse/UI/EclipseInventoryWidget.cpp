@@ -1055,7 +1055,20 @@ void UEclipseInventoryWidget::RefreshDetailPanel()
 	const bool bIsHeld     = !bSelectedIsClothing;
 	const bool bIsUsable   = bHasRow && ItemType == EEclipseItemType::Usable;
 	const bool bIsEquip    = bHasRow && ItemType == EEclipseItemType::Equippable;
-	if (UseBtn)   UseBtn->SetIsEnabled(bIsHeld && bIsUsable);
+
+	// "Has effect" check for empty containers — RestoreThirst<=0 disables the
+	// USE button so empty baggies / glasses read as held-only props.
+	bool bHasUseEffect = false;
+	if (bIsUsable)
+	{
+		FEclipseItemRow EffRow;
+		if (GS->GetItemRow(SelectedItemId, EffRow))
+		{
+			bHasUseEffect = EffRow.Effect.RestoreThirst > 0.f;
+		}
+	}
+
+	if (UseBtn)   UseBtn->SetIsEnabled(bIsHeld && bIsUsable && bHasUseEffect);
 	if (EquipBtn) EquipBtn->SetIsEnabled(bIsHeld && bIsEquip);
 	if (DropBtn)  DropBtn->SetIsEnabled(true);
 }

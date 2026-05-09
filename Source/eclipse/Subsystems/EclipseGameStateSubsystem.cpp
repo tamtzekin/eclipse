@@ -168,13 +168,22 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 			return false;
 		}
 
-		// Usable: drink-style item restores thirst by a fixed amount on use.
+		// Usable: restores thirst by Row.Effect.RestoreThirst (per-item tuned
+		// in DT_Items). RestoreThirst <= 0 means "empty container, can't be
+		// consumed" — refuse the use so empty baggies / glasses don't vanish
+		// into nothing when the player clicks USE on them.
 		// (Other Effect fields like HeatGainMult / CoolRate are equip-time
 		// modifiers, applied while an Equippable item is worn — wired up
 		// in a future milestone.)
 		if (Row.Type == EEclipseItemType::Usable)
 		{
-			Thirst = FMath::Clamp(Thirst + 30.f, 0.f, MaxThirst);
+			if (Row.Effect.RestoreThirst <= 0.f)
+			{
+				UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' refused — Usable but no effect (empty container)"),
+					*ItemId.ToString());
+				return false;
+			}
+			Thirst = FMath::Clamp(Thirst + Row.Effect.RestoreThirst, 0.f, MaxThirst);
 		}
 
 		UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' (type=%d quest='%s')"),

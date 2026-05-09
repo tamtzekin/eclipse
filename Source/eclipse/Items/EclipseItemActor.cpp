@@ -170,13 +170,11 @@ void AEclipseItemActor::Pickup_Implementation()
 	{
 		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			if (bIsWristband)
-			{
-				State->bHasWristband = true;
-				State->NotifyChanged();
-				UE_LOG(LogEclipse, Log, TEXT("ItemActor: Wristband picked up."));
-			}
-			else if (ItemId != NAME_None)
+			// All items — including key items like the Red Wristband — go
+			// through AddItem so they appear in the inventory grid. AddItem
+			// itself special-cases known item ids (e.g. "wristband" → also
+			// flips bHasWristband for VIP-gate dialogue checks).
+			if (ItemId != NAME_None)
 			{
 				State->AddItem(ItemId);
 			}
