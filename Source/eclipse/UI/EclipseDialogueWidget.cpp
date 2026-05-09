@@ -802,6 +802,14 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	TArray<FString> Words;
 	BodyString.ParseIntoArrayWS(Words);
 
+	// Pick up the designer's font from the WBP-bound BodyText so per-word
+	// blocks inherit whatever the designer set (e.g. Pantasia) rather than
+	// being hard-locked to the C++ default. Falls back to MakeRodin(18) only
+	// if BodyText isn't available — i.e. on the C++ fallback layout.
+	const FSlateFontInfo BodyFont = BodyText
+		? BodyText->GetFont()
+		: MakeRodin(/*Size=*/18);
+
 	for (int32 i = 0; i < Words.Num(); ++i)
 	{
 		UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(
@@ -810,7 +818,7 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 
 		// Trailing space is part of the word so the wrap-box can break naturally.
 		Block->SetText(FText::FromString(Words[i] + TEXT(" ")));
-		Block->SetFont(MakeRodin(/*Size=*/18));
+		Block->SetFont(BodyFont);
 
 		// Start fully transparent — NativeTick will lerp this up.
 		FLinearColor Start = Cream; Start.A = 0.f;
@@ -878,13 +886,20 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	TArray<FString> Words;
 	Text.ParseIntoArrayWS(Words);
 
+	// Per-word blocks inherit the designer's font from the WBP-bound choice
+	// label (e.g. ChoiceText_0..4) so styling stays where the designer sees
+	// it. Falls back to MakeRodin(15) only if Label has no font set.
+	const FSlateFontInfo ChoiceFont = Label
+		? Label->GetFont()
+		: MakeRodin(/*Size=*/15);
+
 	for (int32 wi = 0; wi < Words.Num(); ++wi)
 	{
 		UTextBlock* W = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
 		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
-		W->SetFont(MakeRodin(/*Size=*/15));
+		W->SetFont(ChoiceFont);
 
 		FLinearColor Start = TargetTint; Start.A = 0.f;
 		W->SetColorAndOpacity(FSlateColor(Start));
