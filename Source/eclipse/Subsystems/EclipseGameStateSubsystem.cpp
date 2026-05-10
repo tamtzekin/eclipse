@@ -350,21 +350,23 @@ namespace
 			UGameplayStatics::CreateSaveGameObject(UEclipseSaveGame::StaticClass()));
 		if (!Save) return nullptr;
 
-		Save->Word              = GS.Word;
-		Save->Rhythm            = GS.Rhythm;
-		Save->Shadow            = GS.Shadow;
-		Save->Heat              = GS.Heat;
-		Save->Thirst            = GS.Thirst;
-		Save->Inventory         = GS.Inventory;
-		Save->EquippedClothing  = GS.EquippedClothing;
-		Save->Tokens            = GS.Tokens;
-		Save->bHasWristband     = GS.bHasWristband;
-		Save->Quest             = GS.Quest;
-		Save->MetNPCs           = GS.MetNPCs;
-		Save->bVipAccessGranted = GS.bVipAccessGranted;
-		Save->Chapter                = GS.Chapter;
-		Save->ChapterElapsedSeconds  = GS.ChapterElapsedSeconds;
-		Save->SavedAt           = FDateTime::Now();
+		Save->Word                     = GS.Word;
+		Save->Rhythm                   = GS.Rhythm;
+		Save->Shadow                   = GS.Shadow;
+		Save->Heat                     = GS.Heat;
+		Save->Thirst                   = GS.Thirst;
+		Save->Inventory                = GS.Inventory;
+		Save->EquippedClothing         = GS.EquippedClothing;
+		Save->Tokens                   = GS.Tokens;
+		Save->bHasWristband            = GS.bHasWristband;
+		Save->ItemSlotPositions        = GS.ItemSlotPositions;
+		Save->Quest                    = GS.Quest;
+		Save->MetNPCs                  = GS.MetNPCs;
+		Save->FailedChoicesThisChapter = GS.FailedChoicesThisChapter;
+		Save->bVipAccessGranted        = GS.bVipAccessGranted;
+		Save->Chapter                  = GS.Chapter;
+		Save->ChapterElapsedSeconds    = GS.ChapterElapsedSeconds;
+		Save->SavedAt                  = FDateTime::Now();
 
 		if (W)
 		{
@@ -402,20 +404,22 @@ namespace
 		UWorld* W, bool& bImmediateTeleport)
 	{
 		bImmediateTeleport = false;
-		GS.Word              = Save->Word;
-		GS.Rhythm            = Save->Rhythm;
-		GS.Shadow            = Save->Shadow;
-		GS.Heat              = Save->Heat;
-		GS.Thirst            = Save->Thirst;
-		GS.Inventory         = Save->Inventory;
-		GS.EquippedClothing  = Save->EquippedClothing;
-		GS.Tokens            = Save->Tokens;
-		GS.bHasWristband     = Save->bHasWristband;
-		GS.Quest             = Save->Quest;
-		GS.MetNPCs           = Save->MetNPCs;
-		GS.bVipAccessGranted = Save->bVipAccessGranted;
-		GS.Chapter                = Save->Chapter;
-		GS.ChapterElapsedSeconds  = Save->ChapterElapsedSeconds;
+		GS.Word                     = Save->Word;
+		GS.Rhythm                   = Save->Rhythm;
+		GS.Shadow                   = Save->Shadow;
+		GS.Heat                     = Save->Heat;
+		GS.Thirst                   = Save->Thirst;
+		GS.Inventory                = Save->Inventory;
+		GS.EquippedClothing         = Save->EquippedClothing;
+		GS.Tokens                   = Save->Tokens;
+		GS.bHasWristband            = Save->bHasWristband;
+		GS.ItemSlotPositions        = Save->ItemSlotPositions;
+		GS.Quest                    = Save->Quest;
+		GS.MetNPCs                  = Save->MetNPCs;
+		GS.FailedChoicesThisChapter = Save->FailedChoicesThisChapter;
+		GS.bVipAccessGranted        = Save->bVipAccessGranted;
+		GS.Chapter                  = Save->Chapter;
+		GS.ChapterElapsedSeconds    = Save->ChapterElapsedSeconds;
 
 		if (W)
 		{

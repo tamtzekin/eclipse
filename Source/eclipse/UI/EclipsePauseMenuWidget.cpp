@@ -314,22 +314,31 @@ void UEclipsePauseMenuWidget::HandleSlot(int32 SlotIndex)
 	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
 	if (!GS) { SetStatus(TEXT("State subsystem missing.")); return; }
 
-	bool bOk = false;
 	if (bSaveMode)
 	{
-		bOk = GS->SaveToSlot(SlotIndex);
+		const bool bOk = GS->SaveToSlot(SlotIndex);
 		SetStatus(bOk ? FString::Printf(TEXT("Saved to slot %d."), SlotIndex + 1)
 		             : FString::Printf(TEXT("Save to slot %d failed."), SlotIndex + 1));
-	}
-	else
-	{
-		bOk = GS->LoadFromSlot(SlotIndex);
-		SetStatus(bOk ? FString::Printf(TEXT("Loaded slot %d."), SlotIndex + 1)
-		             : FString::Printf(TEXT("Slot %d empty."), SlotIndex + 1));
+		// Save: stay in the menu so the player can keep configuring; just
+		// refresh labels and drop back to the main list.
+		RefreshSlotLabels();
+		ShowMainList();
+		return;
 	}
 
-	// Refresh labels so a fresh save reflects in the picker immediately, then
-	// drop the picker back to the main list — feels more like "action done".
+	// Load: applying the snapshot mutates the live subsystem. Once it succeeds
+	// the player wants to be *back in the world* — not still staring at the
+	// pause overlay. Close the menu (which also unpauses + restores game-only
+	// input mode) so the load lands the player in the restored state.
+	const bool bOk = GS->LoadFromSlot(SlotIndex);
+	if (bOk)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PauseMenu: load slot %d → closing menu, returning to world"),
+			SlotIndex + 1);
+		Close();
+		return;
+	}
+	SetStatus(FString::Printf(TEXT("Slot %d empty."), SlotIndex + 1));
 	RefreshSlotLabels();
 	ShowMainList();
 }

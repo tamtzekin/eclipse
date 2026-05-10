@@ -26,8 +26,21 @@ public:
 	UPROPERTY() TArray<FName> EquippedClothing;
 	UPROPERTY() TArray<int32> Tokens;
 	UPROPERTY() bool bHasWristband = false;
+
+	// Per-item preferred slot inside the 6×3 inventory grid. Without this
+	// the player's hand-arranged layout resets to top-left packing on load,
+	// which feels wrong in a "your stuff is yours" RPG inventory.
+	UPROPERTY() TMap<FName, int32> ItemSlotPositions;
+
 	UPROPERTY() FEclipseQuestState Quest;
 	UPROPERTY() TArray<FEclipseMetNpc> MetNPCs;
+
+	// Choices the player attempted but failed (skill-check shortfalls etc.)
+	// since the chapter started. Cleared on chapter advance, but mid-chapter
+	// saves should still preserve them so reloading doesn't let the player
+	// retry a failed roll.
+	UPROPERTY() TSet<FName> FailedChoicesThisChapter;
+
 	UPROPERTY() bool bVipAccessGranted = false;
 	UPROPERTY() int32 Chapter = 0;
 	UPROPERTY() float ChapterElapsedSeconds = 0.f;
