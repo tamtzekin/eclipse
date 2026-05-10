@@ -28,6 +28,15 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateDialogueWBP(const FString& WBPAssetPath);
 
+	/** Variant of PopulateDialogueWBP that bakes a "speech bubble" look:
+	 *  outer panel transparent (no PanelFade layers), body text wrapped in
+	 *  a black-cloud BodyBubble border, choice buttons styled as bubbles.
+	 *  Designer-iterable starting point — runs into the same WBP names so
+	 *  C++ BindWidgetOptional bindings still resolve. */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateDialogueBubblesWBP(const FString& WBPAssetPath);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
 		meta = (DevelopmentOnly))
 	static bool PopulateHUDWBP(const FString& WBPAssetPath);

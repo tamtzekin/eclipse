@@ -354,6 +354,228 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Dialogue WBP — speech-bubble variant
+//  Same widget-name skeleton as PopulateDialogueWBP (so the C++ widget's
+//  BindWidgetOptional bindings still resolve), but:
+//    • DialoguePanel UOverlay has no PanelFade_N backdrop layers — fully
+//      transparent. The bubbles below are the only things that paint pixels.
+//    • BodyWords is wrapped in a "BodyBubble" UBorder — black @ 60% alpha,
+//      faint chalk outline, generous padding.
+//    • Each ChoiceBtn_N uses a bubble brush (rounded black with progressive
+//      alpha for normal/hover/pressed) instead of cream-tint flats.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		// ── Outer panel — transparent layout guide. No PanelFade backdrop.
+		UOverlay* Panel = New<UOverlay>(Tree, TEXT("DialoguePanel"));
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			S->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
+			S->SetAlignment(FVector2D(1.f, 0.f));
+			S->SetPosition(FVector2D(0.f, 0.f));
+			S->SetSize(FVector2D(480.f, 0.f));
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("DialogueColumn"));
+		if (UOverlaySlot* OS = Panel->AddChildToOverlay(Column))
+		{
+			OS->SetPadding(FMargin(38.f, 32.f));
+			OS->SetHorizontalAlignment(HAlign_Fill);
+			OS->SetVerticalAlignment(VAlign_Fill);
+		}
+
+		// ── Speaker portrait — same as solid version. Anchored to right edge,
+		//    overlapping the panel's left side.
+		UImage* SpeakerPortrait = New<UImage>(Tree, TEXT("SpeakerPortrait"));
+		FSlateBrush PortraitBrush;
+		PortraitBrush.DrawAs    = ESlateBrushDrawType::RoundedBox;
+		PortraitBrush.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
+		PortraitBrush.OutlineSettings.CornerRadii  = FVector4(6, 6, 6, 6);
+		PortraitBrush.OutlineSettings.Color        = FSlateColor(Cyan);
+		PortraitBrush.OutlineSettings.Width        = 2.f;
+		PortraitBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		PortraitBrush.ImageSize = FVector2D(220.f, 308.f);
+		SpeakerPortrait->SetBrush(PortraitBrush);
+
+		USizeBox* PortraitSize = New<USizeBox>(Tree, TEXT("SpeakerPortraitSize"));
+		PortraitSize->SetWidthOverride(220.f);
+		PortraitSize->SetHeightOverride(308.f);
+		PortraitSize->AddChild(SpeakerPortrait);
+
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(PortraitSize))
+		{
+			S->SetAnchors(FAnchors(1.f, 0.5f, 1.f, 0.5f));
+			S->SetAlignment(FVector2D(0.f, 0.5f));
+			S->SetPosition(FVector2D(-670.f, 0.f));
+			S->SetSize(FVector2D(220.f, 308.f));
+			S->SetZOrder(3);
+		}
+
+		// ── Speaker name (BMSPA, cyan) — plain text on transparent background.
+		UTextBlock* SpeakerNameText = New<UTextBlock>(Tree, TEXT("SpeakerNameText"));
+		SpeakerNameText->SetFont(MakeBMSPA(22, 3.f));
+		SpeakerNameText->SetColorAndOpacity(FSlateColor(Cyan));
+		SpeakerNameText->SetText(FText::FromString(TEXT("SPEAKER")));
+		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SpeakerNameText))
+			S->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
+
+		// ── BodyBubble: black-cloud border wrapping BodyWords.
+		UBorder* BodyBubble = New<UBorder>(Tree, TEXT("BodyBubble"));
+		BodyBubble->SetBrush(RoundedBrush(
+			FLinearColor(0.f, 0.f, 0.f, 0.60f),
+			FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
+			1.f, 12.f));
+		BodyBubble->SetPadding(FMargin(14.f, 10.f));
+
+		UWrapBox* BodyWords = New<UWrapBox>(Tree, TEXT("BodyWords"));
+		BodyWords->SetInnerSlotPadding(FVector2D(0.f, 0.f));
+		BodyBubble->SetContent(BodyWords);
+
+		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BodyBubble))
+			S->SetPadding(FMargin(0.f, 4.f, 0.f, 14.f));
+
+		// Hidden BodyText fallback (kept for back-compat with the C++ widget).
+		UTextBlock* BodyText = New<UTextBlock>(Tree, TEXT("BodyText"));
+		BodyText->SetFont(MakeRodin(18));
+		BodyText->SetColorAndOpacity(FSlateColor(Cream));
+		BodyText->SetAutoWrapText(true);
+		BodyText->SetVisibility(ESlateVisibility::Collapsed);
+		BodyText->SetText(FText::GetEmpty());
+		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BodyText))
+			S->SetPadding(FMargin(0.f));
+
+		// ── Divider line — collapsed in the bubble layout (bubbles imply
+		//    grouping). Kept in the tree for back-compat.
+		UBorder* Divider = New<UBorder>(Tree, TEXT("ChoicesDivider"));
+		Divider->SetBrush(SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.0f)));
+		Divider->SetPadding(FMargin(0.f));
+		USizeBox* DivSize = New<USizeBox>(Tree, TEXT("ChoicesDividerSize"));
+		DivSize->SetHeightOverride(1.f);
+		DivSize->SetVisibility(ESlateVisibility::Collapsed);
+		DivSize->AddChild(Divider);
+		Column->AddChildToVerticalBox(DivSize);
+
+		// ── ChoicesBox + 3 pre-built bubble-style buttons. ──
+		UVerticalBox* ChoicesBox = New<UVerticalBox>(Tree, TEXT("ChoicesBox"));
+		Column->AddChildToVerticalBox(ChoicesBox);
+
+		auto BubbleBrush = [](float Alpha)
+		{
+			return RoundedBrush(
+				FLinearColor(0.f, 0.f, 0.f, Alpha),
+				FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
+				1.f, 10.f);
+		};
+
+		for (int32 i = 0; i < 3; ++i)
+		{
+			const FString IdxStr = FString::FromInt(i);
+
+			UButton* Btn = New<UButton>(Tree, FName(*FString::Printf(TEXT("ChoiceBtn_%d"), i)));
+			FButtonStyle BtnStyle;
+			BtnStyle.Normal   = BubbleBrush(0.55f);
+			BtnStyle.Hovered  = BubbleBrush(0.72f);
+			BtnStyle.Pressed  = BubbleBrush(0.85f);
+			BtnStyle.Disabled = BubbleBrush(0.35f);
+			Btn->SetStyle(BtnStyle);
+
+			UHorizontalBox* Row = New<UHorizontalBox>(Tree,
+				FName(*FString::Printf(TEXT("ChoiceRow_%d"), i)));
+
+			// Circle number node (24×24)
+			UBorder* CircleBg = New<UBorder>(Tree,
+				FName(*FString::Printf(TEXT("ChoiceCircle_%d"), i)));
+			CircleBg->SetBrush(RoundedBrush(
+				FLinearColor(0.945f, 0.929f, 0.851f, 0.04f),
+				FLinearColor(0.945f, 0.929f, 0.851f, 0.85f),
+				1.f, 12.f));
+			CircleBg->SetPadding(FMargin(0.f));
+			CircleBg->SetHorizontalAlignment(HAlign_Center);
+			CircleBg->SetVerticalAlignment(VAlign_Center);
+
+			UTextBlock* CircleNum = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("ChoiceNum_%d"), i)));
+			CircleNum->SetText(FText::AsNumber(i + 1));
+			CircleNum->SetFont(MakeBMSPA(11));
+			CircleNum->SetColorAndOpacity(FSlateColor(Cream));
+			CircleNum->SetJustification(ETextJustify::Center);
+			CircleBg->SetContent(CircleNum);
+
+			USizeBox* CircleSize = New<USizeBox>(Tree,
+				FName(*FString::Printf(TEXT("ChoiceCircleSize_%d"), i)));
+			CircleSize->SetWidthOverride(24.f);
+			CircleSize->SetHeightOverride(24.f);
+			CircleSize->AddChild(CircleBg);
+
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(CircleSize))
+			{
+				HS->SetPadding(FMargin(0.f, 1.f, 10.f, 0.f));
+				HS->SetVerticalAlignment(VAlign_Top);
+			}
+
+			UTextBlock* ChoiceLabel = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
+			ChoiceLabel->SetText(FText::FromString(FString::Printf(
+				TEXT("Choice %d (placeholder — runtime sets actual text)"), i + 1)));
+			ChoiceLabel->SetFont(MakeRodin(15));
+			ChoiceLabel->SetColorAndOpacity(FSlateColor(Cream));
+			ChoiceLabel->SetAutoWrapText(true);
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(ChoiceLabel))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetVerticalAlignment(VAlign_Center);
+			}
+
+			Btn->SetContent(Row);
+			if (UVerticalBoxSlot* VS = ChoicesBox->AddChildToVerticalBox(Btn))
+			{
+				VS->SetPadding(FMargin(0.f, 4.f));
+			}
+		}
+
+		// ── Close button — same chalk-circle × as solid layout.
+		UButton* CloseButton = New<UButton>(Tree, TEXT("CloseButton"));
+		FButtonStyle CloseStyle;
+		CloseStyle.Normal   = RoundedBrush(FLinearColor(0.031f, 0.035f, 0.047f, 0.6f),
+		                                   FLinearColor(0.945f, 0.929f, 0.851f, 0.65f),
+		                                   1.f, 14.f);
+		CloseStyle.Hovered  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.08f),
+		                                   FLinearColor::White, 1.f, 14.f);
+		CloseStyle.Pressed  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f),
+		                                   FLinearColor::White, 1.f, 14.f);
+		CloseStyle.Disabled = CloseStyle.Normal;
+		CloseButton->SetStyle(CloseStyle);
+
+		UTextBlock* CloseLabel = New<UTextBlock>(Tree, TEXT("CloseLabel"));
+		CloseLabel->SetText(FText::FromString(TEXT("×")));
+		CloseLabel->SetFont(MakeBMSPA(16));
+		CloseLabel->SetColorAndOpacity(FSlateColor(CreamDim));
+		CloseLabel->SetJustification(ETextJustify::Center);
+		CloseButton->SetContent(CloseLabel);
+
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(CloseButton))
+		{
+			S->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
+			S->SetAlignment(FVector2D(1.f, 0.f));
+			S->SetPosition(FVector2D(-18.f, 14.f));
+			S->SetSize(FVector2D(28.f, 28.f));
+			S->SetZOrder(2);
+		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  HUD WBP
 // ─────────────────────────────────────────────────────────────────────────────
 

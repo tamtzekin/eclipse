@@ -244,6 +244,115 @@ void UEclipseDialogueWidget::NativeConstruct()
 		}
 	}
 
+	// ── Speech-bubble restyle (DISABLED) ──
+	// Runtime overrides used to force the bubble look on top of whatever the
+	// WBP shipped. Disabled now so designer edits to a duplicate WBP
+	// (`WBP_Dialogue_Bubbles`) aren't clobbered. To re-enable: change the
+	// `#if 0` below to `#if 1`.
+	#if 0
+	{
+		using namespace EclipseUI;
+
+		// 1. Outer panel → fully transparent.
+		//    The populator builds DialoguePanel as a UOverlay containing five
+		//    stacked PanelFade_0..4 UBorders that fake a radial edge-fade
+		//    (no native gradient brush in Slate). Collapse all of them so the
+		//    "solid right-side rectangle" disappears. Bubbles inside the
+		//    column then sit on top of the world directly.
+		//
+		//    The C++ fallback layout uses a single UBorder also called
+		//    DialoguePanel — handle that case too.
+		if (WidgetTree)
+		{
+			if (UBorder* DialoguePanelAsBorder = Cast<UBorder>(
+					WidgetTree->FindWidget(TEXT("DialoguePanel"))))
+			{
+				DialoguePanelAsBorder->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.f)));
+				DialoguePanelAsBorder->SetPadding(FMargin(18.f, 14.f));
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: DialoguePanel(Border) → transparent"));
+			}
+			// Hide each PanelFade_N layer (UOverlay-based populator path).
+			int32 HiddenLayers = 0;
+			for (int32 i = 0; i < 8; ++i)
+			{
+				const FName LayerName(*FString::Printf(TEXT("PanelFade_%d"), i));
+				if (UWidget* Layer = WidgetTree->FindWidget(LayerName))
+				{
+					Layer->SetVisibility(ESlateVisibility::Collapsed);
+					++HiddenLayers;
+				}
+			}
+			if (HiddenLayers > 0)
+			{
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: collapsed %d PanelFade_N layer(s)"), HiddenLayers);
+			}
+		}
+
+		// 2. Wrap BodyWords (the per-word fade-in container) in a bubble
+		//    border. Slot the new border into BodyWords' old position in the
+		//    parent vertical box.
+		if (BodyWords && WidgetTree && !WidgetTree->FindWidget(TEXT("BodyBubble")))
+		{
+			if (UPanelWidget* Parent = BodyWords->GetParent())
+			{
+				const int32 BodyIdx = Parent->GetChildIndex(BodyWords);
+
+				UBorder* Bubble = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), TEXT("BodyBubble"));
+				// Black 60% alpha cloud, soft chalk outline, generous padding.
+				Bubble->SetBrush(RoundedBrush(
+					FLinearColor(0.f, 0.f, 0.f, 0.60f),
+					FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
+					1.f, 12.f));
+				Bubble->SetPadding(FMargin(14.f, 10.f));
+
+				BodyWords->RemoveFromParent();
+				Bubble->SetContent(BodyWords);
+				Parent->AddChild(Bubble);
+				Parent->ShiftChild(FMath::Max(0, BodyIdx), Bubble);
+
+				if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(Bubble->Slot))
+				{
+					VS->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
+				}
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: BodyBubble wrapped around BodyWords"));
+			}
+		}
+
+		// 3. Re-style each pre-built choice button as its own bubble. Drops
+		//    the prior cream-tint button look in favour of the same black
+		//    cloud as the body.
+		auto BubbleBrush = [](float Alpha)
+		{
+			return RoundedBrush(
+				FLinearColor(0.f, 0.f, 0.f, Alpha),
+				FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
+				1.f, 10.f);
+		};
+		UButton* ChoiceBtns[] = { ChoiceBtn_0, ChoiceBtn_1, ChoiceBtn_2, ChoiceBtn_3, ChoiceBtn_4 };
+		for (UButton* Btn : ChoiceBtns)
+		{
+			if (!Btn) continue;
+			FButtonStyle BS;
+			BS.Normal   = BubbleBrush(0.55f);
+			BS.Hovered  = BubbleBrush(0.72f);
+			BS.Pressed  = BubbleBrush(0.85f);
+			BS.Disabled = BubbleBrush(0.35f);
+			Btn->SetStyle(BS);
+		}
+
+		// 4. Hide the choices-divider — bubbles imply their own grouping.
+		if (UWidget* Div = WidgetTree ? WidgetTree->FindWidget(TEXT("ChoicesDividerSize")) : nullptr)
+		{
+			Div->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (UWidget* Div = WidgetTree ? WidgetTree->FindWidget(TEXT("ChoicesDivider")) : nullptr)
+		{
+			Div->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+	#endif // bubble runtime override
+
 	// Hidden until a dialogue opens
 	SetVisibility(ESlateVisibility::Collapsed);
 
