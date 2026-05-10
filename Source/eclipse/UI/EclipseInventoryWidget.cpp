@@ -33,7 +33,7 @@
 //  bind lambdas, so per-chip selection needs its own per-chip class).
 // ─────────────────────────────────────────────────────────────────────────────
 
-void UEclipseInventoryChipWidget::InitChip(UEclipseInventoryWidget* InOwner, FName InItemId,
+void UEclipseInventoryChipWidget::InitChip(UUserWidget* InOwner, FName InItemId,
 	bool bInEquipped, const FString& IconText, const FString& NameText, const FLinearColor& TintColor,
 	int32 InSlotIndex)
 {
@@ -48,7 +48,7 @@ void UEclipseInventoryChipWidget::InitChip(UEclipseInventoryWidget* InOwner, FNa
 	SetSelectedVisual(false);
 }
 
-void UEclipseInventoryChipWidget::InitEmptySlot(UEclipseInventoryWidget* InOwner, int32 InSlotIndex)
+void UEclipseInventoryChipWidget::InitEmptySlot(UUserWidget* InOwner, int32 InSlotIndex)
 {
 	using namespace EclipseUI;
 
@@ -153,9 +153,11 @@ void UEclipseInventoryChipWidget::OnChipClicked()
 {
 	UE_LOG(LogEclipse, Log, TEXT("Inv[chip]: ▶ CLICK select '%s' slot=%d eq=%d"),
 		*ItemId.ToString(), SlotIndex, bIsEquipped ? 1 : 0);
-	if (Owner)
+	// Cast to the chip-host interface — Owner can be either the modal
+	// inventory widget or the permanent strip widget.
+	if (IEclipseChipOwner* Host = Cast<IEclipseChipOwner>(Owner.Get()))
 	{
-		Owner->SelectItem(ItemId, bIsEquipped);
+		Host->SelectItem(ItemId, bIsEquipped);
 	}
 }
 
@@ -250,11 +252,11 @@ void UEclipseInventoryChipWidget::NativeOnDragCancelled(const FDragDropEvent& In
 	// Drag ended without landing on a drop-target → drop the item.
 	// (NativeOnDrop on the inventory widget accepts drops inside the panel,
 	// so this only fires when the chip was released outside it.)
-	if (Owner)
+	if (IEclipseChipOwner* Host = Cast<IEclipseChipOwner>(Owner.Get()))
 	{
 		UE_LOG(LogEclipse, Log, TEXT("Inv[chip]: ▶ DRAG CANCELLED outside panel — dropping '%s' from slot=%d eq=%d"),
 			*ItemId.ToString(), SlotIndex, bIsEquipped ? 1 : 0);
-		Owner->HandleChipDroppedOutside(ItemId, bIsEquipped);
+		Host->HandleChipDroppedOutside(ItemId, bIsEquipped);
 	}
 	Super::NativeOnDragCancelled(InDragDropEvent, InOperation);
 }
@@ -292,7 +294,10 @@ bool UEclipseInventoryChipWidget::NativeOnDrop(const FGeometry& InGeometry, cons
 		*Source->ItemId.ToString(), Source->SlotIndex, Source->bIsEquipped ? 1 : 0,
 		SlotIndex, bIsEmpty ? TEXT("[empty]") : *ItemId.ToString(), bIsEmpty ? 1 : 0);
 
-	Owner->HandleChipDroppedOnSlot(Source->ItemId, Source->bIsEquipped, SlotIndex);
+	if (IEclipseChipOwner* Host = Cast<IEclipseChipOwner>(Owner.Get()))
+	{
+		Host->HandleChipDroppedOnSlot(Source->ItemId, Source->bIsEquipped, SlotIndex);
+	}
 	return true;
 }
 

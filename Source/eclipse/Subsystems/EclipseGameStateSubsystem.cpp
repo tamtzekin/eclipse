@@ -50,8 +50,31 @@ bool UEclipseGameStateSubsystem::AddItem(FName ItemId)
 		UE_LOG(LogEclipse, Log, TEXT("Inventory full!"));
 		return false;
 	}
-	Inventory.Add(ItemId);
-	if (ItemId == TEXT("wristband")) bHasWristband = true;
+
+	// Defensive uniquifier: if the requested id already exists in Inventory
+	// we re-form it as "<base>__<N>" until it's free. The "__" separator
+	// matches the runtime-id pattern produced by Pickup_Implementation, so
+	// GetBaseItemId still recovers the row key for DT lookups. Guards
+	// against legacy saves that pre-date Option C's runtime-id scheme
+	// (two picked-up glasses both stored as bare "glass") and any caller
+	// that forgets to generate a unique id.
+	FName UniqueId = ItemId;
+	if (Inventory.Contains(UniqueId))
+	{
+		const FName Base = GetBaseItemId(ItemId);
+		int32 Counter = 2;
+		while (Inventory.Contains(UniqueId))
+		{
+			UniqueId = FName(*FString::Printf(TEXT("%s__%d"), *Base.ToString(), Counter++));
+		}
+		UE_LOG(LogEclipse, Log, TEXT("AddItem: '%s' already held — using unique runtime id '%s'"),
+			*ItemId.ToString(), *UniqueId.ToString());
+	}
+
+	Inventory.Add(UniqueId);
+	// Quest flag check uses the base id so a runtime id like
+	// "wristband__Item_Wristband" still flips bHasWristband on pickup.
+	if (GetBaseItemId(UniqueId) == TEXT("wristband")) bHasWristband = true;
 	NotifyChanged();
 	return true;
 }
@@ -62,7 +85,16 @@ bool UEclipseGameStateSubsystem::RemoveItem(FName ItemId)
 	if (Idx == INDEX_NONE) return false;
 	Inventory.RemoveAt(Idx);
 	ItemSlotPositions.Remove(ItemId);   // free the grid slot
-	if (ItemId == TEXT("wristband")) bHasWristband = false;
+	// Wristband-flag bookkeeping: only flip bHasWristband off if NO other
+	// inventory entry resolves to base id "wristband" (defensive — the
+	// player almost never holds two, but the check is cheap and makes the
+	// flag's invariant ("any wristband held → true") self-consistent).
+	if (GetBaseItemId(ItemId) == TEXT("wristband"))
+	{
+		const bool bAnyOther = Inventory.ContainsByPredicate(
+			[](const FName& Id){ return GetBaseItemId(Id) == TEXT("wristband"); });
+		if (!bAnyOther) bHasWristband = false;
+	}
 	NotifyChanged();
 	return true;
 }
@@ -193,10 +225,42 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 	return RemoveItem(ItemId);
 }
 
+FName UEclipseGameStateSubsystem::GetBaseItemId(FName MaybeRuntimeId)
+{
+	// Runtime ids look like "<base>__<actor-name>" — see
+	// AEclipseItemActor::Pickup_Implementation. Strip everything from the
+	// first "__" onward; if no separator is present, the input is already a
+	// base id (e.g. "wristband", "drink") and is returned unchanged.
+	const FString S = MaybeRuntimeId.ToString();
+	int32 SepIdx = INDEX_NONE;
+	if (S.FindChar(TEXT('_'), SepIdx))
+	{
+		// Look for the literal "__" separator (not single underscores inside
+		// names like "STALL_VOICE_CALM" or pre-existing "Item_baggie1").
+		const int32 DoubleSep = S.Find(TEXT("__"), ESearchCase::CaseSensitive, ESearchDir::FromStart);
+		if (DoubleSep != INDEX_NONE)
+		{
+			return FName(*S.Left(DoubleSep));
+		}
+	}
+	return MaybeRuntimeId;
+}
+
 bool UEclipseGameStateSubsystem::GetItemRow(FName ItemId, FEclipseItemRow& OutRow) const
 {
 	if (!ItemTable) return false;
+	// Try the id as-is first (covers legacy saves + unique row ids the user
+	// hand-typed before per-instance ids landed). Fall back to the base id
+	// extracted from the "<base>__<suffix>" runtime form.
 	const FEclipseItemRow* Found = ItemTable->FindRow<FEclipseItemRow>(ItemId, TEXT("InventoryUI"));
+	if (!Found)
+	{
+		const FName Base = GetBaseItemId(ItemId);
+		if (!Base.IsNone() && Base != ItemId)
+		{
+			Found = ItemTable->FindRow<FEclipseItemRow>(Base, TEXT("InventoryUI"));
+		}
+	}
 	if (!Found) return false;
 	OutRow = *Found;
 	return true;
@@ -206,6 +270,14 @@ bool UEclipseGameStateSubsystem::GetClothingRow(FName ClothingId, FEclipseClothi
 {
 	if (!ClothingTable) return false;
 	const FEclipseClothingRow* Found = ClothingTable->FindRow<FEclipseClothingRow>(ClothingId, TEXT("InventoryUI"));
+	if (!Found)
+	{
+		const FName Base = GetBaseItemId(ClothingId);
+		if (!Base.IsNone() && Base != ClothingId)
+		{
+			Found = ClothingTable->FindRow<FEclipseClothingRow>(Base, TEXT("InventoryUI"));
+		}
+	}
 	if (!Found) return false;
 	OutRow = *Found;
 	return true;

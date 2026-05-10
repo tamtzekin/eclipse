@@ -118,7 +118,7 @@ void AeclipsePlayerController::SetupInputComponent()
 					this, &AeclipsePlayerController::TogglePauseMenu);
 				InputComponent->KeyBindings.Add(B);
 			}
-			// I → inventory
+			// I → inventory overlay
 			{
 				FInputKeyBinding B(FInputChord(EKeys::I, false, false, false, false), IE_Pressed);
 				B.bExecuteWhenPaused = true;

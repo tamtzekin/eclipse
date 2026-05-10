@@ -127,7 +127,10 @@ void AEclipsePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 	{
 		if (MoveAction)        EIC->BindAction(MoveAction,        ETriggerEvent::Triggered, this, &AEclipsePlayerCharacter::OnMove);
 		if (LookAction)        EIC->BindAction(LookAction,        ETriggerEvent::Triggered, this, &AEclipsePlayerCharacter::OnLook);
-		if (InteractAction)    EIC->BindAction(InteractAction,    ETriggerEvent::Triggered, this, &AEclipsePlayerCharacter::OnInteract);
+		// Interact is one-shot: Started fires once on press. Triggered would
+		// fire every frame the key is held (~30 times for a half-second tap),
+		// which used to cascade-pickup every item in range on a single press.
+		if (InteractAction)    EIC->BindAction(InteractAction,    ETriggerEvent::Started, this, &AEclipsePlayerCharacter::OnInteract);
 		if (HighlightAction)
 		{
 			EIC->BindAction(HighlightAction, ETriggerEvent::Started,   this, &AEclipsePlayerCharacter::OnHighlightStart);

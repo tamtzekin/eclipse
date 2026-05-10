@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "EclipseChipOwner.h"
 #include "EclipseInventoryWidget.generated.h"
 
 class UVerticalBox;
@@ -30,13 +31,17 @@ class ECLIPSE_API UEclipseInventoryChipWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void InitChip(UEclipseInventoryWidget* InOwner, FName InItemId, bool bInEquipped,
+	// Owner is any UUserWidget that also implements IEclipseChipOwner — i.e.
+	// either the (modal) UEclipseInventoryWidget or the (permanent strip)
+	// UEclipseInventoryStripWidget. The chip stores it as UUserWidget* for
+	// GC; chip→owner calls cast to IEclipseChipOwner at the call site.
+	void InitChip(UUserWidget* InOwner, FName InItemId, bool bInEquipped,
 	              const FString& IconText, const FString& NameText, const FLinearColor& TintColor,
 	              int32 InSlotIndex = INDEX_NONE);
 
 	// Initialise as an empty grid cell — no item, no click, no drag-source,
 	// but still a drop-target so dragging onto an empty slot reorders into it.
-	void InitEmptySlot(UEclipseInventoryWidget* InOwner, int32 InSlotIndex);
+	void InitEmptySlot(UUserWidget* InOwner, int32 InSlotIndex);
 
 	void SetSelectedVisual(bool bSelected);
 
@@ -73,7 +78,10 @@ protected:
 private:
 	UFUNCTION() void OnChipClicked();
 
-	UPROPERTY() TObjectPtr<UEclipseInventoryWidget> Owner;
+	// Owner widget — either UEclipseInventoryWidget or
+	// UEclipseInventoryStripWidget. Stored as UUserWidget* for GC; cast to
+	// IEclipseChipOwner at every call site (see EclipseInventoryWidget.cpp).
+	UPROPERTY() TObjectPtr<UUserWidget> Owner;
 	FName        ItemId;
 	bool         bIsEquipped = false;
 	FLinearColor Tint = FLinearColor::White;
@@ -114,7 +122,7 @@ private:
  * action row at the bottom to operate on it.
  */
 UCLASS()
-class ECLIPSE_API UEclipseInventoryWidget : public UUserWidget
+class ECLIPSE_API UEclipseInventoryWidget : public UUserWidget, public IEclipseChipOwner
 {
 	GENERATED_BODY()
 
@@ -125,19 +133,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	void Close();
 
-	// Public so individual UEclipseInventoryChipWidget instances can route
-	// their button click back to the owning inventory.
-	void SelectItem(FName ItemId, bool bIsClothing);
-
-	// Called by a chip widget when its drag was cancelled (i.e. dropped
-	// outside any drop-target). For the inventory that means dropped
-	// outside the chalk panel → drop the item from inventory.
-	void HandleChipDroppedOutside(FName ItemId, bool bIsClothing);
-
-	// Called by a chip widget when another chip is dropped onto it (or
-	// onto an empty cell). Reorders the source item to the target tab
-	// slot inside the active tab's underlying array.
-	void HandleChipDroppedOnSlot(FName SourceItemId, bool bSourceIsClothing, int32 TargetTabSlot);
+	// IEclipseChipOwner — chip widgets call back through these.
+	virtual void SelectItem(FName ItemId, bool bIsClothing) override;
+	virtual void HandleChipDroppedOutside(FName ItemId, bool bIsClothing) override;
+	virtual void HandleChipDroppedOnSlot(FName SourceItemId, bool bSourceIsClothing, int32 TargetTabSlot) override;
 
 protected:
 	virtual bool Initialize() override;

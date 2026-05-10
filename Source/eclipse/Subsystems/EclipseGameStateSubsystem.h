@@ -202,12 +202,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool UseItem(FName ItemId);
 
-	// Lookup helpers for the inventory UI.
+	// Lookup helpers for the inventory UI. Both accept either a base id
+	// ("baggie") or a runtime id ("baggie__Item_baggie_2") — runtime ids
+	// have an actor-suffix appended at pickup so multiple instances of the
+	// same template can coexist as separate inventory chips. The lookup
+	// strips the suffix internally and queries the row by the base id.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool GetItemRow(FName ItemId, struct FEclipseItemRow& OutRow) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool GetClothingRow(FName ClothingId, struct FEclipseClothingRow& OutRow) const;
+
+	// Strip the runtime "__<actor-suffix>" tail off an inventory id and
+	// return just the DT row key. Public because the chip widget needs the
+	// base id when comparing chips for selection state etc.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	static FName GetBaseItemId(FName MaybeRuntimeId);
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void DrainThirst(float Amount);

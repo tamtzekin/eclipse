@@ -170,13 +170,21 @@ void AEclipseItemActor::Pickup_Implementation()
 	{
 		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			// All items — including key items like the Red Wristband — go
-			// through AddItem so they appear in the inventory grid. AddItem
-			// itself special-cases known item ids (e.g. "wristband" → also
-			// flips bHasWristband for VIP-gate dialogue checks).
+			// All items go through AddItem so they appear in the inventory.
+			// To keep duplicated actors (Alt-drag in the editor) as
+			// distinct inventory chips, we pass a per-instance runtime id
+			// formed as "<base>__<actor-name>". The lookup helpers
+			// (UEclipseGameStateSubsystem::GetItemRow / GetClothingRow)
+			// strip the suffix when querying DT_Items, so the row data
+			// stays template-keyed.
+			//
+			// AddItem itself special-cases the BASE id (e.g. "wristband")
+			// for quest-flag side effects (bHasWristband).
 			if (ItemId != NAME_None)
 			{
-				State->AddItem(ItemId);
+				const FName RuntimeId = FName(*FString::Printf(
+					TEXT("%s__%s"), *ItemId.ToString(), *GetName()));
+				State->AddItem(RuntimeId);
 			}
 
 			// Apply the configured QuestFlag onto the quest state. Names match

@@ -7,6 +7,7 @@
 #include "EclipseHUDWidget.h"
 #include "EclipseVnPortraitsWidget.h"
 #include "EclipseChapterCardWidget.h"
+#include "EclipseInventoryStripWidget.h"
 
 void AEclipseHUD::BeginPlay()
 {
@@ -20,6 +21,12 @@ void AEclipseHUD::BeginPlay()
 		HUDWidget = CreateWidget<UEclipseHUDWidget>(PC, HUDWidgetClass);
 		if (HUDWidget) HUDWidget->AddToViewport(0);
 	}
+
+	// Permanent left-edge inventory strip — disabled for now; sticking with
+	// the I-key modal inventory overlay. Strip widget class
+	// (UEclipseInventoryStripWidget) + the IEclipseChipOwner interface stay
+	// in the codebase so we can re-enable later by uncommenting this line.
+	// UEclipseInventoryStripWidget::CreateForPlayer(PC);
 
 	if (InteractWidgetClass)
 	{
