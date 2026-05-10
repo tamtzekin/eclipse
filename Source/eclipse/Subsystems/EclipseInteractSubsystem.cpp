@@ -32,6 +32,10 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	if (!Pawn) return;
 
 	const FVector PlayerPos = Pawn->GetActorLocation();
+	// "Eye" point used for the LOS trace — Pawn location is at feet on
+	// ACharacter, so lift to mid-torso so partitions / counters at chest
+	// height correctly block the trace. ~80 cm above feet ≈ chest/head.
+	const FVector PlayerEye = PlayerPos + FVector(0.f, 0.f, 80.f);
 
 	// ── Nearest talkable ──
 	AEclipseNpcCharacter* Best = nullptr;
@@ -41,13 +45,36 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		AEclipseNpcCharacter* Npc = *It;
 		if (!Npc->bTalkable) continue;
 		if (Npc->bIsHidden) continue;
+
 		const float DistSq = FVector::DistSquared(Npc->GetActorLocation(), PlayerPos);
 		const float Radius = Npc->TalkRadius;
-		if (DistSq < Radius * Radius && DistSq < BestDistSq)
+		if (DistSq >= Radius * Radius || DistSq >= BestDistSq) continue;
+
+		// ── Line-of-sight gate ──
+		// Trace from player eye to NPC chest. If anything blocks Visibility
+		// (walls, stall partitions, doors-not-yet-set-to-Ignore-Visibility),
+		// the NPC drops out of the talkable set. NPCs flagged
+		// bIgnoreLineOfSight (audio-only stall voices) bypass this — they're
+		// meant to be heard through walls.
+		if (!Npc->bIgnoreLineOfSight)
 		{
-			Best = Npc;
-			BestDistSq = DistSq;
+			const FVector NpcChest = Npc->GetActorLocation() + FVector(0.f, 0.f, 60.f);
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseInteractLOS), false, Pawn);
+			Params.AddIgnoredActor(Npc);   // don't self-block on the NPC's own collision
+			FHitResult Hit;
+			const bool bBlocked = World->LineTraceSingleByChannel(
+				Hit, PlayerEye, NpcChest, ECC_Visibility, Params);
+			if (bBlocked)
+			{
+				UE_LOG(LogEclipse, Verbose, TEXT("LOS blocked: '%s' by %s"),
+					*Npc->NpcName.ToString(),
+					Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("(no actor)"));
+				continue;
+			}
 		}
+
+		Best = Npc;
+		BestDistSq = DistSq;
 	}
 	if (Best != NearTalkable)
 	{

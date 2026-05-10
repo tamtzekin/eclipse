@@ -56,7 +56,16 @@ public:
 	bool bStationary = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
-	float TalkRadius = 200.f; // 2 m default; 320 for key NPCs.
+	float TalkRadius = 150.f; // 1.5 m default — must be at arm's length.
+	                          // Bump per-instance for KEY NPCs that need
+	                          // friendlier reach (bartender etc.).
+
+	// When true, the talkable check skips the line-of-sight raytrace — i.e.
+	// this NPC can be talked to *through* walls / partitions. Use for the
+	// audio-only stall voices (`STALL_VOICE_*`) where the player is meant
+	// to converse with someone they can't see. Default false: walls block.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
+	bool bIgnoreLineOfSight = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	EEclipseBubbleType BubbleType = EEclipseBubbleType::Question;
