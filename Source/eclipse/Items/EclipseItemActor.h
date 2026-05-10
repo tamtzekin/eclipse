@@ -44,6 +44,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
 	float PickupRadius = 150.f;  // 1.5 m
 
+	// Only meaningful when ItemId is "coins" or "notes" — how much currency
+	// this single actor adds to the player's counter on pickup. Default 1
+	// so a freshly placed coin = 1 coin; bump higher for a "pile of coins"
+	// pickup that gives 10 / 50 / etc.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item",
+		meta = (ClampMin = "1"))
+	int32 CurrencyAmount = 1;
+
 	// ── Visual ──
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|Item")
 	TObjectPtr<UStaticMeshComponent> Mesh;

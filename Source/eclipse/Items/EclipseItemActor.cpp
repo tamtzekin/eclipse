@@ -170,17 +170,28 @@ void AEclipseItemActor::Pickup_Implementation()
 	{
 		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			// All items go through AddItem so they appear in the inventory.
-			// To keep duplicated actors (Alt-drag in the editor) as
-			// distinct inventory chips, we pass a per-instance runtime id
-			// formed as "<base>__<actor-name>". The lookup helpers
-			// (UEclipseGameStateSubsystem::GetItemRow / GetClothingRow)
-			// strip the suffix when querying DT_Items, so the row data
-			// stays template-keyed.
+			// Currency special-case: "coins" / "notes" don't take inventory
+			// slots, they bump a counter. Designer-set CurrencyAmount lets
+			// a single coin actor represent a stack (default 1).
+			const bool bIsCoins = (ItemId == TEXT("coins"));
+			const bool bIsNotes = (ItemId == TEXT("notes"));
+			if (bIsCoins || bIsNotes)
+			{
+				const int32 Amt = FMath::Max(1, CurrencyAmount);
+				if (bIsCoins) State->AddCoins(Amt);
+				else          State->AddNotes(Amt);
+			}
+			// All other items go through AddItem so they appear in the
+			// inventory. To keep duplicated actors (Alt-drag in the editor)
+			// as distinct chips, we pass a per-instance runtime id formed as
+			// "<base>__<actor-name>". The lookup helpers
+			// (UEclipseGameStateSubsystem::GetItemRow / GetClothingRow) strip
+			// the suffix when querying DT_Items, so row data stays
+			// template-keyed.
 			//
-			// AddItem itself special-cases the BASE id (e.g. "wristband")
-			// for quest-flag side effects (bHasWristband).
-			if (ItemId != NAME_None)
+			// AddItem itself special-cases the BASE id (e.g. "wristband") for
+			// quest-flag side effects (bHasWristband).
+			else if (ItemId != NAME_None)
 			{
 				const FName RuntimeId = FName(*FString::Printf(
 					TEXT("%s__%s"), *ItemId.ToString(), *GetName()));

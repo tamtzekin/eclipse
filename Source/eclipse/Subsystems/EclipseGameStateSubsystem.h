@@ -103,6 +103,13 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<int32> Tokens;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") bool bHasWristband = false;
 
+	// ── Currency ──
+	// Counters rather than inventory chips — picking up a "coins" actor adds
+	// to Coins, doesn't take a grid slot. The HUD reads these directly. Used
+	// by Phase-2 sinks (Bar drinks, Locker, Bouncer bribes).
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Currency") int32 Coins = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Currency") int32 Notes = 0;
+
 	// Per-item preferred slot index inside the inventory overlay's 6×3 grid
 	// (0..17). Drives sparse "place where I dropped it" layout — items don't
 	// re-pack to the left when neighbours are removed. Cleared on removal /
@@ -174,6 +181,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool UnequipClothing(FName ClothingId);
+
+	// ── Currency mutators ──
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	void AddCoins(int32 Amount);
+
+	// Returns false (and changes nothing) if the player can't afford it.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	bool RemoveCoins(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	void AddNotes(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	bool RemoveNotes(int32 Amount);
 
 	// Move an item to a new position inside the Inventory array. Used by the
 	// inventory UI's drag-to-reorder. NewIdx is clamped to [0, Inventory.Num()-1].

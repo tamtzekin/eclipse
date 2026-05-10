@@ -118,6 +118,52 @@ bool UEclipseGameStateSubsystem::UnequipClothing(FName ClothingId)
 	return N > 0;
 }
 
+// ── Currency ──
+
+void UEclipseGameStateSubsystem::AddCoins(int32 Amount)
+{
+	if (Amount <= 0) return;
+	Coins += Amount;
+	UE_LOG(LogEclipse, Log, TEXT("Currency: +%d coins → %d total"), Amount, Coins);
+	NotifyChanged();
+}
+
+bool UEclipseGameStateSubsystem::RemoveCoins(int32 Amount)
+{
+	if (Amount <= 0) return true;
+	if (Coins < Amount)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Currency: cannot spend %d coins (have %d)"), Amount, Coins);
+		return false;
+	}
+	Coins -= Amount;
+	UE_LOG(LogEclipse, Log, TEXT("Currency: -%d coins → %d total"), Amount, Coins);
+	NotifyChanged();
+	return true;
+}
+
+void UEclipseGameStateSubsystem::AddNotes(int32 Amount)
+{
+	if (Amount <= 0) return;
+	Notes += Amount;
+	UE_LOG(LogEclipse, Log, TEXT("Currency: +%d notes → %d total"), Amount, Notes);
+	NotifyChanged();
+}
+
+bool UEclipseGameStateSubsystem::RemoveNotes(int32 Amount)
+{
+	if (Amount <= 0) return true;
+	if (Notes < Amount)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Currency: cannot spend %d notes (have %d)"), Amount, Notes);
+		return false;
+	}
+	Notes -= Amount;
+	UE_LOG(LogEclipse, Log, TEXT("Currency: -%d notes → %d total"), Amount, Notes);
+	NotifyChanged();
+	return true;
+}
+
 void UEclipseGameStateSubsystem::SetItemSlot(FName ItemId, int32 SlotIndex)
 {
 	if (ItemId.IsNone() || SlotIndex < 0) return;
@@ -431,6 +477,8 @@ namespace
 		Save->EquippedClothing         = GS.EquippedClothing;
 		Save->Tokens                   = GS.Tokens;
 		Save->bHasWristband            = GS.bHasWristband;
+		Save->Coins                    = GS.Coins;
+		Save->Notes                    = GS.Notes;
 		Save->ItemSlotPositions        = GS.ItemSlotPositions;
 		Save->Quest                    = GS.Quest;
 		Save->MetNPCs                  = GS.MetNPCs;
@@ -485,6 +533,8 @@ namespace
 		GS.EquippedClothing         = Save->EquippedClothing;
 		GS.Tokens                   = Save->Tokens;
 		GS.bHasWristband            = Save->bHasWristband;
+		GS.Coins                    = Save->Coins;
+		GS.Notes                    = Save->Notes;
 		GS.ItemSlotPositions        = Save->ItemSlotPositions;
 		GS.Quest                    = Save->Quest;
 		GS.MetNPCs                  = Save->MetNPCs;

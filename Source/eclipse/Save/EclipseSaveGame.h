@@ -27,6 +27,10 @@ public:
 	UPROPERTY() TArray<int32> Tokens;
 	UPROPERTY() bool bHasWristband = false;
 
+	// Currency counters (separate from Inventory chips).
+	UPROPERTY() int32 Coins = 0;
+	UPROPERTY() int32 Notes = 0;
+
 	// Per-item preferred slot inside the 6×3 inventory grid. Without this
 	// the player's hand-arranged layout resets to top-left packing on load,
 	// which feels wrong in a "your stuff is yours" RPG inventory.

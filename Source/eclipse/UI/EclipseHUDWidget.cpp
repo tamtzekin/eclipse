@@ -238,12 +238,42 @@ void UEclipseHUDWidget::NativeConstruct()
 		}
 	}
 
+	// ── Runtime injection of CurrencyText if the WBP didn't ship one. ──
+	// Mounts a small "◆ N  ▤ M" line in the HUD column above the meters.
+	if (!CurrencyText && WidgetTree)
+	{
+		using namespace EclipseUI;
+		UVerticalBox* HudColumn = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("HudColumn")));
+		if (HudColumn)
+		{
+			CurrencyText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("CurrencyText_Runtime"));
+			CurrencyText->SetText(FText::FromString(TEXT("◆ 0   ▤ 0")));
+			CurrencyText->SetFont(MakeBMSPA(12, 2.f));
+			CurrencyText->SetColorAndOpacity(FSlateColor(Cream));
+
+			HudColumn->AddChild(CurrencyText);
+			// Slot below ChapterClockText (index 1 if clock is at 0).
+			const int32 ClockIdx = ChapterClockText
+				? HudColumn->GetChildIndex(ChapterClockText) : -1;
+			HudColumn->ShiftChild(FMath::Max(0, ClockIdx + 1), CurrencyText);
+
+			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(CurrencyText->Slot))
+			{
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+				VS->SetHorizontalAlignment(HAlign_Right);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("HUD: CurrencyText injected at runtime"));
+		}
+	}
+
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
 	{
 		GS->OnStateChanged.AddDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
 	}
 
 	UpdateBars();
+	UpdateCurrency();
 }
 
 void UEclipseHUDWidget::NativeDestruct()
@@ -259,6 +289,16 @@ void UEclipseHUDWidget::NativeDestruct()
 void UEclipseHUDWidget::HandleStateChanged()
 {
 	UpdateBars();
+	UpdateCurrency();
+}
+
+void UEclipseHUDWidget::UpdateCurrency()
+{
+	if (!CurrencyText) return;
+	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return;
+	CurrencyText->SetText(FText::FromString(
+		FString::Printf(TEXT("◆ %d   ▤ %d"), GS->Coins, GS->Notes)));
 }
 
 void UEclipseHUDWidget::UpdateBars()

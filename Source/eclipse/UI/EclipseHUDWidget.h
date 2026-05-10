@@ -53,6 +53,11 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ChapterClockText;
 
+	// Currency readout — "◆ 5  ▤ 100" (coins + notes). Updated on
+	// OnStateChanged. Designer-styleable; built programmatically if absent.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CurrencyText;
+
 private:
 	UFUNCTION()
 	void HandleStateChanged();
@@ -61,4 +66,5 @@ private:
 
 	void UpdateBars();
 	void UpdateChapterClock();
+	void UpdateCurrency();
 };

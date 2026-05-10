@@ -22,8 +22,13 @@
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Data/EclipseItemDefinition.h"
 #include "Data/EclipseClothingDefinition.h"
+#include "Items/EclipseItemActor.h"
 #include "Engine/DataTable.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -626,9 +631,53 @@ void UEclipseInventoryWidget::HandleChipDroppedOutside(FName ItemId, bool bIsClo
 	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
 	if (!GS) return;
 
-	UE_LOG(LogEclipse, Log, TEXT("Inv: ▶ DROP-TO-WORLD '%s' (eq=%d) — removing from %s"),
+	UE_LOG(LogEclipse, Log, TEXT("Inv: ▶ DROP-TO-WORLD '%s' (eq=%d) — removing from %s + spawning pickup"),
 		*ItemId.ToString(), bIsClothing ? 1 : 0,
 		bIsClothing ? TEXT("EquippedClothing") : TEXT("Inventory"));
+
+	// Spawn a fresh pickup actor at the player's feet so the item physically
+	// re-enters the world (and can be picked up again). Cylinder mesh +
+	// dark-blue MIC is a placeholder that matches the rest of the consumables;
+	// per-item meshes can be wired up in a future polish pass.
+	UWorld* World = GetWorld();
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (World && Pawn)
+	{
+		const FVector PawnLoc  = Pawn->GetActorLocation();
+		const FVector Forward  = Pawn->GetActorForwardVector();
+		// 80 cm in front of the pawn, slightly raised. OnConstruction will
+		// floor-snap once the trace fires.
+		const FVector SpawnLoc = PawnLoc + Forward * 80.f + FVector(0.f, 0.f, 30.f);
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AEclipseItemActor* Pickup = World->SpawnActor<AEclipseItemActor>(
+			AEclipseItemActor::StaticClass(), SpawnLoc, FRotator::ZeroRotator, Params);
+
+		if (Pickup)
+		{
+			// Use the BASE id on the dropped actor so re-pickup goes through
+			// the standard runtime-id path (Pickup_Implementation builds
+			// "<base>__<actor-name>" anew, distinct from any stale id).
+			Pickup->ItemId = UEclipseGameStateSubsystem::GetBaseItemId(ItemId);
+
+			if (UStaticMesh* Cyl = Cast<UStaticMesh>(StaticLoadObject(
+				UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"))))
+			{
+				if (Pickup->Mesh) Pickup->Mesh->SetStaticMesh(Cyl);
+			}
+			if (UMaterialInterface* Mat = Cast<UMaterialInterface>(StaticLoadObject(
+				UMaterialInterface::StaticClass(), nullptr,
+				TEXT("/Game/Justin/Materials/MI_ItemDarkBlue.MI_ItemDarkBlue"))))
+			{
+				if (Pickup->Mesh) Pickup->Mesh->SetMaterial(0, Mat);
+			}
+			Pickup->SetActorScale3D(FVector(0.30f, 0.30f, 0.50f));
+			Pickup->SetActorLabel(FString::Printf(TEXT("Item_%s_dropped"),
+				*Pickup->ItemId.ToString()));
+		}
+	}
 
 	if (bIsClothing) GS->UnequipClothing(ItemId);
 	else             GS->RemoveItem(ItemId);
