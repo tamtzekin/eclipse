@@ -184,18 +184,20 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	const FName AN_LEFT     (TEXT("0x0100000000001034"));
 
 	// Skill thresholds dropped to baseline so the encounter is always playable
-	// with default stats (Word=Rhythm=Shadow=1). Tune later as the rest of the
-	// stat-progression system lands. The intent of the [STAT:N] tags is to
-	// signal "this requires the listed stat" — the actual N can rise later.
+	// with default stats (all five at 1). Tune later as the stat-progression
+	// system lands. The [STAT:N] display tag mirrors the SkillCheckStat key.
+	// Mapping from the legacy 3-stat labels: Word→Aesthetics,
+	// Shadow→Zen, Rhythm→Rhythm. Stimulation / Psychedelics not yet used in
+	// authored content — designer can mix them in as new branches land.
 	AddNPC(AN_INTRO,
 		TEXT("The figure turns without turning. A voice that is many voices: \"YOU. WHO SENT YOU?\""),
 		{AN_IC1, AN_IC2, AN_IC3});
-	AddChoice(AN_IC1, TEXT("[WORD:1] I am a messenger of the Mandate."),
-		{AN_CONV_OK}, NAME_None, TEXT("word"),   1);
-	AddChoice(AN_IC2, TEXT("[SHADOW:1] I bring the Hair and the Eye. A gift."),
-		{AN_CONV_OK}, NAME_None, TEXT("shadow"), 1);
+	AddChoice(AN_IC1, TEXT("[AESTHETICS:1] I am a messenger of the Mandate."),
+		{AN_CONV_OK}, NAME_None, TEXT("aesthetics"), 1);
+	AddChoice(AN_IC2, TEXT("[ZEN:1] I bring the Hair and the Eye. A gift."),
+		{AN_CONV_OK}, NAME_None, TEXT("zen"),        1);
 	AddChoice(AN_IC3, TEXT("[RHYTHM:1] Your song drew me down."),
-		{AN_CONV_OK}, NAME_None, TEXT("rhythm"), 1);
+		{AN_CONV_OK}, NAME_None, TEXT("rhythm"),     1);
 
 	AddNPC(AN_CONV_OK,
 		TEXT("\"…THEN SPEAK THE NAME. PROVE IT.\" Its form fragments, reassembles. Ready for battle."),
@@ -203,12 +205,12 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	AddNPC(AN_BATTLE,
 		TEXT("It circles you, glitching through the walls. \"STRIKE, MESSENGER.\""),
 		{AN_BC1, AN_BC2, AN_BC3});
-	AddChoice(AN_BC1, TEXT("[WORD:1] Recite the forbidden syllables."),
-		{AN_DEFEATED}, NAME_None, TEXT("word"),   1);
-	AddChoice(AN_BC2, TEXT("[SHADOW:1] Overwhelm it with your silence."),
-		{AN_DEFEATED}, NAME_None, TEXT("shadow"), 1);
+	AddChoice(AN_BC1, TEXT("[AESTHETICS:1] Recite the forbidden syllables."),
+		{AN_DEFEATED}, NAME_None, TEXT("aesthetics"), 1);
+	AddChoice(AN_BC2, TEXT("[ZEN:1] Overwhelm it with your silence."),
+		{AN_DEFEATED}, NAME_None, TEXT("zen"),        1);
 	AddChoice(AN_BC3, TEXT("[RHYTHM:1] Match its cadence, beat for beat."),
-		{AN_DEFEATED}, NAME_None, TEXT("rhythm"), 1);
+		{AN_DEFEATED}, NAME_None, TEXT("rhythm"),     1);
 
 	AddNPC(AN_DEFEATED,
 		TEXT("The angel collapses inward, dimming. It whispers: \"I am… cold. I am dying. Feed me the tabs. Four. Please.\""),
@@ -473,13 +475,12 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 				Choice.SkillCheckStat = ChoiceNode->SkillCheckStat;
 				Choice.SkillCheckValue = ChoiceNode->SkillCheckValue;
 
-				// Evaluate availability of skill-check choices
+				// Evaluate availability of skill-check choices via the
+				// 5-stat resolver (returns 0 for unknown keys, which makes
+				// the check always fail — fine, that's what we want).
 				if (Choice.bIsSkillCheck && State)
 				{
-					int32 StatVal = 1;
-					if      (ChoiceNode->SkillCheckStat == TEXT("word"))   StatVal = State->Word;
-					else if (ChoiceNode->SkillCheckStat == TEXT("rhythm")) StatVal = State->Rhythm;
-					else if (ChoiceNode->SkillCheckStat == TEXT("shadow")) StatVal = State->Shadow;
+					const int32 StatVal = State->GetStatValue(ChoiceNode->SkillCheckStat);
 					Choice.bAvailable = (StatVal >= ChoiceNode->SkillCheckValue);
 				}
 				CurrentNode.Choices.Add(Choice);
@@ -549,7 +550,11 @@ bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& 
 
 	OutStat = FName(*Inner.Left(Colon).ToLower());
 	OutValue = FCString::Atoi(*Inner.Mid(Colon + 1));
-	return OutStat == TEXT("word") || OutStat == TEXT("rhythm") || OutStat == TEXT("shadow");
+	return OutStat == TEXT("aesthetics")
+		|| OutStat == TEXT("stimulation")
+		|| OutStat == TEXT("rhythm")
+		|| OutStat == TEXT("zen")
+		|| OutStat == TEXT("psychedelics");
 }
 
 void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)

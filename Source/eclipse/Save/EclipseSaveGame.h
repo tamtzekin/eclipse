@@ -17,9 +17,11 @@ class ECLIPSE_API UEclipseSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	UPROPERTY() int32 Word = 1;
-	UPROPERTY() int32 Rhythm = 1;
-	UPROPERTY() int32 Shadow = 1;
+	UPROPERTY() int32 Aesthetics   = 1;
+	UPROPERTY() int32 Stimulation  = 1;
+	UPROPERTY() int32 Rhythm       = 1;
+	UPROPERTY() int32 Zen          = 1;
+	UPROPERTY() int32 Psychedelics = 1;
 	UPROPERTY() float Heat = 60.f;
 	UPROPERTY() float Thirst = 80.f;
 	UPROPERTY() TArray<FName> Inventory;

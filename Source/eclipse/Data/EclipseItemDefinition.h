@@ -58,6 +58,6 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemType Type = EEclipseItemType::Usable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FEclipseItemEffect Effect;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Duration = 0.f;    // 0 = permanent / non-timed
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "word"|"rhythm"|"shadow"|None
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "aesthetics"|"stimulation"|"rhythm"|"zen"|"psychedelics"|None
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName QuestFlag;         // e.g. "hasHair" — for Angel's Hair drink
 };

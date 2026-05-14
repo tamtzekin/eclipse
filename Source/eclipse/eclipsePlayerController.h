@@ -53,9 +53,15 @@ protected:
 	/** I-key handler — toggles the inventory overlay. */
 	void ToggleInventory();
 
+	/** S-key handler — toggles the stats menu overlay (5 stats + meters + currency). */
+	void ToggleStatsMenu();
+
 	UPROPERTY()
 	TObjectPtr<class UEclipsePauseMenuWidget> ActivePauseMenu;
 
 	UPROPERTY()
 	TObjectPtr<class UEclipseInventoryWidget> ActiveInventory;
+
+	UPROPERTY()
+	TObjectPtr<class UEclipseStatsMenuWidget> ActiveStatsMenu;
 };

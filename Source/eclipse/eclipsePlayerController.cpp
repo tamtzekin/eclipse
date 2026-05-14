@@ -10,6 +10,7 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/EclipsePauseMenuWidget.h"
 #include "UI/EclipseInventoryWidget.h"
+#include "UI/EclipseStatsMenuWidget.h"
 #include "UI/EclipseMainMenuActor.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "InputCoreTypes.h"
@@ -126,7 +127,15 @@ void AeclipsePlayerController::SetupInputComponent()
 					this, &AeclipsePlayerController::ToggleInventory);
 				InputComponent->KeyBindings.Add(B);
 			}
-			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I bindings installed on %s (InputComponent=%p)"),
+			// C → stats menu overlay (S would conflict with WASD "back").
+			{
+				FInputKeyBinding B(FInputChord(EKeys::C, false, false, false, false), IE_Pressed);
+				B.bExecuteWhenPaused = true;
+				B.KeyDelegate.GetDelegateForManualSet().BindUObject(
+					this, &AeclipsePlayerController::ToggleStatsMenu);
+				InputComponent->KeyBindings.Add(B);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I + C bindings installed on %s (InputComponent=%p)"),
 				*GetName(), (void*)InputComponent);
 		}
 		else
@@ -199,4 +208,41 @@ void AeclipsePlayerController::ToggleInventory()
 		return;
 	}
 	ActiveInventory = UEclipseInventoryWidget::OpenForPlayer(this);
+}
+
+void AeclipsePlayerController::ToggleStatsMenu()
+{
+	UE_LOG(LogEclipse, Log, TEXT("PC: ToggleStatsMenu fired"));
+
+	// Same guards as ToggleInventory: don't open over dialogue or pause menu.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			if (DS->IsDialogueOpen())
+			{
+				UE_LOG(LogEclipse, Log, TEXT("PC: ToggleStatsMenu — dialogue open, ignoring"));
+				return;
+			}
+		}
+	}
+	if (ActivePauseMenu && ActivePauseMenu->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: ToggleStatsMenu — pause menu open, ignoring"));
+		return;
+	}
+	// Don't double-open over the inventory either.
+	if (ActiveInventory && ActiveInventory->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: ToggleStatsMenu — inventory open, ignoring"));
+		return;
+	}
+
+	if (ActiveStatsMenu && ActiveStatsMenu->IsInViewport())
+	{
+		ActiveStatsMenu->Close();
+		ActiveStatsMenu = nullptr;
+		return;
+	}
+	ActiveStatsMenu = UEclipseStatsMenuWidget::OpenForPlayer(this);
 }

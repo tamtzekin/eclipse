@@ -271,6 +271,19 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 	return RemoveItem(ItemId);
 }
 
+int32 UEclipseGameStateSubsystem::GetStatValue(FName StatKey) const
+{
+	// Match on lowercase. Designer-authored skill checks pass keys like
+	// "aesthetics" / "rhythm" / "zen" — keep this in sync with
+	// CLAUDE.md §5.2 if the stat list ever grows.
+	if (StatKey == TEXT("aesthetics"))   return Aesthetics;
+	if (StatKey == TEXT("stimulation"))  return Stimulation;
+	if (StatKey == TEXT("rhythm"))       return Rhythm;
+	if (StatKey == TEXT("zen"))          return Zen;
+	if (StatKey == TEXT("psychedelics")) return Psychedelics;
+	return 0;
+}
+
 FName UEclipseGameStateSubsystem::GetBaseItemId(FName MaybeRuntimeId)
 {
 	// Runtime ids look like "<base>__<actor-name>" — see
@@ -468,9 +481,11 @@ namespace
 			UGameplayStatics::CreateSaveGameObject(UEclipseSaveGame::StaticClass()));
 		if (!Save) return nullptr;
 
-		Save->Word                     = GS.Word;
+		Save->Aesthetics               = GS.Aesthetics;
+		Save->Stimulation              = GS.Stimulation;
 		Save->Rhythm                   = GS.Rhythm;
-		Save->Shadow                   = GS.Shadow;
+		Save->Zen                      = GS.Zen;
+		Save->Psychedelics             = GS.Psychedelics;
 		Save->Heat                     = GS.Heat;
 		Save->Thirst                   = GS.Thirst;
 		Save->Inventory                = GS.Inventory;
@@ -524,9 +539,11 @@ namespace
 		UWorld* W, bool& bImmediateTeleport)
 	{
 		bImmediateTeleport = false;
-		GS.Word                     = Save->Word;
+		GS.Aesthetics               = Save->Aesthetics;
+		GS.Stimulation              = Save->Stimulation;
 		GS.Rhythm                   = Save->Rhythm;
-		GS.Shadow                   = Save->Shadow;
+		GS.Zen                      = Save->Zen;
+		GS.Psychedelics             = Save->Psychedelics;
 		GS.Heat                     = Save->Heat;
 		GS.Thirst                   = Save->Thirst;
 		GS.Inventory                = Save->Inventory;

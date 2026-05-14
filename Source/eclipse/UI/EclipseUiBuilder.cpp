@@ -1176,6 +1176,165 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Stats menu WBP — modal centred overlay in the HUD's visual language.
+//
+//  Same widget-name conventions as the C++ widget's BindWidgetOptional list
+//  so once the WBP is populated, the C++ side rebinds without any rename
+//  step. Names: AestheticsRow, StimulationRow, RhythmRow, ZenRow,
+//  PsychedelicsRow, HeatRow, ThirstRow, CurrencyRow, CloseBtn. (The widget
+//  reads stat values into these UTextBlocks at RefreshAll-time.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		// Fullscreen dim beneath the panel (matches Inventory / Pause).
+		UBorder* Dim = New<UBorder>(Tree, TEXT("Dim"));
+		Dim->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.65f)));
+		Dim->SetPadding(FMargin(0.f));
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Dim))
+		{
+			S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f));
+		}
+
+		// Centred navy panel — same RoundedBrush(PanelBg, PanelBorder) as the
+		// HUD background so the modal reads as "HUD expanded full-screen".
+		UBorder* Panel = New<UBorder>(Tree, TEXT("StatsPanel"));
+		Panel->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
+		Panel->SetPadding(FMargin(28.f, 22.f));
+		Panel->SetHorizontalAlignment(HAlign_Fill);
+		Panel->SetVerticalAlignment(VAlign_Fill);
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			S->SetAlignment(FVector2D(0.5f, 0.5f));
+			S->SetSize(FVector2D(720.f, 560.f));
+			S->SetZOrder(1);
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("StatsColumn"));
+		Panel->SetContent(Column);
+
+		// ── Title — Berenjena caps, cyan, generous letter spacing ────────────
+		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("StatsTitle"));
+		Title->SetText(FText::FromString(TEXT("STATS")));
+		Title->SetFont(MakeBerenjena(44, 8.f));
+		Title->SetColorAndOpacity(FSlateColor(Cyan));
+		Title->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		// ── Top row: Portrait | Stat list ────────────────────────────────────
+		UHorizontalBox* TopRow = New<UHorizontalBox>(Tree, TEXT("TopRow"));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(TopRow))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// Portrait — HUD-style 120×160 navy frame with cyan outline + "YOU".
+		// Same construction as PopulateHUDWBP::PortraitFrame, just bigger.
+		UBorder* PortraitFrame = New<UBorder>(Tree, TEXT("PortraitFrame"));
+		{
+			FSlateBrush PB;
+			PB.DrawAs    = ESlateBrushDrawType::RoundedBox;
+			PB.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
+			PB.OutlineSettings.Color        = FSlateColor(Cyan);
+			PB.OutlineSettings.Width        = 2.f;
+			PB.OutlineSettings.CornerRadii  = FVector4(0,0,0,0);
+			PB.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+			PortraitFrame->SetBrush(PB);
+		}
+		PortraitFrame->SetHorizontalAlignment(HAlign_Center);
+		PortraitFrame->SetVerticalAlignment(VAlign_Center);
+
+		UTextBlock* PortraitLabel = New<UTextBlock>(Tree, TEXT("PortraitLabel"));
+		PortraitLabel->SetText(FText::FromString(TEXT("YOU")));
+		PortraitLabel->SetFont(MakeBerenjena(20, 5.f));
+		PortraitLabel->SetColorAndOpacity(FSlateColor(Cyan));
+		PortraitLabel->SetJustification(ETextJustify::Center);
+		PortraitFrame->SetContent(PortraitLabel);
+
+		USizeBox* PortraitSize = New<USizeBox>(Tree, TEXT("PortraitSize"));
+		PortraitSize->SetWidthOverride(120.f);
+		PortraitSize->SetHeightOverride(160.f);
+		PortraitSize->AddChild(PortraitFrame);
+
+		if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(PortraitSize))
+		{
+			HS->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
+			HS->SetVerticalAlignment(VAlign_Top);
+		}
+
+		// Stat list — 5 rows, each "LABEL     N" via SetText at runtime.
+		// One TextBlock per row keeps designer styling on a single row entity.
+		UVerticalBox* StatList = New<UVerticalBox>(Tree, TEXT("StatList"));
+		if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(StatList))
+		{
+			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			HS->SetVerticalAlignment(VAlign_Top);
+		}
+
+		auto MakeStatRow = [&](FName WidgetName, const FString& DefaultLabel)
+		{
+			UTextBlock* T = New<UTextBlock>(Tree, WidgetName);
+			T->SetText(FText::FromString(DefaultLabel));
+			T->SetFont(MakeBerenjena(20, 4.f));
+			T->SetColorAndOpacity(FSlateColor(Cream));
+			if (UVerticalBoxSlot* VS = StatList->AddChildToVerticalBox(T))
+			{
+				VS->SetPadding(FMargin(0.f, 4.f));
+			}
+		};
+
+		MakeStatRow(TEXT("AestheticsRow"),   TEXT("AESTHETICS     1"));
+		MakeStatRow(TEXT("StimulationRow"),  TEXT("STIMULATION    1"));
+		MakeStatRow(TEXT("RhythmRow"),       TEXT("RHYTHM         1"));
+		MakeStatRow(TEXT("ZenRow"),          TEXT("ZEN            1"));
+		MakeStatRow(TEXT("PsychedelicsRow"), TEXT("PSYCHEDELICS   1"));
+
+		// (Heat / Thirst meters and currency readout intentionally omitted —
+		// stats panel is for the 5 character stats only. Heat/Thirst already
+		// surface on the persistent HUD; currency belongs to the HUD too.)
+
+		// ── Close button ─────────────────────────────────────────────────────
+		UButton* CloseBtn = New<UButton>(Tree, TEXT("CloseBtn"));
+		{
+			FButtonStyle BS;
+			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
+			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
+			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
+			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			CloseBtn->SetStyle(BS);
+		}
+		UTextBlock* CloseLabel = New<UTextBlock>(Tree, TEXT("CloseBtn_Label"));
+		CloseLabel->SetText(FText::FromString(TEXT("CLOSE")));
+		CloseLabel->SetFont(MakeBerenjena(18, 4.f));
+		CloseLabel->SetColorAndOpacity(FSlateColor(Cream));
+		CloseLabel->SetJustification(ETextJustify::Center);
+		CloseBtn->SetContent(CloseLabel);
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(CloseBtn))
+		{
+			VS->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Build a UFont composite that wraps a UFontFace
 // ─────────────────────────────────────────────────────────────────────────────
 

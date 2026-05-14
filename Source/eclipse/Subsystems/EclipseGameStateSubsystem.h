@@ -72,9 +72,26 @@ public:
 	virtual void Deinitialize() override;
 
 	// ── Stats ──
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Word   = 1;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Rhythm = 1;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Shadow = 1;
+	// Five-stat system (clubby remix of the original Word/Rhythm/Shadow):
+	//   Aesthetics    — taste, fit, presentation. (~old "Word")
+	//   Stimulation   — energy management, raw drive.
+	//   Rhythm        — flow, timing, beat-sense. (kept)
+	//   Zen           — composure, silence. (~old "Shadow")
+	//   Psychedelics  — perception, openness to weird input.
+	// Skill checks reference these via lowercase StatKey strings:
+	//   "aesthetics" | "stimulation" | "rhythm" | "zen" | "psychedelics"
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Aesthetics   = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Stimulation  = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Rhythm       = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Zen          = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Psychedelics = 1;
+
+	// Resolve a lowercase stat-key string ("aesthetics" / "stimulation" / …)
+	// to the matching int field. Returns 0 for unknown keys. Used by the
+	// dialogue skill-check evaluator and any future "boost a stat by name"
+	// systems.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
+	int32 GetStatValue(FName StatKey) const;
 
 	// ── Meters ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Heat      = 60.f;

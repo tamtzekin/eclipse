@@ -53,6 +53,14 @@ namespace EclipseUI
 			Cache = LoadObject<UFont>(nullptr, TEXT("/Game/Justin/UI/Fonts/RodinPro_Font.RodinPro_Font"));
 		return Cache.Get();
 	}
+	inline UFont* GetBerenjena()
+	{
+		static TWeakObjectPtr<UFont> Cache;
+		if (!Cache.IsValid())
+			Cache = LoadObject<UFont>(nullptr,
+				TEXT("/Game/Justin/UI/Fonts/BerenjenaTRIAL-Medium_Font.BerenjenaTRIAL-Medium_Font"));
+		return Cache.Get();
+	}
 
 	inline FSlateFontInfo MakeBMSPA(int32 Size, float LetterSpacingPx = 0.f)
 	{
@@ -73,6 +81,20 @@ namespace EclipseUI
 	{
 		FSlateFontInfo Info;
 		if (UFont* F = GetRodinPro())
+		{
+			Info = FSlateFontInfo(F, Size, FName("Default"));
+		}
+		else
+		{
+			Info.Size = Size;
+		}
+		Info.LetterSpacing = (int32)(LetterSpacingPx * 62.5f);
+		return Info;
+	}
+	inline FSlateFontInfo MakeBerenjena(int32 Size, float LetterSpacingPx = 0.f)
+	{
+		FSlateFontInfo Info;
+		if (UFont* F = GetBerenjena())
 		{
 			Info = FSlateFontInfo(F, Size, FName("Default"));
 		}

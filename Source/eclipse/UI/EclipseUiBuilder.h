@@ -57,6 +57,18 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateInventoryWBP(const FString& WBPAssetPath);
 
+	/** Stats panel (C key) — modal centred overlay built in the HUD's visual
+	 *  language: navy PanelBg / cream-border RoundedBrush, BMSPA caps, cyan
+	 *  highlights. Layout:
+	 *    Title "STATS"
+	 *    Portrait (HUD-style 90×112 frame with "YOU") | 5-stat column
+	 *    HEAT + THIRST vertical bars (HUD-style)
+	 *    Currency row + CLOSE button.
+	 *  Widget names match the C++ widget's BindWidgetOptional UPROPERTYs.    */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateStatsMenuWBP(const FString& WBPAssetPath);
+
 	/**
 	 * Builds a UFont composite that wraps a UFontFace so Slate text widgets
 	 * (which expect UFont, not raw UFontFace) can resolve glyphs.
