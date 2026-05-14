@@ -1062,8 +1062,13 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		if (DialogueAnimTime < RevealAt) bAllDone = false;
 	}
 
-	// ── Per-word fade ─────────────────────────────────────────────────────
+	// ── Per-word fade + slide-up ──────────────────────────────────────────
+	// Each word fades from alpha 0 → 1 AND rises ~6 px to its resting
+	// position. Both curves use cubic ease-out so the motion settles softly
+	// instead of stopping abruptly — much smoother read than the previous
+	// linear ramp + zero-translation.
 	const int32 N = AnimWordBlocks.Num();
+	const float SlideUpPx = 6.f;
 	for (int32 i = 0; i < N; ++i)
 	{
 		UTextBlock* Block = AnimWordBlocks[i];
@@ -1071,17 +1076,25 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 
 		const float Delay  = (AnimWordDelays.IsValidIndex(i) ? AnimWordDelays[i] : 0.f);
 		const FLinearColor Tint = (AnimWordTints.IsValidIndex(i) ? AnimWordTints[i] : EclipseUI::Cream);
-		const float t = (DialogueAnimTime - Delay) / FMath::Max(0.0001f, WordFadeDuration);
-		const float Alpha = FMath::Clamp(t, 0.f, 1.f);
+		const float tRaw = (DialogueAnimTime - Delay) / FMath::Max(0.0001f, WordFadeDuration);
+		const float tLin = FMath::Clamp(tRaw, 0.f, 1.f);
 
-		FLinearColor C = Tint; C.A = Alpha;
+		// Cubic ease-out: 1 - (1-t)^3. Eye-pleasing for short fades.
+		const float Eased = 1.f - FMath::Pow(1.f - tLin, 3.f);
+
+		FLinearColor C = Tint; C.A = Eased;
 		Block->SetColorAndOpacity(FSlateColor(C));
+
+		// Slide-up: start `SlideUpPx` below resting (positive Y in Slate
+		// is downward), translate toward 0 as alpha fills in.
+		const float YOffset = SlideUpPx * (1.f - Eased);
+		Block->SetRenderTranslation(FVector2D(0.f, YOffset));
 
 		// Leading edge: the moment a word's delay is crossed, splice off a
 		// random mumble slice — but only every Nth word so the mumble feels
 		// like phrases rather than chatter. AnimWordMumbleFired keeps it
 		// strictly one-shot per word so we don't retrigger across frames.
-		if (t > 0.f && AnimWordMumbleFired.IsValidIndex(i) && !AnimWordMumbleFired[i])
+		if (tRaw > 0.f && AnimWordMumbleFired.IsValidIndex(i) && !AnimWordMumbleFired[i])
 		{
 			AnimWordMumbleFired[i] = true;
 			const int32 Stride = FMath::Max(1, MumbleWordsPerSlice);
@@ -1091,7 +1104,7 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			}
 		}
 
-		if (Alpha < 1.f) bAllDone = false;
+		if (Eased < 1.f) bAllDone = false;
 	}
 
 	if (bAllDone)

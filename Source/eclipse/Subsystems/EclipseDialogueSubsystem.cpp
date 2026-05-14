@@ -410,7 +410,13 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 	}
 
 	OnDialogueOpened.Broadcast(Npc);
-	OnNodeChanged.Broadcast(CurrentNode);
+	// (Don't re-broadcast OnNodeChanged here — AdvanceToNode above already
+	// fired it. Re-broadcasting causes the dialogue widget's body-cascade
+	// animation to restart mid-flight every time a conversation opens,
+	// visible as a brief judder + a doubled "StartBodyAnimation" log pair.
+	// Fallback placeholder branch above doesn't call AdvanceToNode, but it
+	// doesn't broadcast OnNodeChanged either — the widget's existing default
+	// state is fine for the "[Dialogue not yet authored]" case.)
 	UE_LOG(LogEclipse, Log, TEXT("Opened dialogue '%s' with NPC '%s' → entry '%s'"),
 		*CurrentDialogueId.ToString(), *Npc->NpcName.ToString(), *EntryNode.ToString());
 	return true;
