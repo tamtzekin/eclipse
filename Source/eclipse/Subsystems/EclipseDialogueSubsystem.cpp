@@ -304,6 +304,19 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 	CurrentDialogueId = Npc->DialogueId;
 	bDialogueOpen = true;
 
+	// Pause the chapter clock while dialogue is open — TickChapterClock
+	// early-returns on !bClockRunning so no game-time elapses during
+	// conversation. CloseDialogue() flips it back on. Each MakeChoice call
+	// will still add +1 game-second so reading through a long branch costs
+	// time even though the wall clock is frozen.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			GS->SetClockRunning(false);
+		}
+	}
+
 	// Determine the correct entry node.
 	// For the Angel Seeker we branch on quest state, exactly as in the JS prototype.
 	FName EntryNode = NAME_None;
@@ -411,6 +424,25 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	const FEclipseDialogueChoice& Chosen = CurrentNode.Choices[ChoiceIndex];
 	UE_LOG(LogEclipse, Log, TEXT("Choice [%d]: %s"), ChoiceIndex, *Chosen.Text.ToString());
 
+	// Helper — bump the chapter clock by 20 game-seconds. Called only on
+	// continuing choices (see below). Exit choices that fall through to
+	// CloseDialogue do NOT pay this cost; the live clock simply resumes.
+	// 20 (not 30) keeps the visible minute readout from ticking cleanly
+	// on every 2nd choice — the irregular crossings feel less mechanical.
+	auto BumpClockForContinue = [this]()
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+			{
+				const float Before = GS->ChapterElapsedSeconds;
+				GS->ChapterElapsedSeconds += 20.0f;
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +20s  %.1f -> %.1f"),
+					Before, GS->ChapterElapsedSeconds);
+			}
+		}
+	};
+
 	// Dispatch menuAction if present
 	if (Chosen.ChoiceId != NAME_None)
 	{
@@ -420,16 +452,18 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 			{
 				DispatchMenuAction(Node->MenuAction);
 			}
-			// Advance to the first output of this choice node
+			// Advance to the first output of this choice node — counts as
+			// a "continuing" click, pay the +30s.
 			if (Node->Outputs.Num() > 0)
 			{
+				BumpClockForContinue();
 				AdvanceToNode(Node->Outputs[0]);
 				return true;
 			}
 		}
 	}
 
-	// No next node → close
+	// No next node → close (no +30s — the live clock just resumes).
 	CloseDialogue();
 	return true;
 }
@@ -520,6 +554,15 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	ActiveNpc = nullptr;
 	CurrentDialogueId = NAME_None;
 	CurrentNode = FEclipseDialogueNodeView{};
+
+	// Resume the chapter clock that OpenDialogue paused.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			GS->SetClockRunning(true);
+		}
+	}
 
 	// Release the OTS rotation lock on the player
 	if (UWorld* W = GetWorld())

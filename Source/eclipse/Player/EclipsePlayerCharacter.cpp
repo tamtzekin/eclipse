@@ -233,26 +233,49 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 
 	if (bFacingTarget)
 	{
-		// Smoothly rotate the character to face the target's horizontal position.
+		// OTS dialogue pivot — rotate the CONTROLLER (not just the actor) so
+		// the SpringArm (bUsePawnControlRotation=true) follows and the camera
+		// swings to look at the NPC. Mouse-look is already suppressed by the
+		// dialogue widget (SetIgnoreLookInput(true)), so the controller's
+		// scripted yaw won't fight player input.
+		//
+		// Regression: the previous build only called SetActorRotation, which
+		// rotated the player mesh but left the camera frozen because
+		// SpringArm follows ControlRotation, not ActorRotation.
 		const FVector ToTarget = FaceTargetLocation - GetActorLocation();
 		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToTarget.Y, ToTarget.X)), 0.f);
-		const FRotator NewRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
-		SetActorRotation(NewRot);
+
+		if (AController* Ctrl = GetController())
+		{
+			const FRotator NewCtrlRot = FMath::RInterpTo(
+				Ctrl->GetControlRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
+			Ctrl->SetControlRotation(NewCtrlRot);
+		}
+		// Also keep the body facing the NPC so the player mesh isn't side-on.
+		const FRotator NewActorRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
+		SetActorRotation(NewActorRot);
 	}
 
-	// ── TAB-hold zoom + fisheye-focus post-process ──
+	// ── TAB-hold zoom-OUT + reverse-fisheye post-process ──
+	//
+	// Flipped from the previous "zoom in / first-person reticle" pass: TAB
+	// now pulls the camera OUT and widens FOV for a god's-eye scan of the
+	// scene. Vignette + chromatic-aberration stay as the visual cue —
+	// designer can later swap them out for a real fisheye post-process
+	// material by calling `Camera->AddOrUpdateBlendable(FishEyeMat, alpha)`.
 	{
 		const float Target = bHighlightZoomActive ? 1.f : 0.f;
 		HighlightZoomAlpha = FMath::FInterpTo(HighlightZoomAlpha, Target, DeltaTime, /*Speed=*/8.f);
 
 		if (SpringArm)
 		{
-			SpringArm->TargetArmLength = FMath::Lerp(DefaultArmLength, 250.f, HighlightZoomAlpha);
+			// Pull out to ~2x default arm length on full hold.
+			SpringArm->TargetArmLength = FMath::Lerp(DefaultArmLength, DefaultArmLength * 2.f, HighlightZoomAlpha);
 		}
 		if (Camera)
 		{
-			// Pinch FOV in slightly for the "look at this thing" feel.
-			Camera->SetFieldOfView(FMath::Lerp(DefaultFOV, 70.f, HighlightZoomAlpha));
+			// Widen FOV for the "step back and survey" feel (was 70 / pinch-in).
+			Camera->SetFieldOfView(FMath::Lerp(DefaultFOV, 110.f, HighlightZoomAlpha));
 
 			// Layer in vignette + chromatic-aberration via the camera's local
 			// PostProcessSettings. bOverride_ flags are required for the values
@@ -266,15 +289,15 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 			PP.ChromaticAberrationStartOffset = 0.f;
 		}
 
-		// Hide the player mesh once the camera has pulled in past 30% of the
-		// zoom — by that point the character body would otherwise clip the
-		// camera. Net effect: TAB-held reads as a first-person view.
+		// Camera pulls AWAY from the body now, so the player mesh stays
+		// visible at all times — no need to hide it like the old zoom-IN
+		// path did. If we previously hid it (state carry-over after a
+		// rebuild), unhide on the way out.
 		if (USkeletalMeshComponent* PlayerMesh = GetMesh())
 		{
-			const bool bWantVisible = HighlightZoomAlpha < 0.3f;
-			if (PlayerMesh->IsVisible() != bWantVisible)
+			if (!PlayerMesh->IsVisible())
 			{
-				PlayerMesh->SetVisibility(bWantVisible, /*bPropagateToChildren=*/true);
+				PlayerMesh->SetVisibility(true, /*bPropagateToChildren=*/true);
 			}
 		}
 	}

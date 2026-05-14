@@ -340,10 +340,11 @@ void UEclipseHUDWidget::UpdateChapterClock()
 	if (!GS) return;
 
 	// Time-of-day readout — H:MM, 24-hour, starting at 0:00 (midnight) and
-	// counting up. Each in-game *minute* on the clock advances when the
-	// underlying ChapterElapsedSeconds accumulator crosses another 60s of
-	// game-time. Wraps every 24 hours so the display stays a real clock
-	// rather than drifting to "25:00" after a long session.
+	// counting up. The MM column updates whenever the underlying
+	// ChapterElapsedSeconds accumulator crosses another 60s boundary —
+	// either via the live tick (real-time × ClockScale) or via the
+	// dialogue +20s/click bump. Wraps every 24 hours so the display stays
+	// a real clock rather than drifting to "25:00" after a long session.
 	const float Elapsed     = FMath::Max(0.f, GS->ChapterElapsedSeconds);
 	const int32 TotalMins   = FMath::FloorToInt(Elapsed / 60.f);
 	const int32 HourOfDay   = (TotalMins / 60) % 24;
