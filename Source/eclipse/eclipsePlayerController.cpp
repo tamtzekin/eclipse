@@ -12,6 +12,7 @@
 #include "UI/EclipseInventoryWidget.h"
 #include "UI/EclipseStatsMenuWidget.h"
 #include "UI/EclipseMainMenuActor.h"
+#include "UI/EclipseBlinkWipeWidget.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Components/InputComponent.h"
@@ -55,6 +56,18 @@ void AeclipsePlayerController::BeginPlay()
 		else
 		{
 			UE_LOG(LogEclipse, Log, TEXT("PC::BeginPlay — menu level detected, skipping input reset"));
+		}
+
+		// Eye-open half of the blink-wipe transition. If we got here via
+		// PlayClose → OpenLevel, the destination level starts black and
+		// the wipe fades it back to clear (~90 ms). Harmless when no wipe
+		// was played — the widget just plays a single fade from black
+		// regardless, which reads as a quick fade-in on direct boots.
+		// Skip on menu levels because the main-menu widget owns its own
+		// intro animation.
+		if (!bMenuLevel)
+		{
+			UEclipseBlinkWipeWidget::PlayOpen(this);
 		}
 	}
 
@@ -163,18 +176,35 @@ void AeclipsePlayerController::TogglePauseMenu()
 		}
 	}
 
+	// Wrap both open and close in a PlayFull blink wipe — fade to black,
+	// swap the menu state at fully-covered, fade back. Visible 180 ms
+	// each phase. The wipe widget lives at z=5000 so it covers the menu
+	// during the open phase even after the menu mounts to the viewport.
 	if (ActivePauseMenu && ActivePauseMenu->IsInViewport())
 	{
-		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — closing existing menu"));
-		ActivePauseMenu->Close();
-		ActivePauseMenu = nullptr;
+		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — closing existing menu (with blink wipe)"));
+		UEclipseBlinkWipeWidget::FOnBlinkPhase Cb;
+		Cb.BindLambda([this]()
+		{
+			if (ActivePauseMenu)
+			{
+				ActivePauseMenu->Close();
+				ActivePauseMenu = nullptr;
+			}
+		});
+		UEclipseBlinkWipeWidget::PlayFull(this, Cb);
 		return;
 	}
 
-	UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — opening menu"));
-	ActivePauseMenu = UEclipsePauseMenuWidget::OpenForPlayer(this);
-	UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — OpenForPlayer returned %s"),
-		ActivePauseMenu ? TEXT("OK") : TEXT("nullptr"));
+	UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — opening menu (with blink wipe)"));
+	UEclipseBlinkWipeWidget::FOnBlinkPhase Cb;
+	Cb.BindLambda([this]()
+	{
+		ActivePauseMenu = UEclipsePauseMenuWidget::OpenForPlayer(this);
+		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePauseMenu — OpenForPlayer returned %s"),
+			ActivePauseMenu ? TEXT("OK") : TEXT("nullptr"));
+	});
+	UEclipseBlinkWipeWidget::PlayFull(this, Cb);
 }
 
 void AeclipsePlayerController::ToggleInventory()

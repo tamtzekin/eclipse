@@ -274,6 +274,58 @@ void UEclipseHUDWidget::NativeConstruct()
 		}
 	}
 
+	// ── Runtime injection of EnergyBar if the WBP didn't ship one. ──
+	// WBP_HUD was authored before the Energy meter existed, so its HudRow
+	// only has Heat/Thirst clusters. Inject an Energy cluster on the right
+	// of HudRow so the bar lines up with the other vertical meters.
+	if (!EnergyBar && WidgetTree)
+	{
+		using namespace EclipseUI;
+		UHorizontalBox* HudRow = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("HudRow")));
+		if (HudRow)
+		{
+			UVerticalBox* EnergyCluster = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("EnergyCluster_Runtime"));
+
+			EnergyLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("EnergyLabel_Runtime"));
+			EnergyLabel->SetText(FText::FromString(TEXT("ENERGY")));
+			EnergyLabel->SetFont(MakeBMSPA(14, 4.f));
+			EnergyLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.75f, 0.55f, 1.f)));
+			if (UVerticalBoxSlot* S = EnergyCluster->AddChildToVerticalBox(EnergyLabel))
+				S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+
+			EnergyBar = WidgetTree->ConstructWidget<UProgressBar>(
+				UProgressBar::StaticClass(), TEXT("EnergyBar_Runtime"));
+			{
+				FProgressBarStyle S;
+				S.BackgroundImage = SolidBrush(BarTrack);
+				S.FillImage       = SolidBrush(FLinearColor(0.45f, 0.86f, 0.55f, 1.f));
+				EnergyBar->SetWidgetStyle(S);
+			}
+			EnergyBar->SetBarFillType(EProgressBarFillType::BottomToTop);
+			EnergyBar->SetPercent(1.0f);
+
+			USizeBox* EnergySize = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("EnergySize_Runtime"));
+			EnergySize->SetWidthOverride(16.f);
+			EnergySize->SetHeightOverride(112.f);
+			EnergySize->AddChild(EnergyBar);
+			EnergyCluster->AddChildToVerticalBox(EnergySize);
+
+			if (UHorizontalBoxSlot* HS = HudRow->AddChildToHorizontalBox(EnergyCluster))
+			{
+				HS->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+				HS->SetVerticalAlignment(VAlign_Bottom);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("HUD: EnergyBar injected at runtime"));
+		}
+		else
+		{
+			UE_LOG(LogEclipse, Warning, TEXT("HUD: no HudRow found — EnergyBar not injected"));
+		}
+	}
+
 	// ── Runtime injection of CurrencyText if the WBP didn't ship one. ──
 	// Mounts a small "◆ N  ▤ M" line in the HUD column above the meters.
 	if (!CurrencyText && WidgetTree)
@@ -352,6 +404,8 @@ void UEclipseHUDWidget::UpdateCurrency()
 
 void UEclipseHUDWidget::UpdateBars()
 {
+	using namespace EclipseUI;   // bring SolidBrush / BarTrack into scope
+
 	UGameInstance* GI = GetGameInstance();
 	if (!GI) return;
 
@@ -376,24 +430,27 @@ void UEclipseHUDWidget::UpdateBars()
 		ThirstBar->SetFillColorAndOpacity(EclipseUI::Cyan);
 
 		// ── Empty-thirst attention pulse ──
-		// When thirst hits 0, SetPercent(0) shows an empty bar with only its
-		// dark BarTrack background. To flag the empty state we tint the
-		// whole widget (track + fill image) orange and modulate opacity with
-		// a sine so it visibly pulses. Caller (NativeTick) ticks UpdateBars
-		// every frame; on non-zero thirst we reset the widget tint to white
-		// so the cyan FillColorAndOpacity above shows through correctly.
+		// At thirst=0 SetPercent(0) shows an empty bar; only the dark
+		// BarTrack BackgroundImage is visible. We can't tint the whole
+		// widget (UProgressBar doesn't expose SetColorAndOpacity), so we
+		// rebuild the style each tick with the BackgroundImage tinted
+		// orange + a sine-driven alpha. On non-zero thirst we reset the
+		// style to the default BarTrack so the cyan fill reads correctly.
+		FProgressBarStyle TStyle = ThirstBar->GetWidgetStyle();
 		if (ClampedPct <= 0.f)
 		{
 			const float T = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 			const float Pulse = 0.5f + 0.5f * FMath::Sin(T * 4.f);  // 0..1, ~0.6Hz
 			const FLinearColor OrangeDim   (1.f, 0.55f, 0.f, 0.55f);
 			const FLinearColor OrangeBright(1.f, 0.55f, 0.f, 1.f);
-			ThirstBar->SetColorAndOpacity(FMath::Lerp(OrangeDim, OrangeBright, Pulse));
+			const FLinearColor Tint = FMath::Lerp(OrangeDim, OrangeBright, Pulse);
+			TStyle.BackgroundImage = SolidBrush(Tint);
 		}
 		else
 		{
-			ThirstBar->SetColorAndOpacity(FLinearColor::White);
+			TStyle.BackgroundImage = SolidBrush(EclipseUI::BarTrack);
 		}
+		ThirstBar->SetWidgetStyle(TStyle);
 	}
 
 	if (EnergyBar)
@@ -403,23 +460,26 @@ void UEclipseHUDWidget::UpdateBars()
 		EnergyBar->SetPercent(ClampedPct);
 
 		// Default fill = green (HP-style). When bleeding (Thirst==0 && Energy>0)
-		// pulse the whole bar RED to signal active damage — same sin-driven
-		// pattern as the thirst orange pulse for consistency.
+		// pulse the BackgroundImage RED to signal active damage — same
+		// re-style approach as the thirst orange pulse above.
 		const FLinearColor Green(0.45f, 0.86f, 0.55f, 1.f);
 		EnergyBar->SetFillColorAndOpacity(Green);
 
+		FProgressBarStyle EStyle = EnergyBar->GetWidgetStyle();
 		if (GS->bIsBleedingEnergy)
 		{
 			const float T = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-			const float Pulse = 0.5f + 0.5f * FMath::Sin(T * 5.f);  // slightly faster than thirst
+			const float Pulse = 0.5f + 0.5f * FMath::Sin(T * 5.f);   // slightly faster than thirst
 			const FLinearColor RedDim   (0.95f, 0.15f, 0.10f, 0.55f);
 			const FLinearColor RedBright(0.95f, 0.15f, 0.10f, 1.f);
-			EnergyBar->SetColorAndOpacity(FMath::Lerp(RedDim, RedBright, Pulse));
+			const FLinearColor Tint = FMath::Lerp(RedDim, RedBright, Pulse);
+			EStyle.BackgroundImage = SolidBrush(Tint);
 		}
 		else
 		{
-			EnergyBar->SetColorAndOpacity(FLinearColor::White);
+			EStyle.BackgroundImage = SolidBrush(EclipseUI::BarTrack);
 		}
+		EnergyBar->SetWidgetStyle(EStyle);
 	}
 }
 

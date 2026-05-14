@@ -3,6 +3,7 @@
 #include "EclipsePauseMenuWidget.h"
 #include "Eclipse.h"
 #include "EclipseUiStyle.h"
+#include "EclipseBlinkWipeWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -292,7 +293,23 @@ FReply UEclipsePauseMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, con
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
-void UEclipsePauseMenuWidget::OnResume() { Close(); }
+void UEclipsePauseMenuWidget::OnResume()
+{
+	// Resume button — same blink-wipe-around-close pattern as PC::TogglePauseMenu.
+	// The wipe goes to fully-black, Close() runs (game unpause + input swap +
+	// RemoveFromParent), then the wipe fades back. Self is GC-safe inside
+	// the lambda because PlayFull's tick fires synchronously next frame
+	// while the widget is still alive.
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) { Close(); return; }
+	TWeakObjectPtr<UEclipsePauseMenuWidget> WeakSelf(this);
+	UEclipseBlinkWipeWidget::FOnBlinkPhase Cb;
+	Cb.BindLambda([WeakSelf]()
+	{
+		if (WeakSelf.IsValid()) WeakSelf->Close();
+	});
+	UEclipseBlinkWipeWidget::PlayFull(PC, Cb);
+}
 
 void UEclipsePauseMenuWidget::OnSave()
 {
@@ -385,17 +402,26 @@ void UEclipsePauseMenuWidget::OnMainMenu()
 	// Unpause first so OpenLevel doesn't hit the paused-world fast-path,
 	// then reset the LocalPlayer's input mode so the OUTGOING UIOnly mode
 	// from this menu doesn't leak into the next level's PC.
-	if (APlayerController* PC = GetOwningPlayer())
+	APlayerController* PC = GetOwningPlayer();
+	if (PC)
 	{
 		FInputModeGameOnly Mode;
 		PC->SetInputMode(Mode);
 		PC->SetShowMouseCursor(true);   // L_MainMenu wants cursor; OK to keep on
 	}
-	if (UWorld* W = GetWorld())
+	UWorld* W = GetWorld();
+	if (!W) return;
+	UGameplayStatics::SetGamePaused(W, false);
+
+	// Eye-shut wipe — OpenLevel happens at fully-covered. Destination
+	// level should run UEclipseBlinkWipeWidget::PlayOpen on BeginPlay.
+	const FName Target = MainMenuLevelName;
+	UEclipseBlinkWipeWidget::FOnBlinkPhase OnClosed;
+	OnClosed.BindLambda([W, Target]()
 	{
-		UGameplayStatics::SetGamePaused(W, false);
-		UGameplayStatics::OpenLevel(W, MainMenuLevelName);
-	}
+		UGameplayStatics::OpenLevel(W, Target);
+	});
+	UEclipseBlinkWipeWidget::PlayClose(PC, OnClosed);
 }
 
 void UEclipsePauseMenuWidget::OnQuit()
