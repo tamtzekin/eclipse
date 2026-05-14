@@ -26,8 +26,12 @@ namespace
 		FString MenuText;   // Player choice label (if SpeakerId=="PLAYER")
 		TArray<FName> Outputs;
 		FName MenuAction;   // "enterStall" / "giveTabs" / "startGame" / None
-		FName SkillCheckStat;   // "word" / "rhythm" / "shadow" or None
+		FName SkillCheckStat;   // "aesthetics" / "stimulation" / "rhythm" / "zen" / "psychedelics" / None
 		int32 SkillCheckValue = 0;
+		// Energy cost if a failed skill check choice is clicked anyway.
+		// Designer-tunable per choice; defaults to 5 so unset legacy data
+		// still feels mildly punishing without being lethal.
+		int32 EnergyDamageOnFail = 5;
 	};
 
 	struct FSyntheticDialogue
@@ -424,11 +428,34 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	const FEclipseDialogueChoice& Chosen = CurrentNode.Choices[ChoiceIndex];
 	UE_LOG(LogEclipse, Log, TEXT("Choice [%d]: %s"), ChoiceIndex, *Chosen.Text.ToString());
 
-	// Helper — bump the chapter clock by 20 game-seconds. Called only on
-	// continuing choices (see below). Exit choices that fall through to
-	// CloseDialogue do NOT pay this cost; the live clock simply resumes.
-	// 20 (not 30) keeps the visible minute readout from ticking cleanly
+	// Skill-check failure tax — if the player clicked a check they didn't
+	// have the stat for (bAvailable=false), drain Energy by the per-choice
+	// declared amount before we route through. The dialogue widget no
+	// longer disables failed-skill buttons; players can attempt risky
+	// checks at a cost.
+	if (Chosen.bIsSkillCheck && !Chosen.bAvailable && Chosen.EnergyDamageOnFail > 0)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+			{
+				UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d energy"),
+					*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
+					GS->GetStatValue(Chosen.SkillCheckStat), Chosen.EnergyDamageOnFail);
+				GS->DrainEnergy((float)Chosen.EnergyDamageOnFail);
+			}
+		}
+	}
+
+	// Helper — bump the chapter clock by 20 game-seconds AND drain thirst by
+	// a fixed cost. Called only on continuing choices (see below). Exit
+	// choices that fall through to CloseDialogue pay neither cost — the
+	// live clock just resumes and thirst stays where it was.
+	//
+	// 20s (not 30) keeps the visible minute readout from ticking cleanly
 	// on every 2nd choice — the irregular crossings feel less mechanical.
+	// 2.0 thirst/click means ~50 continuing choices empty a full bar, so
+	// a few back-to-back conversations push the player toward a drink.
 	auto BumpClockForContinue = [this]()
 	{
 		if (UGameInstance* GI = GetGameInstance())
@@ -437,8 +464,9 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 			{
 				const float Before = GS->ChapterElapsedSeconds;
 				GS->ChapterElapsedSeconds += 20.0f;
-				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +20s  %.1f -> %.1f"),
-					Before, GS->ChapterElapsedSeconds);
+				GS->DrainThirst(2.0f);
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +20s  %.1f -> %.1f  thirst=%.1f"),
+					Before, GS->ChapterElapsedSeconds, GS->Thirst);
 			}
 		}
 	};
@@ -508,6 +536,7 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 				Choice.bIsSkillCheck = (ChoiceNode->SkillCheckStat != NAME_None);
 				Choice.SkillCheckStat = ChoiceNode->SkillCheckStat;
 				Choice.SkillCheckValue = ChoiceNode->SkillCheckValue;
+				Choice.EnergyDamageOnFail = ChoiceNode->EnergyDamageOnFail;
 
 				// Evaluate availability of skill-check choices via the
 				// 5-stat resolver (returns 0 for unknown keys, which makes

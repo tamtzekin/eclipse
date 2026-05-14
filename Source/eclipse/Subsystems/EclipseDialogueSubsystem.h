@@ -17,8 +17,12 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) FText Text;
 	UPROPERTY(BlueprintReadOnly) bool bAvailable = true;
 	UPROPERTY(BlueprintReadOnly) bool bIsSkillCheck = false;
-	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "word" | "rhythm" | "shadow"
+	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "stimulation" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly) int32 SkillCheckValue = 0;
+	// Energy cost when this choice is a failed skill check that the player
+	// clicks anyway. Surfaced to the widget so it can render a "[-N ENERGY]"
+	// risk hint, and consumed by MakeChoice via DrainEnergy.
+	UPROPERTY(BlueprintReadOnly) int32 EnergyDamageOnFail = 5;
 };
 
 USTRUCT(BlueprintType)

@@ -22,8 +22,9 @@ public:
 	UPROPERTY() int32 Rhythm       = 1;
 	UPROPERTY() int32 Zen          = 1;
 	UPROPERTY() int32 Psychedelics = 1;
-	UPROPERTY() float Heat = 60.f;
+	UPROPERTY() float Heat   = 60.f;
 	UPROPERTY() float Thirst = 80.f;
+	UPROPERTY() float Energy = 100.f;
 	UPROPERTY() TArray<FName> Inventory;
 	UPROPERTY() TArray<FName> EquippedClothing;
 	UPROPERTY() TArray<int32> Tokens;

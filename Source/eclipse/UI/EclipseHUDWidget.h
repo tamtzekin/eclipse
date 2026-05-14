@@ -42,6 +42,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> ThirstBar;
 
+	// HP-style Energy bar. Red pulse while bIsBleedingEnergy (thirst at 0).
+	// Designer-bindable; built into the fallback tree if WBP doesn't ship one.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UProgressBar> EnergyBar;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> EnergyLabel;
+
 	// Center-screen crosshair dot — bound from the WBP designer if present,
 	// otherwise built programmatically in Initialize().
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -61,6 +69,9 @@ protected:
 private:
 	UFUNCTION()
 	void HandleStateChanged();
+
+	UFUNCTION()
+	void HandlePlayerDeath();
 
 	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
 

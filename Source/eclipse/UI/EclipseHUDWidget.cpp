@@ -3,6 +3,7 @@
 #include "EclipseHUDWidget.h"
 #include "Eclipse.h"
 #include "EclipseUiStyle.h"
+#include "EclipseDeathOverlayWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -191,6 +192,41 @@ bool UEclipseHUDWidget::Initialize()
 		ThirstSize->SetHeightOverride(112.f);
 		ThirstSize->AddChild(ThirstBar);
 		ThirstCluster->AddChildToVerticalBox(ThirstSize);
+
+		// ── Energy cluster (HP-style; vertical bar like HEAT/THIRST) ──
+		UVerticalBox* EnergyCluster = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(), TEXT("EnergyCluster"));
+		if (UHorizontalBoxSlot* CSlot = Row->AddChildToHorizontalBox(EnergyCluster))
+		{
+			CSlot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+			CSlot->SetVerticalAlignment(VAlign_Bottom);
+		}
+
+		EnergyLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("EnergyLabel"));
+		EnergyLabel->SetText(FText::FromString(TEXT("ENERGY")));
+		EnergyLabel->SetFont(MakeBMSPA(14, 4.f));
+		// Use a warm-ish color so ENERGY reads distinct from THIRST/HEAT.
+		EnergyLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.75f, 0.55f, 1.f)));
+		if (UVerticalBoxSlot* S = EnergyCluster->AddChildToVerticalBox(EnergyLabel))
+			S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+
+		EnergyBar = WidgetTree->ConstructWidget<UProgressBar>(
+			UProgressBar::StaticClass(), TEXT("EnergyBar"));
+		{
+			FProgressBarStyle S;
+			S.BackgroundImage = SolidBrush(BarTrack);
+			S.FillImage       = SolidBrush(FLinearColor(0.45f, 0.86f, 0.55f, 1.f)); // green/HP
+			EnergyBar->SetWidgetStyle(S);
+		}
+		EnergyBar->SetBarFillType(EProgressBarFillType::BottomToTop);
+		EnergyBar->SetPercent(1.0f);
+		USizeBox* EnergySize = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(), TEXT("EnergySize"));
+		EnergySize->SetWidthOverride(16.f);
+		EnergySize->SetHeightOverride(112.f);
+		EnergySize->AddChild(EnergyBar);
+		EnergyCluster->AddChildToVerticalBox(EnergySize);
 	}
 
 	return Super::Initialize();
@@ -270,6 +306,7 @@ void UEclipseHUDWidget::NativeConstruct()
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
 	{
 		GS->OnStateChanged.AddDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
+		GS->OnPlayerDeath.AddDynamic(this, &UEclipseHUDWidget::HandlePlayerDeath);
 	}
 
 	UpdateBars();
@@ -281,7 +318,10 @@ void UEclipseHUDWidget::NativeDestruct()
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
 			GS->OnStateChanged.RemoveDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
+			GS->OnPlayerDeath.RemoveDynamic(this, &UEclipseHUDWidget::HandlePlayerDeath);
+		}
 	}
 	Super::NativeDestruct();
 }
@@ -290,6 +330,15 @@ void UEclipseHUDWidget::HandleStateChanged()
 {
 	UpdateBars();
 	UpdateCurrency();
+}
+
+void UEclipseHUDWidget::HandlePlayerDeath()
+{
+	UE_LOG(LogEclipse, Log, TEXT("HUD: OnPlayerDeath -> opening death overlay"));
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		UEclipseDeathOverlayWidget::OpenForPlayer(PC);
+	}
 }
 
 void UEclipseHUDWidget::UpdateCurrency()
@@ -322,8 +371,55 @@ void UEclipseHUDWidget::UpdateBars()
 
 	if (ThirstBar)
 	{
-		ThirstBar->SetPercent(FMath::Clamp(ThirstPct, 0.f, 1.f));
+		const float ClampedPct = FMath::Clamp(ThirstPct, 0.f, 1.f);
+		ThirstBar->SetPercent(ClampedPct);
 		ThirstBar->SetFillColorAndOpacity(EclipseUI::Cyan);
+
+		// ── Empty-thirst attention pulse ──
+		// When thirst hits 0, SetPercent(0) shows an empty bar with only its
+		// dark BarTrack background. To flag the empty state we tint the
+		// whole widget (track + fill image) orange and modulate opacity with
+		// a sine so it visibly pulses. Caller (NativeTick) ticks UpdateBars
+		// every frame; on non-zero thirst we reset the widget tint to white
+		// so the cyan FillColorAndOpacity above shows through correctly.
+		if (ClampedPct <= 0.f)
+		{
+			const float T = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+			const float Pulse = 0.5f + 0.5f * FMath::Sin(T * 4.f);  // 0..1, ~0.6Hz
+			const FLinearColor OrangeDim   (1.f, 0.55f, 0.f, 0.55f);
+			const FLinearColor OrangeBright(1.f, 0.55f, 0.f, 1.f);
+			ThirstBar->SetColorAndOpacity(FMath::Lerp(OrangeDim, OrangeBright, Pulse));
+		}
+		else
+		{
+			ThirstBar->SetColorAndOpacity(FLinearColor::White);
+		}
+	}
+
+	if (EnergyBar)
+	{
+		const float EnergyPct = GS->MaxEnergy > 0.f ? GS->Energy / GS->MaxEnergy : 0.f;
+		const float ClampedPct = FMath::Clamp(EnergyPct, 0.f, 1.f);
+		EnergyBar->SetPercent(ClampedPct);
+
+		// Default fill = green (HP-style). When bleeding (Thirst==0 && Energy>0)
+		// pulse the whole bar RED to signal active damage — same sin-driven
+		// pattern as the thirst orange pulse for consistency.
+		const FLinearColor Green(0.45f, 0.86f, 0.55f, 1.f);
+		EnergyBar->SetFillColorAndOpacity(Green);
+
+		if (GS->bIsBleedingEnergy)
+		{
+			const float T = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+			const float Pulse = 0.5f + 0.5f * FMath::Sin(T * 5.f);  // slightly faster than thirst
+			const FLinearColor RedDim   (0.95f, 0.15f, 0.10f, 0.55f);
+			const FLinearColor RedBright(0.95f, 0.15f, 0.10f, 1.f);
+			EnergyBar->SetColorAndOpacity(FMath::Lerp(RedDim, RedBright, Pulse));
+		}
+		else
+		{
+			EnergyBar->SetColorAndOpacity(FLinearColor::White);
+		}
 	}
 }
 
@@ -331,6 +427,10 @@ void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSecon
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
 	UpdateChapterClock();
+	// Tick the bars every frame so the empty-thirst orange pulse animates
+	// smoothly. (Previously bars only redrew via the throttled
+	// OnStateChanged delegate, which was ~1Hz — too slow for a pulse.)
+	UpdateBars();
 }
 
 void UEclipseHUDWidget::UpdateChapterClock()

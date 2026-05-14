@@ -46,6 +46,7 @@ struct FEclipseSaveSlotInfo
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipsePlayerDied);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const FText&, Title);
 
 // Fires after Chapter is incremented by the clock. Subsystems hook this for
@@ -98,6 +99,22 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxHeat   = 100.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Thirst    = 80.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxThirst = 100.f;
+
+	// HP-style life meter. Damaged by failed skill checks and by the slow
+	// thirst-bleed that kicks in when Thirst hits 0. Hitting 0 fires
+	// OnPlayerDeath and the death overlay takes over.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Energy    = 100.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxEnergy = 100.f;
+
+	// True while Thirst == 0 and Energy > 0 — used by HUD to drive a red
+	// pulse on the Energy bar. Updated by TickMeters; readers should treat
+	// it as read-only.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") bool bIsBleedingEnergy = false;
+
+	// Drain rate while bleeding from thirst (units/sec). Slow enough that
+	// the player has a couple of minutes to find a drink before dying.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
+	float ThirstBleedPerSec = 0.3f;
 
 	// Passive drain rates (units per second). Tuned so a freshly-spawned
 	// player has ~3 minutes before Thirst empties and ~4 minutes for Heat —
@@ -263,6 +280,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void GainHeat(float Amount);
 
+	// Drain Energy by Amount, clamped to [0, MaxEnergy]. Fires OnPlayerDeath
+	// when the new value hits 0 (single broadcast — won't re-fire on
+	// successive zero-drains).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	void DrainEnergy(float Amount);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Quest")
 	void OnChapterTransition();
 
@@ -296,6 +319,12 @@ public:
 	// Broadcast whenever any state field changes — UMG widgets bind once.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
+
+	// Fires once when Energy transitions from > 0 to 0. The HUD listens and
+	// opens the death overlay (TRY AGAIN / QUIT). Reset by Load or a fresh
+	// `Energy = MaxEnergy` write (via DrainEnergy with negative Amount).
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
+	FEclipsePlayerDied OnPlayerDeath;
 
 	// Broadcast when a chapter card / title overlay should slide in. The
 	// EclipseChapterCardWidget listens for this; gameplay code calls

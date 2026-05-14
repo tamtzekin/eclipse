@@ -622,13 +622,18 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			if (i < Choices.Num())
 			{
 				const FEclipseDialogueChoice& Choice = Choices[i];
-				Btn->SetIsEnabled(Choice.bAvailable);
+				// Failed skill-check choices stay CLICKABLE so the player can
+				// attempt them at an Energy cost — see DialogueSubsystem::MakeChoice.
+				Btn->SetIsEnabled(true);
 
 				FString S = Choice.Text.ToString();
-				if (!Choice.bAvailable) S += TEXT("  (need more)");
+				if (Choice.bIsSkillCheck && !Choice.bAvailable)
+				{
+					S += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+				}
 				const FLinearColor Tint = Choice.bAvailable
 					? Cream
-					: FLinearColor(0.35f, 0.35f, 0.35f, 1.f);
+					: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red-tinted hint for risky picks
 
 				// Each choice row stays Collapsed until the body has finished
 				// cascading; then they ripple in one-by-one. NativeTick flips
@@ -695,7 +700,9 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		BtnStyle.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.16f));
 		BtnStyle.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.02f));
 		Btn->SetStyle(BtnStyle);
-		Btn->SetIsEnabled(Choice.bAvailable);
+		// Failed skill-check choices stay CLICKABLE — see MakeChoice for the
+		// Energy-cost handling.
+		Btn->SetIsEnabled(true);
 
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(),
@@ -741,13 +748,15 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
 		FString LabelStr = Choice.Text.ToString();
-		if (!Choice.bAvailable)
-			LabelStr += TEXT("  (need more)");
+		if (Choice.bIsSkillCheck && !Choice.bAvailable)
+		{
+			LabelStr += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+		}
 		Label->SetText(FText::FromString(LabelStr));
 		Label->SetFont(MakeRodin(15));
 		Label->SetColorAndOpacity(FSlateColor(Choice.bAvailable
 			? Cream
-			: FLinearColor(0.35f, 0.35f, 0.35f, 1.f)));
+			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f)));
 		Label->SetAutoWrapText(true);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))

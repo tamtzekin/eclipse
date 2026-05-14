@@ -348,14 +348,50 @@ void UEclipseGameStateSubsystem::DrainThirst(float Amount)
 	NotifyChanged();
 }
 
+void UEclipseGameStateSubsystem::DrainEnergy(float Amount)
+{
+	const float Before = Energy;
+	Energy = FMath::Clamp(Energy - Amount, 0.f, MaxEnergy);
+
+	// Single-shot death fire: only when crossing > 0 → 0. Successive
+	// DrainEnergy calls while at 0 do nothing extra.
+	if (Before > 0.f && Energy <= 0.f)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Energy: player died (drained %.1f from %.1f)"),
+			Amount, Before);
+		OnPlayerDeath.Broadcast();
+	}
+	NotifyChanged();
+}
+
 void UEclipseGameStateSubsystem::TickMeters(float DeltaSeconds)
 {
 	if (DeltaSeconds <= 0.f) return;
 
-	// Drain both meters. Allow values to dip below zero internally for
-	// fractional accuracy then clamp; the bars use the clamped value.
-	Thirst = FMath::Max(0.f, Thirst - ThirstDrainPerSec * DeltaSeconds);
+	// Thirst no longer drains over time — see UEclipseDialogueSubsystem::MakeChoice
+	// for the per-continuing-choice DrainThirst() call. The `ThirstDrainPerSec`
+	// UPROPERTY is kept on the class so designer-set values from older saves
+	// don't break load; the field is just unused by this path.
 	Heat   = FMath::Max(0.f, Heat   - HeatDrainPerSec   * DeltaSeconds);
+
+	// Thirst-bleed → Energy: once thirst hits 0, energy slowly drains as
+	// dehydration sets in. Stops as soon as thirst is restored above 0
+	// (drink a water) or as soon as energy hits 0 (death takes over).
+	const bool bShouldBleed = (Thirst <= 0.f && Energy > 0.f);
+	if (bShouldBleed)
+	{
+		// Inline drain — bypasses DrainEnergy's broadcast throttle (we
+		// already self-throttle the meters broadcast below), but still
+		// fires OnPlayerDeath via the explicit check.
+		const float Before = Energy;
+		Energy = FMath::Max(0.f, Energy - ThirstBleedPerSec * DeltaSeconds);
+		if (Before > 0.f && Energy <= 0.f)
+		{
+			UE_LOG(LogEclipse, Log, TEXT("Energy: bled to 0 from thirst exhaustion"));
+			OnPlayerDeath.Broadcast();
+		}
+	}
+	bIsBleedingEnergy = bShouldBleed;
 
 	// Tick the chapter clock alongside the meters — same pause / dialogue
 	// gating, since the player character's TickMeters call site already
@@ -488,6 +524,7 @@ namespace
 		Save->Psychedelics             = GS.Psychedelics;
 		Save->Heat                     = GS.Heat;
 		Save->Thirst                   = GS.Thirst;
+		Save->Energy                   = GS.Energy;
 		Save->Inventory                = GS.Inventory;
 		Save->EquippedClothing         = GS.EquippedClothing;
 		Save->Tokens                   = GS.Tokens;
@@ -546,6 +583,7 @@ namespace
 		GS.Psychedelics             = Save->Psychedelics;
 		GS.Heat                     = Save->Heat;
 		GS.Thirst                   = Save->Thirst;
+		GS.Energy                   = Save->Energy;
 		GS.Inventory                = Save->Inventory;
 		GS.EquippedClothing         = Save->EquippedClothing;
 		GS.Tokens                   = Save->Tokens;
