@@ -54,3 +54,14 @@ LocalNotes.md
 # ── Plugins compiled binaries (keep source, ignore output) ──
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
+CLAUDE.md
+
+# ── ArticyXImporter CSV debug dumps ──
+# The .uasset files alongside these (Eclipse_*Database.uasset etc.) are the
+# actual runtime data — these CSVs are a redundant debug artifact regenerated
+# on every reimport, and trigger UE's "DataTable Options" auto-import dialog.
+# Generated C++ headers (Source/eclipse/ArticyGenerated/*.h) and Articy
+# .uasset databases ARE committed so teammates can build + play without
+# reimporting after every pull.
+Content/ArticyContent/Generated/All_objects.csv
+Content/L10N/*/ArticyContent/Generated/All_objects.csv
