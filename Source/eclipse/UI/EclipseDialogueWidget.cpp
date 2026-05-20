@@ -500,6 +500,62 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 		BodyText->SetText(Node.Body);
 	}
 
+	// Runtime-inject + render the orange effects line below the body if the
+	// fragment has any. Empty Text → keep widget collapsed so it doesn't
+	// occupy space.
+	if (!EffectsLineText && WidgetTree)
+	{
+		// Find the column that holds the body + choices (the dialogue
+		// populators name it "DialogueColumn"; fall back to BodyText's parent).
+		UVerticalBox* Col = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("DialogueColumn")));
+		if (!Col && BodyText)        Col = Cast<UVerticalBox>(BodyText->GetParent());
+		if (!Col && BodyWords)
+		{
+			UPanelWidget* P = BodyWords->GetParent();
+			while (P && !P->IsA<UVerticalBox>()) P = P->GetParent();
+			Col = Cast<UVerticalBox>(P);
+		}
+
+		if (Col)
+		{
+			EffectsLineText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("EffectsLineText_Runtime"));
+			EffectsLineText->SetFont(EclipseUI::MakeRodin(14));
+			// Orange tint, slightly muted so it doesn't fight the cream body.
+			EffectsLineText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.65f, 0.25f, 0.95f)));
+			EffectsLineText->SetAutoWrapText(true);
+			Col->AddChild(EffectsLineText);
+			// Slot it directly after the body wrap-box / static body so it
+			// reads as a follow-on line. Default position is end-of-column.
+			UWidget* BodyAnchor = BodyWords ? (UWidget*)BodyWords : (UWidget*)BodyText;
+			if (BodyAnchor)
+			{
+				const int32 BodyIdx = Col->GetChildIndex(BodyAnchor);
+				if (BodyIdx >= 0)
+				{
+					Col->ShiftChild(BodyIdx + 1, EffectsLineText);
+				}
+			}
+			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(EffectsLineText->Slot))
+			{
+				VS->SetPadding(FMargin(0.f, 6.f, 0.f, 6.f));
+			}
+			UE_LOG(LogEclipse, Log, TEXT("Dlg: EffectsLineText injected at runtime"));
+		}
+	}
+	if (EffectsLineText)
+	{
+		if (Node.EffectsLine.IsEmpty())
+		{
+			EffectsLineText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else
+		{
+			EffectsLineText->SetText(Node.EffectsLine);
+			EffectsLineText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+	}
+
 	RebuildChoices(Node.Choices);
 }
 
@@ -624,12 +680,19 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				const FEclipseDialogueChoice& Choice = Choices[i];
 				// Failed skill-check choices stay CLICKABLE so the player can
 				// attempt them at an Energy cost — see DialogueSubsystem::MakeChoice.
-				Btn->SetIsEnabled(true);
+				// Stage-directive gates (StatGate / ItemGate) genuinely block
+				// the action, so those buttons are disabled.
+				const bool bHasGateHint = !Choice.GateHint.IsEmpty();
+				Btn->SetIsEnabled(!bHasGateHint);
 
 				FString S = Choice.Text.ToString();
 				if (Choice.bIsSkillCheck && !Choice.bAvailable)
 				{
 					S += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+				}
+				if (bHasGateHint)
+				{
+					S += TEXT("  ") + Choice.GateHint.ToString();
 				}
 				const FLinearColor Tint = Choice.bAvailable
 					? Cream
@@ -701,8 +764,9 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		BtnStyle.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.02f));
 		Btn->SetStyle(BtnStyle);
 		// Failed skill-check choices stay CLICKABLE — see MakeChoice for the
-		// Energy-cost handling.
-		Btn->SetIsEnabled(true);
+		// Energy-cost handling. But stage-directive gates ([STAT: N] /
+		// [ITEM_NAME]) genuinely block: disable when GateHint is set.
+		Btn->SetIsEnabled(Choice.GateHint.IsEmpty());
 
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(),
@@ -751,6 +815,10 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		if (Choice.bIsSkillCheck && !Choice.bAvailable)
 		{
 			LabelStr += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+		}
+		if (!Choice.GateHint.IsEmpty())
+		{
+			LabelStr += TEXT("  ") + Choice.GateHint.ToString();
 		}
 		Label->SetText(FText::FromString(LabelStr));
 		Label->SetFont(MakeRodin(15));

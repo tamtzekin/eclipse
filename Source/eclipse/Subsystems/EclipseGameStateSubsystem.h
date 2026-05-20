@@ -94,6 +94,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
 	int32 GetStatValue(FName StatKey) const;
 
+	// Adds Delta (can be negative) to the named stat (lowercase key:
+	// "aesthetics" / "stimulation" / "rhythm" / "zen" / "psychedelics").
+	// Clamped to >= 0. Broadcasts OnStateChanged. Unknown keys log a warning
+	// and no-op so a typo in a stage-directions string can't silently desync state.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
+	void ApplyStatDelta(FName StatKey, int32 Delta);
+
 	// ── Meters ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Heat      = 60.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxHeat   = 100.f;

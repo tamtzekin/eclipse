@@ -10,6 +10,21 @@
 #include "EngineUtils.h"
 #include "TimerManager.h"
 
+// ── Articy runtime — generic interfaces only ──
+// We deliberately avoid #including any project-specific generated header
+// (UEclipse_9000Dialogue etc.) so this TU compiles whether or not the
+// ArticyXImporter has been re-run. Property access goes through the
+// IArticy* interfaces shared by all generated classes.
+#include "ArticyDatabase.h"
+#include "ArticyObject.h"
+#include "ArticyPins.h"
+#include "ArticyBuiltinTypes.h"   // UArticyOutgoingConnection::GetTarget
+#include "Interfaces/ArticyObjectWithText.h"
+#include "Interfaces/ArticyObjectWithMenuText.h"
+#include "Interfaces/ArticyObjectWithStageDirections.h"
+#include "Interfaces/ArticyObjectWithSpeaker.h"
+#include "Interfaces/ArticyOutputPinsProvider.h"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Synthetic dialogue node store — lives here until Articy exports are done.
 // Structure mirrors Articy's FragmentNode shape: Speaker, Body, Choices[].
@@ -32,6 +47,10 @@ namespace
 		// Designer-tunable per choice; defaults to 5 so unset legacy data
 		// still feels mildly punishing without being lethal.
 		int32 EnergyDamageOnFail = 5;
+		// Raw Articy "Stage directions" string — parsed at OpenDialogue /
+		// AdvanceToNode time. Comma-separated tokens, see the doc on
+		// EEclipseStageDirectiveKind for the grammar.
+		FString StageDirections;
 	};
 
 	struct FSyntheticDialogue
@@ -48,19 +67,23 @@ namespace
 
 	// ── Helpers ──────────────────────────────────────────────────────────────
 
-	void AddNPC(FName Id, const FString& Body, TArray<FName> Outputs)
+	void AddNPC(FName Id, const FString& Body, TArray<FName> Outputs,
+		const FString& StageDirections = TEXT(""))
 	{
 		FSyntheticNode n;
 		n.Id = Id; n.SpeakerId = NPC_SPEAKER; n.Body = Body; n.Outputs = MoveTemp(Outputs);
+		n.StageDirections = StageDirections;
 		GSyntheticNodes.Add(Id, MoveTemp(n));
 	}
 	void AddChoice(FName Id, const FString& MenuText, TArray<FName> Outputs,
-		FName MenuAction = NAME_None, FName SkillStat = NAME_None, int32 SkillVal = 0)
+		FName MenuAction = NAME_None, FName SkillStat = NAME_None, int32 SkillVal = 0,
+		const FString& StageDirections = TEXT(""))
 	{
 		FSyntheticNode n;
 		n.Id = Id; n.SpeakerId = PLAYER_SPEAKER; n.MenuText = MenuText;
 		n.Outputs = MoveTemp(Outputs);
 		n.MenuAction = MenuAction; n.SkillCheckStat = SkillStat; n.SkillCheckValue = SkillVal;
+		n.StageDirections = StageDirections;
 		GSyntheticNodes.Add(Id, MoveTemp(n));
 	}
 	void AddDialogue(FName Id, FName FirstNode)
@@ -272,6 +295,82 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		{});
 	AddDialogue(SV2_DLG, SV2_N1);
 
+	// ─── ENLIGHTENED RAVER  (Articy Dlg_0E4D4F6A) ──────────────────────────
+	// Lightweight synthetic stub seeded from the body text in
+	// Content/Dialogues/ECLIPSE 9000.articyue. Keys use the Articy
+	// TechnicalName so when the ArticyXImporter generator bug is fixed
+	// (its "Feature"-suffix duplication) and the runtime resolution
+	// switches to UArticyDatabase, the same DialogueId on the NPC actor
+	// will start routing to the full Articy-authored flow without scene edits.
+	const FName ER_DLG  (TEXT("Dlg_0E4D4F6A"));
+	const FName ER_INTRO(TEXT("Dlg_0E4D4F6A.Intro"));
+	const FName ER_C1   (TEXT("Dlg_0E4D4F6A.C1"));   // "Hey, are you in line?"
+	const FName ER_C2   (TEXT("Dlg_0E4D4F6A.C2"));   // "[Get down on her level]"
+	const FName ER_N2   (TEXT("Dlg_0E4D4F6A.N2"));   // Raver looks up
+	const FName ER_C3   (TEXT("Dlg_0E4D4F6A.C3"));   // "I'll help you find it"
+	const FName ER_N3   (TEXT("Dlg_0E4D4F6A.N3"));   // "I need the angel's hair, the angel's eye"
+
+	AddNPC(ER_INTRO,
+		TEXT("Her face is pressed to the bathroom floor. All the water and piss nearly touching her cheek — it makes you retch."),
+		{ER_C1, ER_C2});
+	AddChoice(ER_C1, TEXT("Hey, are you in line?"),       {ER_N2});
+	AddChoice(ER_C2, TEXT("[Get down on her level]"),     {ER_N2});
+	AddNPC(ER_N2,
+		TEXT("She stands. Her face is so… bright? Something is up — the way she stares into you, like she sees the universe in your eyes. \"I'm looking for the angel. There's an angel, under this club.\""),
+		{ER_C3});
+	AddChoice(ER_C3, TEXT("I'll help you find it."), {ER_N3});
+	AddNPC(ER_N3,
+		TEXT("\"I need the angel's hair — the parts of itself it sheds when witnessed by the mass. And its eye. Bring me both.\""),
+		{});
+	AddDialogue(ER_DLG, ER_INTRO);
+
+	// ─── DAESUNG (the rich guy is passed out)  (Articy Dlg_97F8ED64) ───────
+	// Mirrors the four top-level player choices the user authored in
+	// ECLIPSE 9000.articyue under "Flow/The rich guy is passed out". IDs use
+	// the actual Articy TechnicalNames (DFr_*) so future swap-in to a live
+	// UArticyDatabase lookup keeps the same identifiers.
+	const FName DS_DLG     (TEXT("Dlg_97F8ED64"));
+	const FName DS_INTRO   (TEXT("Dlg_97F8ED64.Intro"));   // Daesung body (from DFr_4D2AE56D)
+
+	const FName DS_KICK    (TEXT("DFr_317564BC"));   // "Kick him."
+	const FName DS_HELLO   (TEXT("DFr_3858D8DC"));   // "Hello...?"   [ZEN: 1]
+	const FName DS_KNOCK   (TEXT("DFr_A46B0787"));   // "Knock him with the bottle."  [EMPTY_BOTTLE]
+	const FName DS_POUR    (TEXT("DFr_8C3C7336"));   // "Pour water over his head."   [BOTTLE_OF_WATER]
+
+	// Response fragments — Tomas narration shown after the player clicks.
+	// Suffix ".R" so the response sits under the same Articy id namespace.
+	const FName DS_KICK_R  (TEXT("DFr_317564BC.R"));
+	const FName DS_HELLO_R (TEXT("DFr_3858D8DC.R"));
+	const FName DS_KNOCK_R (TEXT("DFr_A46B0787.R"));
+	const FName DS_POUR_R  (TEXT("DFr_8C3C7336.R"));
+
+	// Body text lifted verbatim from Articy DFr_4D2AE56D.
+	AddNPC(DS_INTRO,
+		TEXT("Nothing. Completely lifeless, this guy, lying on the floor in his own piss, and other people's piss. A total embarrassment.\n\nYou wonder if he's down there for a reason."),
+		{DS_KICK, DS_HELLO, DS_KNOCK, DS_POUR});
+
+	// Four player choices. Stage directions on three of them — Hello requires
+	// ZEN, Knock requires an empty bottle, Pour requires a bottle of water.
+	// All four taken verbatim from the Articy MenuText + StageDirections fields.
+	AddChoice(DS_KICK,  TEXT("Kick him."),                       {DS_KICK_R});
+	AddChoice(DS_HELLO, TEXT("Hello...?"),                       {DS_HELLO_R},
+		NAME_None, NAME_None, 0, TEXT("[ZEN: 1]"));
+	AddChoice(DS_KNOCK, TEXT("Knock him with the bottle."),      {DS_KNOCK_R},
+		NAME_None, NAME_None, 0, TEXT("[EMPTY_BOTTLE]"));
+	AddChoice(DS_POUR,  TEXT("Pour water over his head."),       {DS_POUR_R},
+		NAME_None, NAME_None, 0, TEXT("[BOTTLE_OF_WATER]"));
+
+	// Response narrations. Two have Articy Description text; the other two
+	// are blank in the .articyue today — we ship a "(…)" placeholder so the
+	// flow doesn't dead-end visually. Replace with the real Description the
+	// moment the author fills it in.
+	AddNPC(DS_KICK_R,  TEXT("With a bit of force, your foot lands in the spot between his ribs."), {});
+	AddNPC(DS_HELLO_R, TEXT("Hey, are you alright?"),                                              {});
+	AddNPC(DS_KNOCK_R, TEXT("(…)"),                                                                {});
+	AddNPC(DS_POUR_R,  TEXT("(…)"),                                                                {});
+
+	AddDialogue(DS_DLG, DS_INTRO);
+
 	UE_LOG(LogEclipse, Log, TEXT("DialogueSubsystem: %d synthetic nodes, %d dialogues injected."),
 		GSyntheticNodes.Num(), GSyntheticDialogues.Num());
 }
@@ -371,14 +470,22 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 	}
 	else
 	{
-		// For non-Angel-Seeker NPCs: find the dialogue root and start from its first fragment.
-		if (const FSyntheticDialogue* Dlg = GSyntheticDialogues.Find(CurrentDialogueId))
+		// Prefer the Articy database when it's been imported — that's the
+		// authored source of truth. Falls through to the synthetic store
+		// when the db isn't loaded yet or doesn't have the id.
+		const FName ArticyEntry = ResolveArticyDialogueEntry(CurrentDialogueId);
+		if (ArticyEntry != NAME_None)
+		{
+			UE_LOG(LogEclipse, Log, TEXT("OpenDialogue: '%s' resolved via Articy db → entry '%s'"),
+				*CurrentDialogueId.ToString(), *ArticyEntry.ToString());
+			EntryNode = ArticyEntry;
+		}
+		else if (const FSyntheticDialogue* Dlg = GSyntheticDialogues.Find(CurrentDialogueId))
 		{
 			EntryNode = Dlg->FirstNodeId;
 		}
 		else
 		{
-			// TODO(post-slice): route to UArticyDatabase for Articy-authored dialogues.
 			UE_LOG(LogEclipse, Warning, TEXT("OpenDialogue: no synthetic or Articy node for '%s'"),
 				*CurrentDialogueId.ToString());
 			EntryNode = NAME_None;
@@ -433,6 +540,22 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 
 	const FEclipseDialogueChoice& Chosen = CurrentNode.Choices[ChoiceIndex];
 	UE_LOG(LogEclipse, Log, TEXT("Choice [%d]: %s"), ChoiceIndex, *Chosen.Text.ToString());
+
+	// Apply stage-directive effects from this choice. Effects fire on click
+	// for every choice (available OR gated — gated choices still consume
+	// their cost so designers can author "you tried and failed" branches
+	// that pay a stat tax). Gates that disabled the choice in the widget
+	// mean the button is greyed out and click never reaches here anyway.
+	for (const FEclipseStageDirective& D : Chosen.StageDirectives)
+	{
+		const bool bIsEffect =
+			D.Kind == EEclipseStageDirectiveKind::StatEffect ||
+			D.Kind == EEclipseStageDirectiveKind::EnergyEffect;
+		if (bIsEffect)
+		{
+			ApplyStageEffect(D);
+		}
+	}
 
 	// Skill-check failure tax — if the player clicked a check they didn't
 	// have the stat for (bAvailable=false), drain Energy by the per-choice
@@ -508,6 +631,81 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 
 void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 {
+	CurrentNodeId = NodeId;
+
+	// ── Articy-first resolution ──
+	// When the Articy db is loaded and has this NodeId, use the authored
+	// content (Description + StageDirections + OutputPins → choice list).
+	// Each choice fragment's MenuText is then read on the same db pass.
+	// Falls through to synthetic stubs only if the db doesn't know the id.
+	{
+		FEclipseDialogueNodeView ArticyView;
+		TArray<FName> ArticyChoiceIds;
+		if (ResolveArticyNode(NodeId, ArticyView, ArticyChoiceIds))
+		{
+			CurrentNode = ArticyView;
+
+			UEclipseGameStateSubsystem* State = nullptr;
+			if (UWorld* W = GetWorld())
+				if (UGameInstance* GI = W->GetGameInstance())
+					State = GI->GetSubsystem<UEclipseGameStateSubsystem>();
+
+			for (const FName& ChoiceNodeId : ArticyChoiceIds)
+			{
+				FEclipseDialogueChoice Choice;
+				Choice.ChoiceId = ChoiceNodeId;
+
+				// Pull MenuText + StageDirections from the Articy choice
+				// fragment via the same interface scaffolding ResolveArticyNode
+				// uses. Done inline here (rather than another helper) because
+				// we only need two properties per child.
+				if (UArticyDatabase* DB = UArticyDatabase::Get(this))
+				{
+					if (UArticyObject* ChoiceObj = DB->GetObjectByName(ChoiceNodeId))
+					{
+						// These two interface getters are plain BlueprintCallable
+						// virtuals (not BlueprintNativeEvent), so calling via
+						// the interface pointer dispatches correctly — UHT
+						// doesn't generate a usable Execute_* helper for them.
+						if (IArticyObjectWithMenuText* WithMenu = Cast<IArticyObjectWithMenuText>(ChoiceObj))
+						{
+							Choice.Text = WithMenu->GetMenuText();
+						}
+						if (IArticyObjectWithStageDirections* WithSD = Cast<IArticyObjectWithStageDirections>(ChoiceObj))
+						{
+							const FString SDStr = WithSD->GetStageDirections().ToString();
+							Choice.StageDirectives = ParseStageDirections(SDStr);
+						}
+					}
+				}
+				if (Choice.Text.IsEmpty())
+				{
+					// Empty MenuText means this output is a "CONTINUE" path
+					// (NPC response, not a player choice). Show it as such.
+					Choice.Text = FText::FromString(TEXT("→  CONTINUE"));
+				}
+
+				EvaluateChoiceGates(Choice);
+				CurrentNode.Choices.Add(Choice);
+			}
+
+			// Same goodbye fallback as the synthetic path so the player
+			// always has a way to exit a dead-end fragment.
+			if (CurrentNode.Choices.IsEmpty())
+			{
+				FEclipseDialogueChoice Goodbye;
+				Goodbye.ChoiceId = NAME_None;
+				Goodbye.Text     = FText::FromString(TEXT("[Goodbye]"));
+				Goodbye.bAvailable = true;
+				CurrentNode.Choices.Add(Goodbye);
+			}
+
+			OnNodeChanged.Broadcast(CurrentNode);
+			return;
+		}
+	}
+
+	// ── Synthetic fallback ──
 	const FSyntheticNode* Node = GSyntheticNodes.Find(NodeId);
 	if (!Node)
 	{
@@ -516,8 +714,6 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 		return;
 	}
 
-	CurrentNodeId = NodeId;
-
 	// Skip player-choice fragments (they become choices in the parent NPC node).
 	// Walk forward if this node is an NPC speech.
 	if (Node->SpeakerId == NPC_SPEAKER)
@@ -525,6 +721,16 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 		CurrentNode = FEclipseDialogueNodeView{};
 		CurrentNode.SpeakerName = ActiveNpc ? ActiveNpc->NpcName : FName(TEXT("NPC"));
 		CurrentNode.Body = FText::FromString(Node->Body);
+
+		// Parse the NPC fragment's own stage directions. Effect directives
+		// roll into the EffectsLine the widget renders in orange below the
+		// body. Gate directives on an NPC fragment are unusual (gates are
+		// normally on player choices) but we still attach them so authors
+		// who put them there see them applied.
+		{
+			TArray<FEclipseStageDirective> BodyDirectives = ParseStageDirections(Node->StageDirections);
+			CurrentNode.EffectsLine = BuildEffectsLineText(BodyDirectives);
+		}
 
 		// Build choices from output nodes that are PLAYER fragments
 		UEclipseGameStateSubsystem* State = nullptr;
@@ -552,6 +758,15 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 					const int32 StatVal = State->GetStatValue(ChoiceNode->SkillCheckStat);
 					Choice.bAvailable = (StatVal >= ChoiceNode->SkillCheckValue);
 				}
+
+				// Stage directives: parse + attach + evaluate gates.
+				// EvaluateChoiceGates only flips bAvailable to FALSE; it
+				// never re-enables a choice that the skill-check above
+				// already disqualified. GateHint is populated with the
+				// first failing gate's "(need …)" message.
+				Choice.StageDirectives = ParseStageDirections(ChoiceNode->StageDirections);
+				EvaluateChoiceGates(Choice);
+
 				CurrentNode.Choices.Add(Choice);
 			}
 		}
@@ -633,6 +848,327 @@ bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& 
 		|| OutStat == TEXT("rhythm")
 		|| OutStat == TEXT("zen")
 		|| OutStat == TEXT("psychedelics");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Stage-directions plumbing (parser + eval + apply + display-string builder)
+//
+//  Grammar (comma-separated tokens, whitespace flexible):
+//    [STAT_NAME: N]   StatGate     — gates availability
+//    [ITEM_NAME]      ItemGate     — gates availability
+//    +N STAT_NAME     StatEffect   — applied on click
+//    -N STAT_NAME     StatEffect   — applied on click
+//    +N ENERGY        EnergyEffect — applied on click
+//    -N ENERGY        EnergyEffect — applied on click
+//
+//  STAT_NAME ∈ { AESTHETICS, STIMULATION, RHYTHM, ZEN, PSYCHEDELICS }
+//  ITEM_NAME = DT_Items row id in ALL CAPS (matched case-insensitively against
+//  the lowercased inventory ids).
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Recognise the five gameplay stats. ENERGY is a separate effect kind, not
+	// part of GetStatValue's set.
+	bool IsKnownStatKey(FName Lower)
+	{
+		return Lower == TEXT("aesthetics")
+			|| Lower == TEXT("stimulation")
+			|| Lower == TEXT("rhythm")
+			|| Lower == TEXT("zen")
+			|| Lower == TEXT("psychedelics");
+	}
+}
+
+TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(const FString& Raw)
+{
+	TArray<FEclipseStageDirective> Out;
+	if (Raw.IsEmpty()) return Out;
+
+	TArray<FString> Tokens;
+	Raw.ParseIntoArray(Tokens, TEXT(","), /*bCullEmpty=*/true);
+	for (FString Tok : Tokens)
+	{
+		Tok.TrimStartAndEndInline();
+		if (Tok.IsEmpty()) continue;
+
+		// Gate forms start with '['.
+		if (Tok.StartsWith(TEXT("[")) && Tok.EndsWith(TEXT("]")))
+		{
+			FString Inner = Tok.Mid(1, Tok.Len() - 2).TrimStartAndEnd();
+			int32 Colon = INDEX_NONE; Inner.FindChar(':', Colon);
+			if (Colon != INDEX_NONE)
+			{
+				// [STAT: N] — stat gate.
+				FString StatStr  = Inner.Left(Colon).TrimStartAndEnd().ToLower();
+				FString ValStr   = Inner.Mid(Colon + 1).TrimStartAndEnd();
+				const FName Stat(*StatStr);
+				if (IsKnownStatKey(Stat))
+				{
+					FEclipseStageDirective D;
+					D.Kind = EEclipseStageDirectiveKind::StatGate;
+					D.Stat = Stat;
+					D.Value = FCString::Atoi(*ValStr);
+					Out.Add(D);
+					continue;
+				}
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown stat in gate token '%s'"), *Tok);
+				continue;
+			}
+			// [ITEM_NAME] — item gate. Lowercase the inner for matching.
+			FEclipseStageDirective D;
+			D.Kind = EEclipseStageDirectiveKind::ItemGate;
+			D.ItemId = FName(*Inner.ToLower());
+			Out.Add(D);
+			continue;
+		}
+
+		// Effect forms start with '+' or '-' (signed integer, then a STAT name
+		// or ENERGY). We tolerate any amount of internal whitespace.
+		if (Tok.StartsWith(TEXT("+")) || Tok.StartsWith(TEXT("-")))
+		{
+			// Pull the leading signed-integer.
+			int32 i = 1;   // skip sign
+			while (i < Tok.Len() && FChar::IsDigit(Tok[i])) ++i;
+			if (i <= 1)
+			{
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: no number after sign in '%s'"), *Tok);
+				continue;
+			}
+			const int32 Delta = FCString::Atoi(*Tok.Left(i));
+			FString Rest = Tok.Mid(i).TrimStartAndEnd().ToLower();
+			if (Rest.IsEmpty())
+			{
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: missing target in '%s'"), *Tok);
+				continue;
+			}
+			const FName Target(*Rest);
+			FEclipseStageDirective D;
+			if (Target == TEXT("energy"))
+			{
+				D.Kind = EEclipseStageDirectiveKind::EnergyEffect;
+				D.Stat = Target;
+			}
+			else if (IsKnownStatKey(Target))
+			{
+				D.Kind = EEclipseStageDirectiveKind::StatEffect;
+				D.Stat = Target;
+			}
+			else
+			{
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown effect target '%s' in '%s'"),
+					*Rest, *Tok);
+				continue;
+			}
+			D.Value = Delta;
+			Out.Add(D);
+			continue;
+		}
+
+		UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unrecognised token '%s'"), *Tok);
+	}
+	return Out;
+}
+
+void UEclipseDialogueSubsystem::ApplyStageEffect(const FEclipseStageDirective& Eff) const
+{
+	UEclipseGameStateSubsystem* State = nullptr;
+	if (UWorld* W = GetWorld())
+		if (UGameInstance* GI = W->GetGameInstance())
+			State = GI->GetSubsystem<UEclipseGameStateSubsystem>();
+	if (!State) return;
+
+	switch (Eff.Kind)
+	{
+	case EEclipseStageDirectiveKind::StatEffect:
+		State->ApplyStatDelta(Eff.Stat, Eff.Value);
+		break;
+	case EEclipseStageDirectiveKind::EnergyEffect:
+		// DrainEnergy(Amount) drains by Amount. A "+N ENERGY" effect = restore
+		// N, so we drain -N (negative amount → addition). DrainEnergy clamps.
+		State->DrainEnergy(static_cast<float>(-Eff.Value));
+		break;
+	default:
+		// Gates aren't effects — silently ignore.
+		break;
+	}
+}
+
+void UEclipseDialogueSubsystem::EvaluateChoiceGates(FEclipseDialogueChoice& Choice) const
+{
+	UEclipseGameStateSubsystem* State = nullptr;
+	if (UWorld* W = GetWorld())
+		if (UGameInstance* GI = W->GetGameInstance())
+			State = GI->GetSubsystem<UEclipseGameStateSubsystem>();
+	if (!State) return;
+
+	for (const FEclipseStageDirective& D : Choice.StageDirectives)
+	{
+		if (D.Kind == EEclipseStageDirectiveKind::StatGate)
+		{
+			const int32 Cur = State->GetStatValue(D.Stat);
+			if (Cur < D.Value)
+			{
+				Choice.bAvailable = false;
+				if (Choice.GateHint.IsEmpty())
+				{
+					Choice.GateHint = FText::FromString(FString::Printf(
+						TEXT("(need %s %d)"), *D.Stat.ToString().ToUpper(), D.Value));
+				}
+			}
+		}
+		else if (D.Kind == EEclipseStageDirectiveKind::ItemGate)
+		{
+			// Inventory entries are runtime ids ("<base>__<actor>"); compare
+			// the base form against the gate's lowercased item id.
+			const bool bHave = State->Inventory.ContainsByPredicate(
+				[&](const FName& Id){ return UEclipseGameStateSubsystem::GetBaseItemId(Id) == D.ItemId; });
+			if (!bHave)
+			{
+				Choice.bAvailable = false;
+				if (Choice.GateHint.IsEmpty())
+				{
+					Choice.GateHint = FText::FromString(FString::Printf(
+						TEXT("(no %s)"), *D.ItemId.ToString().ToUpper()));
+				}
+			}
+		}
+	}
+}
+
+FText UEclipseDialogueSubsystem::BuildEffectsLineText(const TArray<FEclipseStageDirective>& Directives)
+{
+	TArray<FString> Bits;
+	for (const FEclipseStageDirective& D : Directives)
+	{
+		if (D.Kind == EEclipseStageDirectiveKind::StatEffect)
+		{
+			Bits.Add(FString::Printf(TEXT("%+d %s"), D.Value, *D.Stat.ToString().ToUpper()));
+		}
+		else if (D.Kind == EEclipseStageDirectiveKind::EnergyEffect)
+		{
+			Bits.Add(FString::Printf(TEXT("%+d ENERGY"), D.Value));
+		}
+	}
+	if (Bits.IsEmpty()) return FText::GetEmpty();
+	return FText::FromString(FString::Join(Bits, TEXT("  ·  ")));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Articy runtime lookup — generic interface-driven, no project-types
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Resolve a Pin → its target node (other side of the connection). Returns
+	// null if the pin has no connection or the target hasn't been loaded.
+	UArticyObject* ResolvePinTarget(UArticyOutputPin* Pin)
+	{
+		if (!Pin) return nullptr;
+		for (UArticyOutgoingConnection* Conn : Pin->Connections)
+		{
+			if (!Conn) continue;
+			if (UArticyObject* Target = Cast<UArticyObject>(Conn->GetTarget()))
+			{
+				return Target;
+			}
+		}
+		return nullptr;
+	}
+}
+
+FName UEclipseDialogueSubsystem::ResolveArticyDialogueEntry(FName DialogueId) const
+{
+	UArticyDatabase* DB = UArticyDatabase::Get(this);
+	if (!DB) return NAME_None;
+
+	UArticyObject* DlgObj = DB->GetObjectByName(DialogueId);
+	if (!DlgObj) return NAME_None;
+
+	// A Dialogue node has an OutputPinsProvider; first connection → entry frag.
+	// GetOutputPins is a BlueprintNativeEvent — invoke via the Execute_* thunk,
+	// not the interface pointer (the latter asserts inside ArticyRuntime).
+	if (DlgObj->GetClass()->ImplementsInterface(UArticyOutputPinsProvider::StaticClass()))
+	{
+		for (UArticyOutputPin* Pin : IArticyOutputPinsProvider::Execute_GetOutputPins(DlgObj))
+		{
+			if (UArticyObject* Entry = ResolvePinTarget(Pin))
+			{
+				return Entry->GetTechnicalName();
+			}
+		}
+	}
+	return NAME_None;
+}
+
+bool UEclipseDialogueSubsystem::ResolveArticyNode(FName NodeId,
+	FEclipseDialogueNodeView& OutNode,
+	TArray<FName>& OutNextChoiceIds) const
+{
+	UArticyDatabase* DB = UArticyDatabase::Get(this);
+	if (!DB) return false;
+
+	UArticyObject* Node = DB->GetObjectByName(NodeId);
+	if (!Node) return false;
+
+	// IArticyObjectWith{Text,MenuText,StageDirections,Speaker} expose plain
+	// BlueprintCallable virtual getters with default implementations — they
+	// can be called directly through the interface pointer (UHT doesn't
+	// generate a usable Execute_* helper for non-NativeEvent UFUNCTIONs).
+	// IArticyOutputPinsProvider::GetOutputPins is the one exception below.
+
+	// Body text (Description) — IArticyObjectWithText is on every fragment.
+	FText Body;
+	if (IArticyObjectWithText* WithText = Cast<IArticyObjectWithText>(Node))
+	{
+		Body = WithText->GetText();
+	}
+	OutNode.Body = Body;
+
+	// Stage directions — Articy stores as FText; we run the same parser the
+	// synthetic path uses so the rest of the pipeline (gate eval, effect
+	// apply, orange line) is unchanged.
+	if (IArticyObjectWithStageDirections* WithSD = Cast<IArticyObjectWithStageDirections>(Node))
+	{
+		const FString SDStr = WithSD->GetStageDirections().ToString();
+		const TArray<FEclipseStageDirective> BodyDirectives = ParseStageDirections(SDStr);
+		OutNode.EffectsLine = BuildEffectsLineText(BodyDirectives);
+	}
+
+	// Speaker name — show the speaker's TechnicalName upper-cased to match
+	// the existing in-game speaker style (e.g. "DAESUNG"). Articy speakers
+	// are Entity objects with their own TechnicalName/DisplayName; falling
+	// back to the active NPC's name when missing.
+	if (IArticyObjectWithSpeaker* WithSpeaker = Cast<IArticyObjectWithSpeaker>(Node))
+	{
+		if (UArticyObject* Speaker = WithSpeaker->GetSpeaker())
+		{
+			OutNode.SpeakerName = Speaker->GetTechnicalName();
+		}
+	}
+	if (OutNode.SpeakerName == NAME_None)
+	{
+		OutNode.SpeakerName = ActiveNpc ? ActiveNpc->NpcName : FName(TEXT("NPC"));
+	}
+
+	// Walk output pins for next-step targets — these become the choices the
+	// subsystem will eventually render. Caller continues with its existing
+	// choice-build loop (which expects FName ids it can later resolve again).
+	OutNextChoiceIds.Reset();
+	if (Node->GetClass()->ImplementsInterface(UArticyOutputPinsProvider::StaticClass()))
+	{
+		for (UArticyOutputPin* Pin : IArticyOutputPinsProvider::Execute_GetOutputPins(Node))
+		{
+			if (UArticyObject* Target = ResolvePinTarget(Pin))
+			{
+				OutNextChoiceIds.Add(Target->GetTechnicalName());
+			}
+		}
+	}
+
+	UE_LOG(LogEclipse, Verbose, TEXT("Articy resolve '%s' → body=%d chars, %d outputs"),
+		*NodeId.ToString(), Body.ToString().Len(), OutNextChoiceIds.Num());
+	return true;
 }
 
 void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)

@@ -679,7 +679,8 @@ void FArticyTemplateFeatureDef::ImportFromJson(const TSharedPtr<FJsonObject> Jso
  */
 void FArticyTemplateFeatureDef::GenerateDefCode(CodeFileGenerator& header, const UArticyImportData* Data) const
 {
-    if (!Data->GetObjectDefs().IsNewFeatureType(*GetCppType(Data, false)))
+    const FString CppType = GetCppType(Data, false);
+    if (!Data->GetObjectDefs().IsNewFeatureType(*CppType))
         return;
 
     //generate feature type
@@ -771,7 +772,17 @@ UClass* FArticyTemplateFeatureDef::GetUClass(const UArticyImportData* Data) cons
  */
 FString FArticyTemplateFeatureDef::GetCppType(const UArticyImportData* Data, bool bAsVariable) const
 {
-    return FString::Printf(TEXT("U%s%sFeature%s"), *Data->GetProject().TechnicalName, *TechnicalName, bAsVariable ? TEXT("*") : TEXT(""));
+    // Append the "Feature" suffix only when the template's TechnicalName
+    // doesn't already end in it. Articy projects whose Feature templates are
+    // already named "…Feature" (e.g. the default character pack ships
+    // DefaultBasicCharacterFeature / DefaultExtendedCharacterFeature) would
+    // otherwise generate "UProjDefaultBasicCharacterFeatureFeature" — a
+    // class name that's REFERENCED in generated code but never DEFINED, so
+    // UHT fails to resolve it and the whole import aborts.
+    const FString Suffix = TechnicalName.EndsWith(TEXT("Feature")) ? FString() : FString(TEXT("Feature"));
+    return FString::Printf(TEXT("U%s%s%s%s"),
+        *Data->GetProject().TechnicalName, *TechnicalName, *Suffix,
+        bAsVariable ? TEXT("*") : TEXT(""));
 }
 
 //---------------------------------------------------------------------------//

@@ -618,6 +618,21 @@ public:
      */
     const TMap<FName, FArticyTemplateFeatureDef> GetFeatures() const { return FeatureDefs; }
 
+    /**
+     * Clears the dedup set used by IsNewFeatureType.
+     *
+     * The codegen pipeline can invoke GenerateCode multiple times within a
+     * single reimport (once when the import-data asset is first created, then
+     * again after "Continuing process"). The second pass overwrites the .h
+     * file, but on that pass IsNewFeatureType returns false for every feature
+     * — so the file is rewritten WITHOUT any UCLASS bodies, leaving dangling
+     * forward references in the generated interfaces/types headers.
+     *
+     * Call this at the top of the file-writing lambda in
+     * ObjectDefinitionsGenerator::GenerateCode so each write emits fresh.
+     */
+    void ResetFeatureTypes() const { FeatureTypes.Reset(); }
+
 private:
     /**
      * This stores information about all the types that have been imported.

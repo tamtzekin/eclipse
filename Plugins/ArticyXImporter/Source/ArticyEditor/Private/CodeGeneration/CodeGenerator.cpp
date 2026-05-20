@@ -143,7 +143,16 @@ FString CodeGenerator::GetExpressoScriptsClassname(const UArticyImportData* Data
  */
 FString CodeGenerator::GetFeatureInterfaceClassName(const UArticyImportData* Data, const FArticyTemplateFeatureDef& Feature, const bool bOmittPrefix)
 {
-	return (bOmittPrefix ? "" : "I") + Data->GetProject().TechnicalName + "ObjectWith" + Feature.GetTechnicalName() + "Feature";
+	// Same double-suffix guard as FArticyTemplateFeatureDef::GetCppType —
+	// when the Feature's TechnicalName already ends in "Feature" the upstream
+	// importer generated "…ObjectWithFooFeatureFeature", which both ends up
+	// referenced (here) and defined (in InterfacesGenerator) with the same
+	// broken name. The interface class itself technically compiles but the
+	// paired UCLASS feature wrapper does not (see GetCppType above), so the
+	// reference fails to resolve and import aborts. Match the same rule.
+	const FString FeatureTechName = Feature.GetTechnicalName();
+	const FString Suffix = FeatureTechName.EndsWith(TEXT("Feature")) ? FString() : FString(TEXT("Feature"));
+	return (bOmittPrefix ? "" : "I") + Data->GetProject().TechnicalName + "ObjectWith" + FeatureTechName + Suffix;
 }
 
 /**

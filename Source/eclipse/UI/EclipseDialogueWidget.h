@@ -53,6 +53,13 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWrapBox> BodyWords;
 
+	// Orange one-liner shown right below the body, summarising any stage-
+	// directive effects on the fragment (e.g. "-1 AESTHETICS  ·  +2 ENERGY").
+	// Built programmatically in NativeConstruct if the WBP doesn't ship one
+	// (parallels the BodyWords / HUD runtime-injection pattern).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> EffectsLineText;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> ChoicesBox;
 

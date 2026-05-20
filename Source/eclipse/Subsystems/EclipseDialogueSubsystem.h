@@ -8,6 +8,45 @@
 
 class AEclipseNpcCharacter;
 
+// ── Stage directives (Articy "Stage directions" field) ──────────────────────
+// Parsed from a comma-separated string of tokens authored on each Articy
+// DialogueFragment. Four kinds:
+//   [STAT_NAME: N]   StatGate     — gates choice availability (greys it out
+//                                   with a "(need STAT N)" hint when the
+//                                   player's stat is below N).
+//   [ITEM_NAME]      ItemGate     — gates choice availability against the
+//                                   inventory. ITEM_NAME is the DT_Items row
+//                                   id in ALL_CAPS (matched case-insensitively
+//                                   against the lowercased inventory id).
+//   +N STAT_NAME     StatEffect   — applied on click; STAT_NAME is one of
+//   -N STAT_NAME                    AESTHETICS / STIMULATION / RHYTHM / ZEN /
+//                                   PSYCHEDELICS. Lowercased to a key.
+//   +N ENERGY        EnergyEffect — applied on click; routes through
+//   -N ENERGY                       GameStateSubsystem::DrainEnergy(-Delta).
+UENUM(BlueprintType)
+enum class EEclipseStageDirectiveKind : uint8
+{
+	StatGate,
+	ItemGate,
+	StatEffect,
+	EnergyEffect,
+};
+
+USTRUCT(BlueprintType)
+struct FEclipseStageDirective
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly) EEclipseStageDirectiveKind Kind = EEclipseStageDirectiveKind::StatGate;
+	// For StatGate / StatEffect / EnergyEffect: lowercased stat key
+	// (e.g. "aesthetics" or "energy"). Empty for ItemGate.
+	UPROPERTY(BlueprintReadOnly) FName Stat;
+	// For ItemGate: lowercased DT_Items row id (e.g. "baggie", "empty_bottle").
+	UPROPERTY(BlueprintReadOnly) FName ItemId;
+	// For StatGate: required threshold; for StatEffect/EnergyEffect: signed delta.
+	UPROPERTY(BlueprintReadOnly) int32 Value = 0;
+};
+
 USTRUCT(BlueprintType)
 struct FEclipseDialogueChoice
 {
@@ -23,6 +62,16 @@ struct FEclipseDialogueChoice
 	// clicks anyway. Surfaced to the widget so it can render a "[-N ENERGY]"
 	// risk hint, and consumed by MakeChoice via DrainEnergy.
 	UPROPERTY(BlueprintReadOnly) int32 EnergyDamageOnFail = 5;
+
+	// All stage directives parsed from this choice's Articy StageDirections
+	// string. Gates are evaluated when the choice is built (sets bAvailable +
+	// GateHint); effects fire in MakeChoice when the player clicks.
+	UPROPERTY(BlueprintReadOnly) TArray<FEclipseStageDirective> StageDirectives;
+
+	// Human-readable hint about WHY this choice is unavailable, generated
+	// from any gate directive that failed. Empty when available.
+	// Examples: "(need ZEN 1)", "(no BAGGIE)".
+	UPROPERTY(BlueprintReadOnly) FText GateHint;
 };
 
 USTRUCT(BlueprintType)
@@ -33,6 +82,12 @@ struct FEclipseDialogueNodeView
 	UPROPERTY(BlueprintReadOnly) FName SpeakerName;
 	UPROPERTY(BlueprintReadOnly) FText Body;
 	UPROPERTY(BlueprintReadOnly) TArray<FEclipseDialogueChoice> Choices;
+
+	// Pre-formatted orange line summarising the body fragment's effect
+	// directives. Empty when the body has no effect directives. Example:
+	// "−1 AESTHETICS · +2 ENERGY". The dialogue widget renders this in a
+	// distinct orange tint on a new line below the body.
+	UPROPERTY(BlueprintReadOnly) FText EffectsLine;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueOpened,      AEclipseNpcCharacter*, Npc);
@@ -108,6 +163,48 @@ private:
 
 	// Skill-check parser: pulls "[WORD:10]" from choice text, returns stat + threshold.
 	bool ParseSkillCheck(const FText& ChoiceText, FName& OutStat, int32& OutValue) const;
+
+	// Articy "Stage directions" parser. Accepts a comma-separated list of
+	// tokens like "[ZEN: 1], [BAGGIE], +1 RHYTHM, -2 ENERGY" and emits a
+	// directive array. Tokens that don't match any kind are skipped silently
+	// (with a Log warning so authors notice typos).
+	static TArray<FEclipseStageDirective> ParseStageDirections(const FString& Raw);
+
+	// Apply a single effect-kind directive to the player's state. Stat keys
+	// route through UEclipseGameStateSubsystem::ApplyStatDelta; "energy" routes
+	// through DrainEnergy(-Delta). No-op for non-effect kinds (defensive).
+	void ApplyStageEffect(const FEclipseStageDirective& Eff) const;
+
+	// Evaluate every gate directive on a choice against current state.
+	// Sets bAvailable=false and a "(need …)" GateHint when any gate fails.
+	// Existing skill-check gates set earlier in the choice-build path are
+	// preserved; this only ADDs availability constraints.
+	void EvaluateChoiceGates(FEclipseDialogueChoice& Choice) const;
+
+	// Render the orange "−1 AESTHETICS · +2 ENERGY" summary line from a
+	// node's effect directives. Returns empty text when none apply.
+	static FText BuildEffectsLineText(const TArray<FEclipseStageDirective>& Directives);
+
+	// ── Articy runtime fallback (reads from UArticyDatabase) ────────────────
+	//
+	// When the synthetic node store doesn't have a NodeId, fall through to
+	// the Articy database that's populated by ArticyImporter.Reimport. Reads
+	// Description / MenuText / StageDirections / OutputPins via the generic
+	// IArticy* interfaces — no project-specific generated types referenced
+	// here, so this code compiles whether or not the importer has run.
+	//
+	// Returns true if NodeId resolved against the Articy db and OutNode +
+	// OutNextChoiceIds were filled. Returns false when db is empty or NodeId
+	// isn't a known Articy object — caller continues to its existing logic.
+	bool ResolveArticyNode(FName NodeId,
+		FEclipseDialogueNodeView& OutNode,
+		TArray<FName>& OutNextChoiceIds) const;
+
+	// Given an Articy dialogue object (e.g. "Dlg_97F8ED64"), follow its
+	// first output-pin connection to the first DialogueFragment that owns a
+	// MenuText/Text — that's the "entry" the player sees on conversation open.
+	// Returns NAME_None on miss.
+	FName ResolveArticyDialogueEntry(FName DialogueId) const;
 
 	// menuAction dispatcher (enterStall / giveTabs / startGame / etc.)
 	void DispatchMenuAction(FName ActionName);

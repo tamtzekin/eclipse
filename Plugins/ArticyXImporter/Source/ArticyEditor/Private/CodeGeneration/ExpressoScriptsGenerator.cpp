@@ -115,6 +115,96 @@ void GenerateExpressoScripts(CodeFileGenerator* header, const UArticyImportData*
 		header->Variable("mutable TWeakObjectPtr<" + ns.CppTypename + ">", ns.Namespace, "nullptr");
 	header->Variable("mutable TWeakObjectPtr<" + gvTypeName + ">", "ActiveGlobals", "nullptr");
 
+	/**
+	 * ── Auto-fallback for orphan script identifiers ──
+	 *
+	 * Authors iterate on Articy script fragments long before they define
+	 * the corresponding Global Variables. References like
+	 *     return ConditionOrTrue(hasCloakRoomTicket);
+	 * land in the generated C++ as bare identifiers and break the build
+	 * with "undeclared identifier 'hasCloakRoomTicket'". The proper fix
+	 * is to add the GVar to the Articy GV namespace, but in early-draft
+	 * iterations the author may not have done so yet.
+	 *
+	 * We scan all script fragments below for bare identifiers that don't
+	 * resolve to a known GVar namespace, user method, or built-in expresso
+	 * helper. Each unknown identifier becomes a `mutable bool` member
+	 * defaulting to `false`. The script lambdas (which capture `[&]` and
+	 * therefore `this`) see these via implicit `this->` lookup, so the
+	 * compile succeeds and conditions silently evaluate as false until the
+	 * GVar is properly authored.
+	 */
+	{
+		// Built-in identifiers + C++ keywords + Articy script helpers we
+		// must NOT auto-fallback. Anything outside this set, after filtering
+		// for namespace-qualified names and function calls, gets a bool.
+		TSet<FString> KnownIds;
+		// C++ language tokens + literals
+		for (const TCHAR* kw : { TEXT("true"), TEXT("false"), TEXT("nullptr"),
+			TEXT("if"), TEXT("else"), TEXT("while"), TEXT("for"), TEXT("do"),
+			TEXT("return"), TEXT("break"), TEXT("continue"), TEXT("switch"),
+			TEXT("case"), TEXT("default"), TEXT("auto"), TEXT("const"),
+			TEXT("static"), TEXT("this"), TEXT("new"), TEXT("delete"),
+			TEXT("int"), TEXT("bool"), TEXT("float"), TEXT("double"), TEXT("void"),
+			TEXT("class"), TEXT("struct"), TEXT("public"), TEXT("private"),
+			TEXT("namespace"), TEXT("using") })
+		{
+			KnownIds.Add(kw);
+		}
+		// Articy built-in helpers callable from scripts
+		for (const TCHAR* fn : { TEXT("ConditionOrTrue"), TEXT("setProp"),
+			TEXT("getProp"), TEXT("random"), TEXT("seen"), TEXT("fork"),
+			TEXT("Print"), TEXT("incrementProp"), TEXT("decrementProp") })
+		{
+			KnownIds.Add(fn);
+		}
+		// GVar namespaces (e.g. "Quest" in `Quest.bHasHair`)
+		for (const auto& ns : Data->GetGlobalVars().Namespaces)
+			KnownIds.Add(ns.Namespace);
+		// User-defined script methods
+		for (const auto& m : Data->GetUserMethods())
+			KnownIds.Add(m.Name);
+
+		// Walk every script fragment and collect bare identifiers that
+		// aren't preceded by `.` or `::` and aren't followed by `(`.
+		const FRegexPattern IdentPattern(TEXT("[A-Za-z_][A-Za-z0-9_]*"));
+		TSet<FString> Unknown;
+		for (const auto& frag : Data->GetScriptFragments())
+		{
+			const FString& Text = frag.ParsedFragment;
+			FRegexMatcher M(IdentPattern, Text);
+			while (M.FindNext())
+			{
+				const int32 Begin = M.GetMatchBeginning();
+				const int32 End   = M.GetMatchEnding();
+				// Skip qualified identifiers (preceded by '.' or ':')
+				if (Begin > 0 && (Text[Begin - 1] == TEXT('.') || Text[Begin - 1] == TEXT(':')))
+					continue;
+				// Skip function-call sites (followed by '(')
+				if (End < Text.Len() && Text[End] == TEXT('('))
+					continue;
+				const FString Id = Text.Mid(Begin, End - Begin);
+				if (KnownIds.Contains(Id)) continue;
+				Unknown.Add(Id);
+			}
+		}
+
+		if (Unknown.Num() > 0)
+		{
+			header->Line();
+			header->Comment("Auto-emitted fallbacks for identifiers referenced in script");
+			header->Comment("fragments but not yet declared as Global Variables in Articy.");
+			header->Comment("Default false; add the real GVar to Articy and re-export to replace.");
+			// Sort for stable output across reimports
+			TArray<FString> Sorted = Unknown.Array();
+			Sorted.Sort();
+			for (const FString& Id : Sorted)
+			{
+				header->Variable("mutable bool", Id, "false");
+			}
+		}
+	}
+
 	header->Line();
 	header->Method("void", "SetGV", "UArticyGlobalVariables* GV", [&]
 		{

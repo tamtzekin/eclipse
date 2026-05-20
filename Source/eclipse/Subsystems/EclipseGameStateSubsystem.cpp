@@ -284,6 +284,31 @@ int32 UEclipseGameStateSubsystem::GetStatValue(FName StatKey) const
 	return 0;
 }
 
+void UEclipseGameStateSubsystem::ApplyStatDelta(FName StatKey, int32 Delta)
+{
+	// Mirror of GetStatValue's switch — keys are lowercase. Clamp to >= 0
+	// so a "-3 ZEN" against a Zen=1 player floors at 0 rather than going
+	// negative. Stage-directions parser feeds us the lowercased key.
+	int32* Field = nullptr;
+	if      (StatKey == TEXT("aesthetics"))   Field = &Aesthetics;
+	else if (StatKey == TEXT("stimulation"))  Field = &Stimulation;
+	else if (StatKey == TEXT("rhythm"))       Field = &Rhythm;
+	else if (StatKey == TEXT("zen"))          Field = &Zen;
+	else if (StatKey == TEXT("psychedelics")) Field = &Psychedelics;
+
+	if (!Field)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("ApplyStatDelta: unknown stat key '%s' (delta %d ignored)"),
+			*StatKey.ToString(), Delta);
+		return;
+	}
+	const int32 Before = *Field;
+	*Field = FMath::Max(0, *Field + Delta);
+	UE_LOG(LogEclipse, Log, TEXT("ApplyStatDelta: %s %d %+d -> %d"),
+		*StatKey.ToString(), Before, Delta, *Field);
+	NotifyChanged();
+}
+
 FName UEclipseGameStateSubsystem::GetBaseItemId(FName MaybeRuntimeId)
 {
 	// Runtime ids look like "<base>__<actor-name>" — see
