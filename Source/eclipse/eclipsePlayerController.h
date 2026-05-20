@@ -56,6 +56,9 @@ protected:
 	/** S-key handler — toggles the stats menu overlay (5 stats + meters + currency). */
 	void ToggleStatsMenu();
 
+	/** P-key handler — toggles the phone overlay (clock + wallet + contacts/notes tabs). */
+	void TogglePhone();
+
 	UPROPERTY()
 	TObjectPtr<class UEclipsePauseMenuWidget> ActivePauseMenu;
 
@@ -64,4 +67,7 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<class UEclipseStatsMenuWidget> ActiveStatsMenu;
+
+	UPROPERTY()
+	TObjectPtr<class UEclipsePhoneWidget> ActivePhone;
 };

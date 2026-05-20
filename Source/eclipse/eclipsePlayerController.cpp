@@ -11,6 +11,7 @@
 #include "UI/EclipsePauseMenuWidget.h"
 #include "UI/EclipseInventoryWidget.h"
 #include "UI/EclipseStatsMenuWidget.h"
+#include "UI/EclipsePhoneWidget.h"
 #include "UI/EclipseMainMenuActor.h"
 #include "UI/EclipseBlinkWipeWidget.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
@@ -148,7 +149,15 @@ void AeclipsePlayerController::SetupInputComponent()
 					this, &AeclipsePlayerController::ToggleStatsMenu);
 				InputComponent->KeyBindings.Add(B);
 			}
-			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I + C bindings installed on %s (InputComponent=%p)"),
+			// P → phone overlay (clock + wallet + contacts/notes tabs).
+			{
+				FInputKeyBinding B(FInputChord(EKeys::P, false, false, false, false), IE_Pressed);
+				B.bExecuteWhenPaused = true;
+				B.KeyDelegate.GetDelegateForManualSet().BindUObject(
+					this, &AeclipsePlayerController::TogglePhone);
+				InputComponent->KeyBindings.Add(B);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I + C + P bindings installed on %s (InputComponent=%p)"),
 				*GetName(), (void*)InputComponent);
 		}
 		else
@@ -275,4 +284,52 @@ void AeclipsePlayerController::ToggleStatsMenu()
 		return;
 	}
 	ActiveStatsMenu = UEclipseStatsMenuWidget::OpenForPlayer(this);
+}
+
+void AeclipsePlayerController::TogglePhone()
+{
+	UE_LOG(LogEclipse, Log, TEXT("PC: TogglePhone fired"));
+
+	// Same mutex pattern as ToggleInventory / ToggleStatsMenu — never open
+	// over dialogue, pause menu, inventory, or stats menu. Each of those
+	// owns its own input mode / pause state, and stacking two would leave
+	// the lower one's state-restore (clock, mouse cursor, ignore-input)
+	// out of sync when the upper closes.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			if (DS->IsDialogueOpen())
+			{
+				UE_LOG(LogEclipse, Log, TEXT("PC: TogglePhone — dialogue open, ignoring"));
+				return;
+			}
+		}
+	}
+	if (ActivePauseMenu && ActivePauseMenu->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePhone — pause menu open, ignoring"));
+		return;
+	}
+	if (ActiveInventory && ActiveInventory->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePhone — inventory open, ignoring"));
+		return;
+	}
+	if (ActiveStatsMenu && ActiveStatsMenu->IsInViewport())
+	{
+		UE_LOG(LogEclipse, Log, TEXT("PC: TogglePhone — stats menu open, ignoring"));
+		return;
+	}
+
+	if (ActivePhone && ActivePhone->IsInViewport())
+	{
+		ActivePhone->Close();
+		ActivePhone = nullptr;
+		return;
+	}
+	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: TogglePhone — calling OpenForPlayer"));
+	ActivePhone = UEclipsePhoneWidget::OpenForPlayer(this);
+	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: TogglePhone — OpenForPlayer returned (ActivePhone=%s)"),
+		ActivePhone ? TEXT("OK") : TEXT("NULL"));
 }

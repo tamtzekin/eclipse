@@ -240,6 +240,11 @@ void UEclipseHUDWidget::NativeConstruct()
 	// Mounts the clock readout at the top of the HUD column. Designer can
 	// still bake a designer-styled ChapterClockText into the WBP later —
 	// when present, BindWidgetOptional resolves and this block skips.
+	//
+	// NOTE: the chapter clock has been moved to the phone widget face
+	// (P key, UEclipsePhoneWidget). The HUD construction is kept here so
+	// we can resurface it cheaply if design wants both — but the runtime
+	// instance is collapsed below so it doesn't render on the HUD today.
 	if (!ChapterClockText && WidgetTree)
 	{
 		using namespace EclipseUI;
@@ -273,6 +278,20 @@ void UEclipseHUDWidget::NativeConstruct()
 			UE_LOG(LogEclipse, Warning, TEXT("HUD: no HudColumn found — ChapterClockText not injected"));
 		}
 	}
+
+	// Clock has moved to the phone face. Collapse the HUD instance so it
+	// doesn't render — keeps the binding alive (UpdateChapterClock will
+	// no-op since SetText on a collapsed widget is invisible anyway) so
+	// flipping this back to Visible later restores the HUD readout in
+	// one line, no rebuild.
+	if (ChapterClockText)
+	{
+		ChapterClockText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	// (CurrencyText collapse moved below — it's runtime-injected later in
+	// NativeConstruct, so collapsing here would catch a null pointer and
+	// silently no-op. See the CurrencyText injection block downstream.)
 
 	// ── Runtime injection of EnergyBar if the WBP didn't ship one. ──
 	// WBP_HUD was authored before the Energy meter existed, so its HudRow
@@ -353,6 +372,15 @@ void UEclipseHUDWidget::NativeConstruct()
 			}
 			UE_LOG(LogEclipse, Log, TEXT("HUD: CurrencyText injected at runtime"));
 		}
+	}
+
+	// Currency has moved to the phone face (UEclipsePhoneWidget WalletText).
+	// Collapsed AFTER the runtime injection above so the just-built widget
+	// gets the visibility flip too — UpdateCurrency still maintains the
+	// underlying text in case visibility flips back to Visible later.
+	if (CurrencyText)
+	{
+		CurrencyText->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
@@ -499,16 +527,12 @@ void UEclipseHUDWidget::UpdateChapterClock()
 	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
 	if (!GS) return;
 
-	// Time-of-day readout — H:MM, 24-hour, starting at 0:00 (midnight) and
-	// counting up. The MM column updates whenever the underlying
-	// ChapterElapsedSeconds accumulator crosses another 60s boundary —
-	// either via the live tick (real-time × ClockScale) or via the
-	// dialogue +20s/click bump. Wraps every 24 hours so the display stays
-	// a real clock rather than drifting to "25:00" after a long session.
-	const float Elapsed     = FMath::Max(0.f, GS->ChapterElapsedSeconds);
-	const int32 TotalMins   = FMath::FloorToInt(Elapsed / 60.f);
-	const int32 HourOfDay   = (TotalMins / 60) % 24;
-	const int32 MinOfHour   = TotalMins % 60;
-	ChapterClockText->SetText(FText::FromString(
-		FString::Printf(TEXT("CH %d  ·  %d:%02d"), GS->Chapter, HourOfDay, MinOfHour)));
+	// Shared formatter on the subsystem — same source the phone widget
+	// reads from, so the HUD and phone face can never disagree on time.
+	// The HUD instance is collapsed today (clock moved to phone face) but
+	// the text is still kept current in case the visibility flips back.
+	ChapterClockText->SetText(FText::FromString(FString::Printf(
+		TEXT("%s  ·  %s"),
+		*GS->GetChapterLabelText().ToString(),
+		*GS->GetChapterClockText().ToString())));
 }

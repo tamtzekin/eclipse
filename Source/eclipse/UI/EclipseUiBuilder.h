@@ -69,6 +69,16 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateStatsMenuWBP(const FString& WBPAssetPath);
 
+	/** Phone overlay (P key) — left-edge 280×460 panel mirroring the
+	 *  prototype's `#phone-ui`. Layout: header strip ("PHONE" + ×),
+	 *  status row (clock + chapter label left, wallet right), tab row
+	 *  (CONTACTS / NOTES), scrolling content placeholder, footer
+	 *  action row (CALL / TEXT, disabled stubs). Widget names match
+	 *  UEclipsePhoneWidget's BindWidgetOptional UPROPERTYs. */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulatePhoneWBP(const FString& WBPAssetPath);
+
 	/**
 	 * Builds a UFont composite that wraps a UFontFace so Slate text widgets
 	 * (which expect UFont, not raw UFontFace) can resolve glyphs.

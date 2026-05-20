@@ -467,6 +467,24 @@ FText UEclipseGameStateSubsystem::GetChapterTitle() const
 	return FText::FromString(FString::Printf(TEXT("Chapter %d"), Chapter));
 }
 
+FText UEclipseGameStateSubsystem::GetChapterClockText() const
+{
+	// "H:MM" 24-hour, derived from ChapterElapsedSeconds (chapter clock
+	// starts at 0:00 and counts up — the same accumulator the dialogue
+	// adds +20s to on continuing clicks). Wraps every 24h so the display
+	// reads as a real clock instead of drifting past midnight.
+	const float Elapsed   = FMath::Max(0.f, ChapterElapsedSeconds);
+	const int32 TotalMins = FMath::FloorToInt(Elapsed / 60.f);
+	const int32 HourOfDay = (TotalMins / 60) % 24;
+	const int32 MinOfHour = TotalMins % 60;
+	return FText::FromString(FString::Printf(TEXT("%d:%02d"), HourOfDay, MinOfHour));
+}
+
+FText UEclipseGameStateSubsystem::GetChapterLabelText() const
+{
+	return FText::FromString(FString::Printf(TEXT("CH %d"), Chapter));
+}
+
 void UEclipseGameStateSubsystem::SkipChapter()
 {
 	UE_LOG(LogEclipse, Log, TEXT("Chapter clock: manual chapter advance (debug)"));

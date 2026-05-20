@@ -20,6 +20,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Components/UniformGridPanel.h"
@@ -1327,6 +1328,253 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		{
 			VS->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
 			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+	});
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phone WBP — left-edge 280×460 panel, ports the prototype's #phone-ui
+//  block. Widget names match UEclipsePhoneWidget's BindWidgetOptional fields
+//  so the WBP becomes designer-editable while the C++ class continues to
+//  drive logic (clock, wallet, tab swap).
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool UEclipseUiBuilder::PopulatePhoneWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	using namespace EclipseUI;
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree)
+	{
+		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
+		Tree->RootWidget = Root;
+
+		// ── Outer phone panel — navy gradient + cyan trim ───────────────
+		UBorder* Panel = New<UBorder>(Tree, TEXT("PhonePanel"));
+		Panel->SetBrush(RoundedBrush(
+			FLinearColor(0.039f, 0.043f, 0.078f, 0.97f),
+			FLinearColor(0.318f, 0.933f, 0.988f, 0.55f),
+			1.5f, 10.f));
+		Panel->SetPadding(FMargin(16.f, 14.f));
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
+		{
+			// Left-edge, vertically centred, 280×460.
+			S->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
+			S->SetAlignment(FVector2D(0.f, 0.5f));
+			S->SetPosition(FVector2D(24.f, 0.f));
+			S->SetSize(FVector2D(280.f, 460.f));
+		}
+
+		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("PhoneColumn"));
+		Panel->SetContent(Column);
+
+		// ── Header strip: "PHONE" + close × ─────────────────────────────
+		{
+			UHorizontalBox* HeaderRow = New<UHorizontalBox>(Tree, TEXT("PhoneHeaderRow"));
+
+			UTextBlock* Title = New<UTextBlock>(Tree, TEXT("PhoneTitle"));
+			Title->SetText(FText::FromString(TEXT("PHONE")));
+			Title->SetFont(MakeBMSPA(18, 3.f));
+			Title->SetColorAndOpacity(FSlateColor(Cyan));
+			if (UHorizontalBoxSlot* HS = HeaderRow->AddChildToHorizontalBox(Title))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetVerticalAlignment(VAlign_Center);
+			}
+
+			UButton* CloseBtn = New<UButton>(Tree, TEXT("CloseBtn"));
+			FButtonStyle CloseStyle;
+			CloseStyle.Normal   = RoundedBrush(FLinearColor(0.031f, 0.035f, 0.063f, 0.6f),
+			                                   FLinearColor(0.945f, 0.929f, 0.851f, 0.65f),
+			                                   1.f, 12.f);
+			CloseStyle.Hovered  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.10f),
+			                                   FLinearColor::White, 1.f, 12.f);
+			CloseStyle.Pressed  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
+			                                   FLinearColor::White, 1.f, 12.f);
+			CloseStyle.Disabled = CloseStyle.Normal;
+			CloseBtn->SetStyle(CloseStyle);
+			UTextBlock* CloseLabel = New<UTextBlock>(Tree, TEXT("CloseLabel"));
+			CloseLabel->SetText(FText::FromString(TEXT("x")));
+			CloseLabel->SetFont(MakeBMSPA(16));
+			CloseLabel->SetColorAndOpacity(FSlateColor(CreamDim));
+			CloseLabel->SetJustification(ETextJustify::Center);
+			CloseBtn->SetContent(CloseLabel);
+			USizeBox* CloseSize = New<USizeBox>(Tree, TEXT("CloseBtnSize"));
+			CloseSize->SetWidthOverride(24.f);
+			CloseSize->SetHeightOverride(24.f);
+			CloseSize->AddChild(CloseBtn);
+			if (UHorizontalBoxSlot* HS = HeaderRow->AddChildToHorizontalBox(CloseSize))
+				HS->SetVerticalAlignment(VAlign_Center);
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(HeaderRow))
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// Header divider
+		{
+			UBorder* Div = New<UBorder>(Tree, TEXT("PhoneHeaderDiv"));
+			Div->SetBrush(SolidBrush(FLinearColor(0.318f, 0.933f, 0.988f, 0.40f)));
+			USizeBox* DivSize = New<USizeBox>(Tree, TEXT("PhoneHeaderDivSize"));
+			DivSize->SetHeightOverride(1.f);
+			DivSize->AddChild(Div);
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(DivSize))
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// ── Status row: clock + chapter (left) | wallet (right) ─────────
+		{
+			UHorizontalBox* StatusRow = New<UHorizontalBox>(Tree, TEXT("PhoneStatusRow"));
+
+			UVerticalBox* ClockCol = New<UVerticalBox>(Tree, TEXT("PhoneClockCol"));
+
+			UTextBlock* ClockT = New<UTextBlock>(Tree, TEXT("ClockText"));
+			ClockT->SetText(FText::FromString(TEXT("0:00")));
+			ClockT->SetFont(MakeBMSPA(26, 2.f));
+			ClockT->SetColorAndOpacity(FSlateColor(Cream));
+			ClockCol->AddChildToVerticalBox(ClockT);
+
+			UTextBlock* ChapT = New<UTextBlock>(Tree, TEXT("ChapterLabelText"));
+			ChapT->SetText(FText::FromString(TEXT("CH 0")));
+			ChapT->SetFont(MakeBMSPA(11, 2.f));
+			ChapT->SetColorAndOpacity(FSlateColor(CreamDim));
+			ClockCol->AddChildToVerticalBox(ChapT);
+
+			if (UHorizontalBoxSlot* HS = StatusRow->AddChildToHorizontalBox(ClockCol))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetVerticalAlignment(VAlign_Center);
+			}
+
+			UTextBlock* WalletT = New<UTextBlock>(Tree, TEXT("WalletText"));
+			WalletT->SetText(FText::FromString(TEXT("C 0   N 0")));
+			WalletT->SetFont(MakeBMSPA(14, 2.f));
+			WalletT->SetColorAndOpacity(FSlateColor(Cyan));
+			WalletT->SetJustification(ETextJustify::Right);
+			if (UHorizontalBoxSlot* HS = StatusRow->AddChildToHorizontalBox(WalletT))
+				HS->SetVerticalAlignment(VAlign_Center);
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusRow))
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		}
+
+		// ── Tab row: CONTACTS / NOTES ───────────────────────────────────
+		{
+			UHorizontalBox* TabRow = New<UHorizontalBox>(Tree, TEXT("PhoneTabRow"));
+
+			auto MakeTabBtn = [&](FName Name, const FString& Label) -> UButton*
+			{
+				UButton* B = New<UButton>(Tree, Name);
+				FButtonStyle BS;
+				BS.Normal   = RoundedBrush(FLinearColor(0.039f, 0.043f, 0.078f, 0.60f),
+				                           FLinearColor(0.318f, 0.933f, 0.988f, 0.35f),
+				                           1.f, 4.f);
+				BS.Hovered  = RoundedBrush(FLinearColor(0.318f, 0.933f, 0.988f, 0.18f),
+				                           FLinearColor(0.318f, 0.933f, 0.988f, 0.85f),
+				                           1.f, 4.f);
+				BS.Pressed  = RoundedBrush(FLinearColor(0.318f, 0.933f, 0.988f, 0.32f),
+				                           FLinearColor::White, 1.f, 4.f);
+				BS.Disabled = BS.Normal;
+				B->SetStyle(BS);
+				UTextBlock* Lbl = New<UTextBlock>(Tree, NAME_None);
+				Lbl->SetText(FText::FromString(Label));
+				Lbl->SetFont(MakeBMSPA(12, 3.f));
+				Lbl->SetColorAndOpacity(FSlateColor(Cream));
+				Lbl->SetJustification(ETextJustify::Center);
+				B->SetContent(Lbl);
+				return B;
+			};
+
+			UButton* Contacts = MakeTabBtn(TEXT("ContactsTabBtn"), TEXT("CONTACTS"));
+			UButton* Notes    = MakeTabBtn(TEXT("NotesTabBtn"),    TEXT("NOTES"));
+
+			if (UHorizontalBoxSlot* HS = TabRow->AddChildToHorizontalBox(Contacts))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetPadding(FMargin(0.f, 0.f, 4.f, 0.f));
+			}
+			if (UHorizontalBoxSlot* HS = TabRow->AddChildToHorizontalBox(Notes))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetPadding(FMargin(4.f, 0.f, 0.f, 0.f));
+			}
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(TabRow))
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// ── Scrolling content area ──────────────────────────────────────
+		{
+			UScrollBox* Scroll = New<UScrollBox>(Tree, TEXT("ContentScroll"));
+			Scroll->SetAnimateWheelScrolling(true);
+
+			UTextBlock* Placeholder = New<UTextBlock>(Tree, TEXT("ContentPlaceholder"));
+			Placeholder->SetText(FText::FromString(
+				TEXT("No contacts yet.\n\nCharacters you meet will appear here.")));
+			Placeholder->SetFont(MakeRodin(13));
+			Placeholder->SetColorAndOpacity(FSlateColor(CreamDim));
+			Placeholder->SetAutoWrapText(true);
+			Scroll->AddChild(Placeholder);
+
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Scroll))
+			{
+				VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+			}
+		}
+
+		// Footer divider
+		{
+			UBorder* Div = New<UBorder>(Tree, TEXT("PhoneFooterDiv"));
+			Div->SetBrush(SolidBrush(FLinearColor(0.318f, 0.933f, 0.988f, 0.40f)));
+			USizeBox* DivSize = New<USizeBox>(Tree, TEXT("PhoneFooterDivSize"));
+			DivSize->SetHeightOverride(1.f);
+			DivSize->AddChild(Div);
+			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(DivSize))
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// ── Action row: CALL · TEXT (disabled stubs) ────────────────────
+		{
+			UHorizontalBox* ActionRow = New<UHorizontalBox>(Tree, TEXT("PhoneActionRow"));
+
+			auto MakeActionBtn = [&](FName Name, const FString& Label) -> UButton*
+			{
+				UButton* B = New<UButton>(Tree, Name);
+				FButtonStyle BS;
+				BS.Normal   = RoundedBrush(FLinearColor(0.039f, 0.043f, 0.078f, 0.45f),
+				                           FLinearColor(0.945f, 0.929f, 0.851f, 0.25f),
+				                           1.f, 4.f);
+				BS.Hovered  = BS.Normal;
+				BS.Pressed  = BS.Normal;
+				BS.Disabled = BS.Normal;
+				B->SetStyle(BS);
+				B->SetIsEnabled(false);
+				UTextBlock* Lbl = New<UTextBlock>(Tree, NAME_None);
+				Lbl->SetText(FText::FromString(Label));
+				Lbl->SetFont(MakeBMSPA(12, 3.f));
+				Lbl->SetColorAndOpacity(FSlateColor(CreamDim));
+				Lbl->SetJustification(ETextJustify::Center);
+				B->SetContent(Lbl);
+				return B;
+			};
+
+			UButton* Call = MakeActionBtn(TEXT("CallBtn"), TEXT("CALL"));
+			UButton* Text = MakeActionBtn(TEXT("TextBtn"), TEXT("TEXT"));
+
+			if (UHorizontalBoxSlot* HS = ActionRow->AddChildToHorizontalBox(Call))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetPadding(FMargin(0.f, 0.f, 4.f, 0.f));
+			}
+			if (UHorizontalBoxSlot* HS = ActionRow->AddChildToHorizontalBox(Text))
+			{
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetPadding(FMargin(4.f, 0.f, 0.f, 0.f));
+			}
+
+			Column->AddChildToVerticalBox(ActionRow);
 		}
 	});
 #else

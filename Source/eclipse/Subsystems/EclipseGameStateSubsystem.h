@@ -312,6 +312,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
 	void SetClockRunning(bool bRunning) { bClockRunning = bRunning; }
 
+	// Single source of truth for the formatted in-game time-of-day. Returns
+	// "H:MM" (24-hour, leading-zero on minutes), wrapping every 24h so a
+	// long session never reads as "25:00". The phone widget shows this on
+	// its face; any other consumer (HUD, save-load summary, etc.) should
+	// call this instead of duplicating the FloorToInt arithmetic.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	FText GetChapterClockText() const;
+
+	// "CH N" chapter label — phone face shows this as a small subtitle
+	// under the clock so the player still knows which chapter they're in
+	// even though the HUD no longer displays it.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	FText GetChapterLabelText() const;
+
 	// Skip directly to the next chapter (debug/cheat). Triggers the same
 	// transition flow as the auto-advance.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
