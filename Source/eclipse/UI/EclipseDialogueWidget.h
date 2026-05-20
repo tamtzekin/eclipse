@@ -15,6 +15,7 @@ class UBorder;
 class UImage;
 class UWrapBox;
 class UAudioComponent;
+struct FEclipseDialogueChoice;
 
 /**
  * Right-side dialogue panel. Binds to EclipseDialogueSubsystem delegates.
@@ -70,6 +71,22 @@ protected:
 	// slightly overlapping. Texture sourced from active NPC's PortraitTexture.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> SpeakerPortrait;
+
+	// ── Speech-bubble history (Visual-Novel L/R stacking) ───────────────
+	// Two scroll boxes anchored to the screen edges. The player's chosen
+	// lines stack on the LEFT, the NPC's spoken lines stack on the RIGHT.
+	// Each entry is a UBorder ("bubble") with a UWrapBox of per-word
+	// UTextBlocks inside, so the existing word-by-word fade animation can
+	// target the newest bubble's wrap box via BodyWords (redirected each
+	// time a new NPC line lands). Cleared on HandleDialogueClosed.
+	//
+	// Both are runtime-injected in NativeConstruct if the bound WBP didn't
+	// ship them, mirroring the BodyWords / EffectsLineText pattern.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UScrollBox> LeftHistoryScroll;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UScrollBox> RightHistoryScroll;
 
 	// ── Pre-built choice rows (slot 0..4) ───────────────────────────────────
 	// These are populated into the WBP at design-time by EclipseUiBuilder so
@@ -169,6 +186,30 @@ private:
 
 	void MakeChoice(int32 Index);
 	void RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices);
+
+	// ── Bubble construction helpers ─────────────────────────────────────
+	//
+	// Appends a new black semi-transparent bubble to one of the history
+	// scroll boxes. Returns the inner UWrapBox so the caller can drive the
+	// per-word fade-in (HandleNodeChanged redirects `BodyWords` here so
+	// StartBodyAnimation lands on the new bubble). The speaker caption
+	// renders above the words inside the bubble.
+	//
+	// EffectsOut, when non-null, receives a UTextBlock the caller can fill
+	// with the orange stage-direction effects line (sits below the words
+	// inside the same bubble; collapsed by default).
+	class UWrapBox* AppendBubble(class UScrollBox* Box,
+	                             const FText& SpeakerCaption,
+	                             const FLinearColor& CaptionTint,
+	                             bool bAlignRight,
+	                             class UTextBlock** EffectsOut = nullptr);
+
+	// Caches the choices passed to the most recent RebuildChoices so
+	// MakeChoice can grab the chosen line's text and stamp a player-side
+	// bubble into LeftHistoryScroll before the dialogue advances to the
+	// next node.
+	UPROPERTY()
+	TArray<FEclipseDialogueChoice> CurrentChoices;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UButton>> ChoiceButtons;

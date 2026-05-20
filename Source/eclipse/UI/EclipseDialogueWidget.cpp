@@ -16,6 +16,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "NPC/EclipseNpcCharacter.h"
@@ -202,6 +204,79 @@ void UEclipseDialogueWidget::NativeConstruct()
 			BodyText  ? TEXT("BOUND")          : TEXT("null"));
 	}
 
+	// ── Unified dialogue panel (Disco-Elysium-style box) ──────────────────
+	//
+	// One outer UBorder containing the history scroll up top and the
+	// choices at the bottom, with a thin divider between. Earlier iteration
+	// used two L/R history scrolls on the screen edges, but a single panel
+	// reads cleaner with stacked bubbles (NPC right-aligned, player
+	// left-aligned within the same column).
+	//
+	// LeftHistoryScroll is left null — kept on the class for ABI stability;
+	// MakeChoice now appends player bubbles to RightHistoryScroll with
+	// HAlign_Left, distinguishing speakers via in-column alignment + caption
+	// colour. The whole layout is right-anchored 500px wide, ~90% screen
+	// height, with a soft dark fill + cream chalk outline.
+	if (WidgetTree && !RightHistoryScroll)
+	{
+		using namespace EclipseUI;
+
+		UPanelWidget* RootPanel = Cast<UPanelWidget>(WidgetTree->RootWidget);
+		UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(RootPanel);
+		if (RootCanvas)
+		{
+			UBorder* OuterBox = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("DialogueOuterBox"));
+			OuterBox->SetBrush(RoundedBrush(
+				FLinearColor(0.039f, 0.043f, 0.059f, 0.92f),
+				FLinearColor(0.945f, 0.929f, 0.851f, 0.40f),
+				1.5f, 8.f));
+			OuterBox->SetPadding(FMargin(16.f, 14.f));
+			if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(OuterBox))
+			{
+				CS->SetAnchors(FAnchors(1.f, 0.05f, 1.f, 0.95f));
+				CS->SetAlignment(FVector2D(1.f, 0.f));
+				CS->SetPosition(FVector2D(-20.f, 0.f));
+				CS->SetSize(FVector2D(500.f, 0.f));
+				CS->SetZOrder(1);
+			}
+
+			UVerticalBox* OuterCol = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("DialogueOuterColumn"));
+			OuterBox->SetContent(OuterCol);
+
+			RightHistoryScroll = WidgetTree->ConstructWidget<UScrollBox>(
+				UScrollBox::StaticClass(), TEXT("RightHistoryScroll_Runtime"));
+			RightHistoryScroll->SetAnimateWheelScrolling(true);
+			RightHistoryScroll->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			if (UVerticalBoxSlot* VS = OuterCol->AddChildToVerticalBox(RightHistoryScroll))
+			{
+				// Fill the available vertical space so the scroll grows with
+				// the panel; choices below get whatever height they need.
+				VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+
+			// Divider between bubble transcript and choices.
+			{
+				UBorder* Div = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), TEXT("OuterDividerLine"));
+				Div->SetBrush(SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.28f)));
+				Div->SetPadding(FMargin(0.f));
+				USizeBox* DivSize = WidgetTree->ConstructWidget<USizeBox>(
+					USizeBox::StaticClass(), TEXT("OuterDividerSize"));
+				DivSize->SetHeightOverride(1.f);
+				DivSize->AddChild(Div);
+				if (UVerticalBoxSlot* VS = OuterCol->AddChildToVerticalBox(DivSize))
+				{
+					VS->SetPadding(FMargin(0.f, 8.f, 0.f, 8.f));
+				}
+			}
+
+			UE_LOG(LogEclipse, Log,
+				TEXT("Dlg: DialogueOuterBox injected (500w, 90%% height, right)"));
+		}
+	}
+
 	// ── Force the canonical column order. ──
 	// Belt-and-braces: regardless of how the WBP was authored, what
 	// PopulateDialogueWBP wrote, or any prior runtime injection, walk the
@@ -244,12 +319,18 @@ void UEclipseDialogueWidget::NativeConstruct()
 		}
 	}
 
-	// ── Speech-bubble restyle (DISABLED) ──
-	// Runtime overrides used to force the bubble look on top of whatever the
-	// WBP shipped. Disabled now so designer edits to a duplicate WBP
-	// (`WBP_Dialogue_Bubbles`) aren't clobbered. To re-enable: change the
-	// `#if 0` below to `#if 1`.
-	#if 0
+	// ── Speech-bubble layout restyle ──────────────────────────────────────
+	//
+	// The widget used to render the current line in a solid right-anchored
+	// panel. With the L/R history scroll boxes injected above, each line is
+	// instead a discrete bubble appended to one of those scrolls. The big
+	// background panel + its in-column speaker / body / effects widgets are
+	// now dead weight visually — collapse them so only the choice buttons
+	// keep their existing position. `BodyWords` is NOT collapsed because
+	// HandleNodeChanged repoints the pointer at each new bubble's WrapBox
+	// before driving StartBodyAnimation — the in-column instance is left
+	// behind (invisible) once the first node arrives.
+	#if 1
 	{
 		using namespace EclipseUI;
 
@@ -257,8 +338,7 @@ void UEclipseDialogueWidget::NativeConstruct()
 		//    The populator builds DialoguePanel as a UOverlay containing five
 		//    stacked PanelFade_0..4 UBorders that fake a radial edge-fade
 		//    (no native gradient brush in Slate). Collapse all of them so the
-		//    "solid right-side rectangle" disappears. Bubbles inside the
-		//    column then sit on top of the world directly.
+		//    "solid right-side rectangle" disappears.
 		//
 		//    The C++ fallback layout uses a single UBorder also called
 		//    DialoguePanel — handle that case too.
@@ -288,40 +368,22 @@ void UEclipseDialogueWidget::NativeConstruct()
 			}
 		}
 
-		// 2. Wrap BodyWords (the per-word fade-in container) in a bubble
-		//    border. Slot the new border into BodyWords' old position in the
-		//    parent vertical box.
-		if (BodyWords && WidgetTree && !WidgetTree->FindWidget(TEXT("BodyBubble")))
-		{
-			if (UPanelWidget* Parent = BodyWords->GetParent())
-			{
-				const int32 BodyIdx = Parent->GetChildIndex(BodyWords);
-
-				UBorder* Bubble = WidgetTree->ConstructWidget<UBorder>(
-					UBorder::StaticClass(), TEXT("BodyBubble"));
-				// Black 60% alpha cloud, soft chalk outline, generous padding.
-				Bubble->SetBrush(RoundedBrush(
-					FLinearColor(0.f, 0.f, 0.f, 0.60f),
-					FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),
-					1.f, 12.f));
-				Bubble->SetPadding(FMargin(14.f, 10.f));
-
-				BodyWords->RemoveFromParent();
-				Bubble->SetContent(BodyWords);
-				Parent->AddChild(Bubble);
-				Parent->ShiftChild(FMath::Max(0, BodyIdx), Bubble);
-
-				if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(Bubble->Slot))
-				{
-					VS->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
-				}
-				UE_LOG(LogEclipse, Log, TEXT("Dlg: BodyBubble wrapped around BodyWords"));
-			}
-		}
+		// 2. Collapse the in-column speaker / body / effects widgets.
+		//    Each new dialogue line is now a self-contained bubble appended
+		//    to LeftHistoryScroll / RightHistoryScroll — the original
+		//    column-stacked instances render nothing and just take up space.
+		//    BodyWords is REPOINTED in HandleNodeChanged (not collapsed
+		//    here) because StartBodyAnimation drives it; collapsing the
+		//    in-column WrapBox is fine because we redirect the pointer
+		//    before the first node arrives.
+		if (SpeakerNameText) SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
+		if (BodyText)        BodyText->SetVisibility(ESlateVisibility::Collapsed);
+		if (EffectsLineText) EffectsLineText->SetVisibility(ESlateVisibility::Collapsed);
+		if (BodyWords)       BodyWords->SetVisibility(ESlateVisibility::Collapsed);
 
 		// 3. Re-style each pre-built choice button as its own bubble. Drops
-		//    the prior cream-tint button look in favour of the same black
-		//    cloud as the body.
+		//    the prior cream-tint button look in favour of a black cloud
+		//    that matches the speech-bubble look of the L/R history scrolls.
 		auto BubbleBrush = [](float Alpha)
 		{
 			return RoundedBrush(
@@ -349,6 +411,30 @@ void UEclipseDialogueWidget::NativeConstruct()
 		if (UWidget* Div = WidgetTree ? WidgetTree->FindWidget(TEXT("ChoicesDivider")) : nullptr)
 		{
 			Div->SetVisibility(ESlateVisibility::Collapsed);
+		}
+
+		// 5. Reparent ChoicesBox into the DialogueOuterColumn (below the
+		//    bubble scroll + divider). Both populator paths (C++ fallback +
+		//    EclipseUiBuilder) park ChoiceBtn_N inside ChoicesBox, so
+		//    reparenting ChoicesBox carries all buttons with it. The outer
+		//    column already has the history scroll filling its top portion
+		//    and a 1-px divider below it — ChoicesBox becomes the third
+		//    (auto-sized) child below the divider, giving the DE-style
+		//    "transcript on top, choices below" layout inside a single
+		//    box.
+		if (ChoicesBox && WidgetTree)
+		{
+			UVerticalBox* OuterCol = Cast<UVerticalBox>(
+				WidgetTree->FindWidget(TEXT("DialogueOuterColumn")));
+			const bool bAlreadyInOuter = OuterCol &&
+				(ChoicesBox->GetParent() == OuterCol);
+			if (OuterCol && !bAlreadyInOuter)
+			{
+				ChoicesBox->RemoveFromParent();
+				OuterCol->AddChildToVerticalBox(ChoicesBox);
+				UE_LOG(LogEclipse, Log,
+					TEXT("Dlg: ChoicesBox reparented into DialogueOuterColumn (below divider)"));
+			}
 		}
 	}
 	#endif // bubble runtime override
@@ -382,6 +468,92 @@ void UEclipseDialogueWidget::NativeDestruct()
 		}
 	}
 	Super::NativeDestruct();
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Speech-bubble construction
+//
+//  AppendBubble builds one black semi-transparent "cloud" (a UBorder with
+//  a UVerticalBox of speaker caption + UWrapBox of words + optional effects
+//  line) and appends it to the supplied UScrollBox. The wrap box is
+//  returned so the caller can hook the existing word-by-word fade-in
+//  (HandleNodeChanged repoints `BodyWords` here so StartBodyAnimation
+//  lands on the new bubble's container).
+//
+//  bAlignRight controls which screen edge the bubble hugs inside its
+//  scroll box — NPC lines go right, the player's chosen lines go left.
+//  WrapSize is set explicitly on the inner WrapBox so long lines wrap
+//  within the bubble instead of pushing it off the visible scroll area.
+// ─────────────────────────────────────────────────────────────
+
+UWrapBox* UEclipseDialogueWidget::AppendBubble(UScrollBox* Box,
+	const FText& SpeakerCaption, const FLinearColor& CaptionTint,
+	bool bAlignRight, UTextBlock** EffectsOut)
+{
+	using namespace EclipseUI;
+	if (!Box || !WidgetTree) return nullptr;
+
+	UBorder* Bubble = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(), NAME_None);
+	Bubble->SetBrush(RoundedBrush(
+		FLinearColor(0.f, 0.f, 0.f, 0.70f),                       // black 70%
+		FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),              // soft chalk outline
+		1.f, 12.f));
+	Bubble->SetPadding(FMargin(14.f, 10.f));
+	Bubble->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(
+		UVerticalBox::StaticClass(), NAME_None);
+	Bubble->SetContent(Col);
+
+	// Speaker caption — small BMSPA tint matching the side (cyan for NPC,
+	// cream for player by convention; caller passes the colour).
+	UTextBlock* Caption = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), NAME_None);
+	Caption->SetFont(MakeBMSPA(/*Size=*/14, /*Letter=*/2.f));
+	Caption->SetColorAndOpacity(FSlateColor(CaptionTint));
+	Caption->SetText(SpeakerCaption);
+	Caption->SetJustification(bAlignRight ? ETextJustify::Right : ETextJustify::Left);
+	if (UVerticalBoxSlot* S = Col->AddChildToVerticalBox(Caption))
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+
+	// Inner WrapBox for per-word fade-in. Explicit wrap so long lines
+	// stack rows instead of stretching the bubble off the scroll edge.
+	UWrapBox* Words = WidgetTree->ConstructWidget<UWrapBox>(
+		UWrapBox::StaticClass(), NAME_None);
+	Words->SetInnerSlotPadding(FVector2D(0.f, 0.f));
+	Words->SetExplicitWrapSize(true);
+	Words->SetWrapSize(320.f);
+	Col->AddChildToVerticalBox(Words);
+
+	// Optional effects line under the body words. Collapsed by default —
+	// the caller sets text + flips visibility if the node has any stage
+	// directives.
+	if (EffectsOut)
+	{
+		UTextBlock* EffectsBlk = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), NAME_None);
+		EffectsBlk->SetFont(MakeRodin(14));
+		EffectsBlk->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.65f, 0.25f, 0.95f)));
+		EffectsBlk->SetAutoWrapText(true);
+		EffectsBlk->SetVisibility(ESlateVisibility::Collapsed);
+		if (UVerticalBoxSlot* S = Col->AddChildToVerticalBox(EffectsBlk))
+			S->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+		*EffectsOut = EffectsBlk;
+	}
+
+	// Slot the bubble into the scroll box with edge-aligned HAlign so the
+	// bubble sizes to content and hugs the appropriate side.
+	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(Box->AddChild(Bubble)))
+	{
+		SS->SetHorizontalAlignment(bAlignRight ? HAlign_Right : HAlign_Left);
+		SS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+	}
+
+	// Auto-scroll so the newest bubble is always visible.
+	Box->ScrollToEnd();
+
+	return Words;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -469,25 +641,44 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 
 void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 {
+	using namespace EclipseUI;
+
 	// SelfHitTestInvisible: the root canvas itself ignores hit-testing so only
 	// the actual buttons/panel intercept input. Without this, the fullscreen
 	// canvas would be a hit-test layer over the whole viewport, producing
 	// off-centre hover/click registration on the buttons inside.
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
+	// Keep the legacy in-column speaker label up-to-date (it's collapsed in
+	// NativeConstruct so nothing renders, but the assignment is harmless and
+	// keeps a fallback if the bubble path fails to spawn for any reason).
 	if (SpeakerNameText)
 		SpeakerNameText->SetText(FText::FromName(Node.SpeakerName));
 
-	// Body text — preferred path is the word-by-word fade-in via BodyWords
-	// (UWrapBox of per-word UTextBlocks). If the WBP doesn't have BodyWords
-	// bound, fall back to setting BodyText directly (legacy single block).
-	UE_LOG(LogEclipse, Log, TEXT("Dlg: HandleNodeChanged — BodyWords=%s BodyText=%s"),
-		BodyWords ? TEXT("BOUND") : TEXT("null"),
-		BodyText  ? TEXT("BOUND") : TEXT("null"));
-	if (BodyWords)
+	// Append a new NPC-side bubble and redirect the per-word animation +
+	// effects-line pointers so the existing machinery lands in the new
+	// bubble. The old WrapBox stays where it is in the prior bubble (in the
+	// scroll box) with its words intact — the history accumulates.
+	if (RightHistoryScroll)
 	{
-		// Hide the static BodyText (if it's still in the tree from older WBP
-		// templates) so the animated wrap-box is the only thing rendering.
+		UTextBlock* BubbleEffects = nullptr;
+		UWrapBox* BubbleWords = AppendBubble(
+			RightHistoryScroll,
+			FText::FromName(Node.SpeakerName),
+			Cyan,                          // NPC caption tint
+			/*bAlignRight=*/true,
+			&BubbleEffects);
+
+		if (BubbleWords)
+		{
+			BodyWords        = BubbleWords;
+			EffectsLineText  = BubbleEffects;
+			StartBodyAnimation(Node.Body.ToString());
+		}
+	}
+	else if (BodyWords)
+	{
+		// Legacy in-column path — only reached if history injection failed.
 		if (BodyText)
 		{
 			BodyText->SetText(FText::GetEmpty());
@@ -566,6 +757,14 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (BodyText)        BodyText->SetText(FText::GetEmpty());
 	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
 
+	// Clear the bubble transcript so the next conversation starts fresh —
+	// otherwise the previous NPC's lines would still be stacked when the
+	// player walks up to a different character. Same for the player-side
+	// scroll.
+	if (LeftHistoryScroll)  LeftHistoryScroll->ClearChildren();
+	if (RightHistoryScroll) RightHistoryScroll->ClearChildren();
+	CurrentChoices.Reset();
+
 	// Tear down the per-word animation state so we don't keep ticking dead
 	// references on the next NativeTick.
 	bDialogueAnimating = false;
@@ -637,6 +836,11 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices)
 {
 	using namespace EclipseUI;
+
+	// Cache the choices so MakeChoice can pull the chosen line's text and
+	// stamp a player-side bubble into LeftHistoryScroll before the dialogue
+	// subsystem advances to the next node (after which Choices has changed).
+	CurrentChoices = Choices;
 
 	constexpr int32 MaxSlots = 5;
 
@@ -930,10 +1134,43 @@ void UEclipseDialogueWidget::NativeOnFocusLost(const FFocusEvent& InFocusEvent)
 
 void UEclipseDialogueWidget::MakeChoice(int32 Index)
 {
+	using namespace EclipseUI;
+
 	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
 		Audio->PlayUI(DialogueChoiceSound);
 	}
+
+	// Stamp a player-side bubble with the chosen line BEFORE dispatching to
+	// the subsystem — once MakeChoice returns the dialogue has already
+	// advanced and CurrentChoices points at the next node's options. Player
+	// bubbles share the same RightHistoryScroll as the NPC's, just with
+	// bAlignRight=false so they hug the left edge of the column (DE-style
+	// "YOU" indent). The line is fully resolved instantly — no per-word
+	// fade — so it reads as something the player just committed to,
+	// distinct from the cascading NPC reply.
+	if (RightHistoryScroll && CurrentChoices.IsValidIndex(Index))
+	{
+		const FEclipseDialogueChoice& Picked = CurrentChoices[Index];
+		UWrapBox* Words = AppendBubble(
+			RightHistoryScroll,
+			NSLOCTEXT("Eclipse", "PlayerSpeakerCaption", "YOU"),
+			Cream,                          // player caption tint
+			/*bAlignRight=*/false,
+			/*EffectsOut=*/nullptr);
+		if (Words && WidgetTree)
+		{
+			// Single static UTextBlock — no per-word stagger; instant.
+			UTextBlock* Line = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), NAME_None);
+			Line->SetFont(MakeRodin(/*Size=*/16));
+			Line->SetColorAndOpacity(FSlateColor(Cream));
+			Line->SetAutoWrapText(true);
+			Line->SetText(Picked.Text);
+			Words->AddChildToWrapBox(Line);
+		}
+	}
+
 	if (UEclipseDialogueSubsystem* DS = GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
 		DS->MakeChoice(Index);
 }
