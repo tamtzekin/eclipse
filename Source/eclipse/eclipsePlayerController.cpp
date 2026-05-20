@@ -328,8 +328,5 @@ void AeclipsePlayerController::TogglePhone()
 		ActivePhone = nullptr;
 		return;
 	}
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: TogglePhone — calling OpenForPlayer"));
 	ActivePhone = UEclipsePhoneWidget::OpenForPlayer(this);
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: TogglePhone — OpenForPlayer returned (ActivePhone=%s)"),
-		ActivePhone ? TEXT("OK") : TEXT("NULL"));
 }

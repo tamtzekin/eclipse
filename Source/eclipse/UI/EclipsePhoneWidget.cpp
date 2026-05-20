@@ -40,12 +40,10 @@
 
 bool UEclipsePhoneWidget::Initialize()
 {
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: Initialize() begin"));
 	using namespace EclipseUI;
 
 	if (WidgetTree && !WidgetTree->FindWidget(FName(TEXT("ClockText"))))
 	{
-		UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: Initialize() — building C++ tree"));
 		UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(
 			UCanvasPanel::StaticClass(), TEXT("Canvas_0"));
 		WidgetTree->RootWidget = Root;
@@ -303,19 +301,14 @@ bool UEclipsePhoneWidget::Initialize()
 
 			Column->AddChildToVerticalBox(ActionRow);
 		}
-		UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: Initialize() — C++ tree built"));
 	}
 
-	const bool bSuper = Super::Initialize();
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: Initialize() end (Super=%d)"), bSuper ? 1 : 0);
-	return bSuper;
+	return Super::Initialize();
 }
 
 void UEclipsePhoneWidget::NativeConstruct()
 {
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeConstruct() begin"));
 	Super::NativeConstruct();
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeConstruct() — Super done"));
 
 	// Bind clicks (the close X + tab buttons; CALL/TEXT stay disabled in MVP).
 	if (CloseBtn)
@@ -331,35 +324,20 @@ void UEclipsePhoneWidget::NativeConstruct()
 	{
 		NotesTabBtn->OnClicked.AddDynamic(this, &UEclipsePhoneWidget::OnNotesTabClicked);
 	}
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeConstruct() — bindings done"));
 
 	ApplyTab(EPhoneTab::Contacts);
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeConstruct() — ApplyTab done"));
-
 	RefreshFace();
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeConstruct() end"));
 }
 
 void UEclipsePhoneWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
 
-	// DBG: heartbeat log at key frame milestones so we can tell whether
-	// ticking continues past the early frames (if it stalls, the last
-	// number we see tells us where).
-	static int32 sTickCount = 0;
-	++sTickCount;
-	if (sTickCount == 1 || sTickCount == 60 || sTickCount == 120
-		|| sTickCount == 300 || (sTickCount % 600) == 0)
-	{
-		UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: NativeTick #%d (dt=%.4f)"), sTickCount, DeltaSeconds);
-	}
-
 	// The phone face is real-time: clock + wallet update every tick so when
 	// the dialogue +20s bump fires or coins land from a pickup, the player
-	// sees the change immediately. Game is paused while the phone is open
-	// (see OpenForPlayer), so this effectively reads the frozen snapshot —
-	// which is fine, that matches how reading a phone IRL works.
+	// sees the change immediately. The phone does NOT pause the world
+	// (look-but-the-world-continues design), so the clock literally ticks
+	// up while the phone is open.
 	RefreshFace();
 }
 
@@ -432,7 +410,6 @@ FReply UEclipsePhoneWidget::NativeOnKeyDown(const FGeometry& InGeometry, const F
 
 UEclipsePhoneWidget* UEclipsePhoneWidget::OpenForPlayer(APlayerController* PC)
 {
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: OpenForPlayer begin"));
 	if (!PC) return nullptr;
 
 	TSubclassOf<UEclipsePhoneWidget> Cls = UEclipsePhoneWidget::StaticClass();
@@ -441,17 +418,13 @@ UEclipsePhoneWidget* UEclipsePhoneWidget::OpenForPlayer(APlayerController* PC)
 	{
 		Cls = BPClass;
 	}
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: class resolved (%s)"), *GetNameSafe(Cls));
 
 	UEclipsePhoneWidget* W = CreateWidget<UEclipsePhoneWidget>(PC, Cls, TEXT("Phone"));
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: CreateWidget returned %s"), W ? TEXT("OK") : TEXT("NULL"));
 	if (!W) return nullptr;
 
 	W->AddToViewport(/*ZOrder=*/100);
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: AddToViewport done"));
 	W->SetIsFocusable(true);
 	W->SetKeyboardFocus();
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: SetKeyboardFocus done"));
 
 	// NB: phone does NOT pause the world (unlike Inventory / Stats). The
 	// design intent is "look-but-the-world-continues" — chapter clock keeps
@@ -464,11 +437,9 @@ UEclipsePhoneWidget* UEclipsePhoneWidget::OpenForPlayer(APlayerController* PC)
 	Mode.SetWidgetToFocus(W->TakeWidget());
 	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	PC->SetInputMode(Mode);
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: SetInputMode done"));
 	PC->SetShowMouseCursor(true);
 	PC->SetIgnoreMoveInput(true);
 	PC->SetIgnoreLookInput(true);
-	UE_LOG(LogEclipse, Warning, TEXT("Phone DBG: SetShowMouseCursor + ignore-move/look done"));
 
 	UE_LOG(LogEclipse, Log, TEXT("Phone: opened for %s"), *PC->GetName());
 	return W;
