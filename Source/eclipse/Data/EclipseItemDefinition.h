@@ -39,10 +39,25 @@ struct FEclipseItemEffect
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool  bDarken          = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool  bCharisma        = false;
 
-	// Use-time effect — Usable items, applied once when consumed via UseItem.
-	// Amount of Thirst restored on use. <=0 disables the USE button entirely
-	// (so empty containers like baggies / empty glasses can't be "consumed").
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) float RestoreThirst    = 30.f;
+	// Use-time effects — Usable items, applied once when consumed via
+	// UseItem. Each delta is a signed integer on the meter's 0..10 scale.
+	// Sweet-spot model: + and - both have valid uses depending on where
+	// the meter sits and what the item is supposed to do. Examples:
+	//   water:     ThirstDelta = +2                            (dry → hydrated)
+	//   beer:      ThirstDelta = +2,  HeatDelta = -1            (hydrate + cool)
+	//   gum:       ThirstDelta = -1                            (dries the mouth)
+	//   lollipop:  ThirstDelta = +1                            (saliva)
+	//   Molly:     StimulationDelta = +2, HeatDelta = +1        (tweak + sweat)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 HeatDelta         = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 ThirstDelta       = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 StimulationDelta  = 0;
+
+	// Legacy float field kept for backward compat with DT rows authored
+	// against the pre-refactor 0..100 model. UseItem checks the int
+	// deltas first; if all three are 0 AND RestoreThirst > 0 it falls
+	// back to the legacy field (scaled by /10 into a positive
+	// ThirstDelta, since the new orientation is "high = hydrated").
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float RestoreThirst    = 0.f;
 };
 
 USTRUCT(BlueprintType)

@@ -19,7 +19,14 @@ void AEclipseHUD::BeginPlay()
 	if (HUDWidgetClass)
 	{
 		HUDWidget = CreateWidget<UEclipseHUDWidget>(PC, HUDWidgetClass);
-		if (HUDWidget) HUDWidget->AddToViewport(0);
+		// ZOrder 200 keeps the life-meters visible (un-dimmed) over modal
+		// overlays. Inventory / Phone / Stats / Pause sit at ZOrder 100
+		// (their fullscreen Dim is at the same Z), so a HUD at 200 paints
+		// on top of every overlay's dim — the meters stay readable when
+		// the player opens an item menu mid-decision.
+		// (BlinkWipe at ZOrder 5000 still covers the HUD during scene
+		// transitions, which is the desired behaviour.)
+		if (HUDWidget) HUDWidget->AddToViewport(200);
 	}
 
 	// Permanent left-edge inventory strip — disabled for now; sticking with

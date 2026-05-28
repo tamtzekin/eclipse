@@ -113,10 +113,15 @@ public:
 	// the 2 and 8 boundaries so the player can read at a glance how far
 	// each meter is from danger.
 	//
-	// Semantic per meter (low = bad ↔ high = bad):
-	//   HEAT          0 freezing  · 5 comfortable · 10 overheated
-	//   THIRST        0 sloshing  · 5 hydrated    · 10 parched
-	//   STIMULATION   0 sluggish  · 5 alert       · 10 tweaking
+	// Semantic per meter (both ends bad; 5 = sweet spot):
+	//   HEAT          0 freezing · 5 comfortable · 10 overheated
+	//   THIRST        0 dry       · 5 hydrated    · 10 sloshing (wet)
+	//   STIMULATION   0 sluggish · 5 alert       · 10 tweaking
+	//
+	// THIRST orientation: LOW = dry, HIGH = wet — i.e. drinking water
+	// or beer raises the meter (toward sloshing), chewing gum lowers it
+	// (toward dry). Both extremes are bad but only Stimulation == 0
+	// kills the player (see OnPlayerDeath in ChangeMeter).
 	//
 	// Articy gameplay gates these via stage directives like
 	//   "HEAT > 8"        — choice available only when overheating

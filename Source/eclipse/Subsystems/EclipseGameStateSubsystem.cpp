@@ -246,26 +246,49 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 			return false;
 		}
 
-		// Usable: pushes Thirst back toward the sweet spot. In the new
-		// 0..10 sweet-spot model "thirst" measures dehydration (10 = parched,
-		// 0 = waterlogged), so drinking REDUCES the meter value. The legacy
-		// RestoreThirst float in DT_Items is interpreted as a 0..100-style
-		// magnitude — scale by /10 and apply as a negative int delta.
-		// RestoreThirst <= 0 still means "empty container, can't be consumed"
-		// so empty baggies / glasses don't vanish into nothing when used.
+		// Usable: applies the three signed int meter deltas. Sweet-spot
+		// orientation:
+		//   HEAT         + warms, - cools
+		//   THIRST       + hydrates (toward sloshing), - dries
+		//   STIMULATION  + stimulates (toward tweaking), - calms
+		//
+		// At least one delta must be non-zero OR the legacy RestoreThirst
+		// fallback must be > 0 — otherwise the item is treated as an
+		// "empty container" and the use is refused (so empty baggies /
+		// glasses don't vanish into nothing when the player clicks USE).
+		//
 		// (Other Effect fields like HeatGainMult / CoolRate are equip-time
 		// modifiers, applied while an Equippable item is worn — wired up
 		// in a future milestone.)
 		if (Row.Type == EEclipseItemType::Usable)
 		{
-			if (Row.Effect.RestoreThirst <= 0.f)
+			const bool bAnyDelta =
+				(Row.Effect.HeatDelta        != 0) ||
+				(Row.Effect.ThirstDelta      != 0) ||
+				(Row.Effect.StimulationDelta != 0);
+			const bool bHasLegacy = (Row.Effect.RestoreThirst > 0.f);
+
+			if (!bAnyDelta && !bHasLegacy)
 			{
 				UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' refused — Usable but no effect (empty container)"),
 					*ItemId.ToString());
 				return false;
 			}
-			const int32 ThirstDelta = -FMath::Max(1, FMath::RoundToInt(Row.Effect.RestoreThirst / 10.f));
-			ChangeThirst(ThirstDelta);
+
+			if (bAnyDelta)
+			{
+				if (Row.Effect.HeatDelta        != 0) ChangeHeat       (Row.Effect.HeatDelta);
+				if (Row.Effect.ThirstDelta      != 0) ChangeThirst     (Row.Effect.ThirstDelta);
+				if (Row.Effect.StimulationDelta != 0) ChangeStimulation(Row.Effect.StimulationDelta);
+			}
+			else
+			{
+				// Legacy 0..100-scale value → +N hydration on the new
+				// 0..10 scale. (Pre-refactor DT rows assumed "high thirst
+				// = hydrated" which matches the new orientation.)
+				const int32 LegacyDelta = FMath::Max(1, FMath::RoundToInt(Row.Effect.RestoreThirst / 10.f));
+				ChangeThirst(LegacyDelta);
+			}
 		}
 
 		UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' (type=%d quest='%s')"),

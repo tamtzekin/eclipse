@@ -670,7 +670,25 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 				}
 			}
 
-			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(SegRow))
+			// Wrap the segment row in an outline frame — UEclipseHUDWidget's
+			// TintFrame brightens the outline during the per-meter pulse so
+			// the bar "glows" when a stat is being raised.
+			UBorder* BarFrame = New<UBorder>(Tree,
+				FName(*FString::Printf(TEXT("%sBarFrame"), Suffix)));
+			{
+				FSlateBrush B;
+				B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+				B.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+				B.OutlineSettings.Color        = FSlateColor(FLinearColor(0.945f, 0.929f, 0.851f, 0.35f));
+				B.OutlineSettings.Width        = 1.f;
+				B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
+				B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+				BarFrame->SetBrush(B);
+			}
+			BarFrame->SetPadding(FMargin(2.f));
+			BarFrame->SetContent(SegRow);
+
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(BarFrame))
 			{
 				HS->SetVerticalAlignment(VAlign_Center);
 				HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));

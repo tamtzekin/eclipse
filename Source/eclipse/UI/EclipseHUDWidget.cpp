@@ -35,15 +35,17 @@ namespace
 	constexpr float LabelWidth     = 110.f;   // reserved width for "STIMULATION"
 	constexpr float ValueWidth     = 28.f;    // single/double-digit numbers
 
-	// Build one bar (label + 10 segments + 2 dotted-line dividers + value
-	// label) and slot it into the supplied parent UVerticalBox so all three
-	// rows stack cleanly. Returns the row UHorizontalBox + the value
-	// UTextBlock + the label UTextBlock through out-params so the HUD
-	// widget can keep them for TintBar / value-text updates.
+	// Build one bar (label + outline-framed segment row + value label) and
+	// slot it into the supplied parent UVerticalBox so all three rows
+	// stack cleanly. Returns the inner segment row + the outer frame
+	// UBorder + the value/label text blocks through out-params so the
+	// HUD widget can keep them for TintBar / TintFrame / value-text
+	// updates.
 	void BuildOneBar(UWidgetTree* Tree, UPanelWidget* ParentColumn,
 		const TCHAR* Suffix, const FString& LabelStr,
 		FLinearColor DividerTint,
 		UHorizontalBox*& OutSegmentRow,
+		UBorder*& OutBarFrame,
 		UTextBlock*& OutLabelText,
 		UTextBlock*& OutValueText)
 	{
@@ -118,7 +120,26 @@ namespace
 			}
 		}
 
-		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(OutSegmentRow))
+		// Wrap the segment row in an outer frame so we can glow the
+		// outline during the pulse. Brush is RoundedBox with transparent
+		// fill + faint cream outline at rest.
+		OutBarFrame = Tree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(),
+			FName(*FString::Printf(TEXT("%sBarFrame"), Suffix)));
+		{
+			FSlateBrush B;
+			B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+			B.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+			B.OutlineSettings.Color        = FSlateColor(FLinearColor(0.945f, 0.929f, 0.851f, 0.35f));
+			B.OutlineSettings.Width        = 1.f;
+			B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
+			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+			OutBarFrame->SetBrush(B);
+		}
+		OutBarFrame->SetPadding(FMargin(2.f));
+		OutBarFrame->SetContent(OutSegmentRow);
+
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(OutBarFrame))
 		{
 			HS->SetVerticalAlignment(VAlign_Center);
 			HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
@@ -190,16 +211,17 @@ bool UEclipseHUDWidget::Initialize()
 		const FLinearColor DivTint(0.945f, 0.929f, 0.851f, 0.55f);
 
 		UHorizontalBox* TmpRow = nullptr;
-		UTextBlock* TmpLabel = nullptr;
-		UTextBlock* TmpValue = nullptr;
-		BuildOneBar(WidgetTree, MeterCol, TEXT("Heat"),        TEXT("HEAT"),        DivTint, TmpRow, TmpLabel, TmpValue);
-		HeatSegmentRow = TmpRow; HeatLabelText = TmpLabel; HeatValueText = TmpValue;
+		UBorder*        TmpFrame = nullptr;
+		UTextBlock*     TmpLabel = nullptr;
+		UTextBlock*     TmpValue = nullptr;
+		BuildOneBar(WidgetTree, MeterCol, TEXT("Heat"),        TEXT("HEAT"),        DivTint, TmpRow, TmpFrame, TmpLabel, TmpValue);
+		HeatSegmentRow = TmpRow; HeatBarFrame = TmpFrame; HeatLabelText = TmpLabel; HeatValueText = TmpValue;
 
-		BuildOneBar(WidgetTree, MeterCol, TEXT("Thirst"),      TEXT("THIRST"),      DivTint, TmpRow, TmpLabel, TmpValue);
-		ThirstSegmentRow = TmpRow; ThirstLabelText = TmpLabel; ThirstValueText = TmpValue;
+		BuildOneBar(WidgetTree, MeterCol, TEXT("Thirst"),      TEXT("THIRST"),      DivTint, TmpRow, TmpFrame, TmpLabel, TmpValue);
+		ThirstSegmentRow = TmpRow; ThirstBarFrame = TmpFrame; ThirstLabelText = TmpLabel; ThirstValueText = TmpValue;
 
-		BuildOneBar(WidgetTree, MeterCol, TEXT("Stimulation"), TEXT("STIMULATION"), DivTint, TmpRow, TmpLabel, TmpValue);
-		StimulationSegmentRow = TmpRow; StimulationLabelText = TmpLabel; StimulationValueText = TmpValue;
+		BuildOneBar(WidgetTree, MeterCol, TEXT("Stimulation"), TEXT("STIMULATION"), DivTint, TmpRow, TmpFrame, TmpLabel, TmpValue);
+		StimulationSegmentRow = TmpRow; StimulationBarFrame = TmpFrame; StimulationLabelText = TmpLabel; StimulationValueText = TmpValue;
 	}
 
 	return Super::Initialize();
@@ -241,7 +263,20 @@ void UEclipseHUDWidget::NativeDestruct()
 void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
-	// Bars only change on explicit events; no per-frame work needed.
+
+	// Per-meter pulse decay. Only repaint when at least one pulse is
+	// still alive — the static bar state doesn't change per frame.
+	const bool bAnyAlive =
+		HeatPulse > 0.f || ThirstPulse > 0.f || StimulationPulse > 0.f;
+	if (!bAnyAlive) return;
+
+	HeatPulse        = FMath::Max(0.f, HeatPulse        - DeltaSeconds);
+	ThirstPulse      = FMath::Max(0.f, ThirstPulse      - DeltaSeconds);
+	StimulationPulse = FMath::Max(0.f, StimulationPulse - DeltaSeconds);
+
+	// Repaint with updated pulse values. UpdateBars will not re-trigger
+	// pulses because the Last* values are already current.
+	UpdateBars();
 }
 
 void UEclipseHUDWidget::HandleStateChanged()
@@ -262,28 +297,57 @@ void UEclipseHUDWidget::UpdateBars()
 		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
 	if (!GS) return;
 
+	// Detect changes since the last broadcast — kick the corresponding
+	// pulse timer to full so the bar flashes briefly on the next frames.
+	// The first ever call seeds Last* without flashing (LastX == -1
+	// sentinel ensures no spurious pulse on game start).
+	auto DetectChange = [](int32 NewV, int32& LastV, float& PulseOut)
+	{
+		if (LastV != -1 && NewV != LastV)
+		{
+			PulseOut = UEclipseHUDWidget::PulseDuration;
+		}
+		LastV = NewV;
+	};
+	DetectChange(GS->Heat,        LastHeat,        HeatPulse);
+	DetectChange(GS->Thirst,      LastThirst,      ThirstPulse);
+	DetectChange(GS->Stimulation, LastStimulation, StimulationPulse);
+
 	// Per-meter base tints. Critical-zone segments override to red via
 	// TintBar so designers don't have to pick a separate critical colour.
 	const FLinearColor HeatFill (0.95f, 0.30f, 0.20f, 1.f);   // red
 	const FLinearColor ThirstFill(Cyan);                     // cyan
 	const FLinearColor StimFill (0.98f, 0.95f, 0.62f, 1.f);  // yellow-white
 
-	TintBar(HeatSegmentRow,        GS->Heat,        HeatFill);
-	TintBar(ThirstSegmentRow,      GS->Thirst,      ThirstFill);
-	TintBar(StimulationSegmentRow, GS->Stimulation, StimFill);
+	// Pulse value passed to TintBar: 0..1, peaking at full timer.
+	const float HeatPulseAlpha = HeatPulse        / PulseDuration;
+	const float ThirstPulseAlpha = ThirstPulse    / PulseDuration;
+	const float StimPulseAlpha = StimulationPulse / PulseDuration;
+
+	TintBar(HeatSegmentRow,        GS->Heat,        HeatFill,  HeatPulseAlpha);
+	TintBar(ThirstSegmentRow,      GS->Thirst,      ThirstFill, ThirstPulseAlpha);
+	TintBar(StimulationSegmentRow, GS->Stimulation, StimFill,   StimPulseAlpha);
+
+	TintFrame(HeatBarFrame,        HeatPulseAlpha);
+	TintFrame(ThirstBarFrame,      ThirstPulseAlpha);
+	TintFrame(StimulationBarFrame, StimPulseAlpha);
 
 	if (HeatValueText)        HeatValueText->SetText(FText::AsNumber(GS->Heat));
 	if (ThirstValueText)      ThirstValueText->SetText(FText::AsNumber(GS->Thirst));
 	if (StimulationValueText) StimulationValueText->SetText(FText::AsNumber(GS->Stimulation));
 }
 
-void UEclipseHUDWidget::TintBar(UHorizontalBox* SegmentRow, int32 Value, FLinearColor BaseTint) const
+void UEclipseHUDWidget::TintBar(UHorizontalBox* SegmentRow, int32 Value, FLinearColor BaseTint, float Pulse) const
 {
 	using namespace EclipseUI;
 	if (!SegmentRow) return;
 
 	const FLinearColor TrackTint(0.08f, 0.10f, 0.14f, 0.85f);
 	const FLinearColor CriticalTint(0.95f, 0.18f, 0.18f, 1.f);
+
+	// Pulse strength: at Pulse=1 the lit segments are lerped ~40% toward
+	// white. Decays linearly with the pulse timer in UpdateBars/NativeTick.
+	const float FlashAmount = FMath::Clamp(Pulse, 0.f, 1.f) * 0.4f;
 
 	for (int32 ChildIdx = 0; ChildIdx < SegmentRow->GetChildrenCount(); ++ChildIdx)
 	{
@@ -319,10 +383,50 @@ void UEclipseHUDWidget::TintBar(UHorizontalBox* SegmentRow, int32 Value, FLinear
 		FLinearColor T = TrackTint;
 		if (bLit)
 		{
-			T = bIsCriticalZoneIndex ? CriticalTint : BaseTint;
+			const FLinearColor LitColor = bIsCriticalZoneIndex ? CriticalTint : BaseTint;
+			// Per-index gradient: dimmer toward the left edge of the bar,
+			// brighter toward the right — so as the meter fills more
+			// segments, the bar reads as "saturating" smoothly. The dim
+			// floor is 55% of the lit colour; index 0 sits at the floor,
+			// index 9 sits at the full lit colour.
+			const float GradientT = (UEclipseGameStateSubsystem::MeterMax > 1)
+				? (float)Index / (float)(UEclipseGameStateSubsystem::MeterMax - 1)
+				: 1.f;
+			const FLinearColor DimLit = LitColor * 0.55f;
+			T = FMath::Lerp(DimLit, LitColor, GradientT);
+			T.A = LitColor.A;   // keep full alpha after multiplicative dim
+
+			// Lerp lit segments toward white during the pulse for a quick
+			// "just changed" flash. Track (unlit) segments are unaffected
+			// so the change reads as the fill itself flashing.
+			if (FlashAmount > 0.f)
+			{
+				T = FMath::Lerp(T, FLinearColor::White, FlashAmount);
+			}
 		}
 		Seg->SetBrush(SolidBrush(T));
 	}
+}
+
+void UEclipseHUDWidget::TintFrame(UBorder* BarFrame, float Pulse) const
+{
+	if (!BarFrame) return;
+
+	// Resting outline = faint cream chalk; pulse lerps it toward bright
+	// white for the duration of the flash. Width also nudges up slightly
+	// at peak so the glow reads as "thicker" while active.
+	const FLinearColor RestingOutline(0.945f, 0.929f, 0.851f, 0.35f);
+	const FLinearColor GlowOutline   (1.f,    1.f,    1.f,    1.f);
+	const float Alpha = FMath::Clamp(Pulse, 0.f, 1.f);
+
+	FSlateBrush B;
+	B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+	B.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));   // transparent fill
+	B.OutlineSettings.Color        = FSlateColor(FMath::Lerp(RestingOutline, GlowOutline, Alpha));
+	B.OutlineSettings.Width        = FMath::Lerp(1.f, 2.f, Alpha);
+	B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
+	B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+	BarFrame->SetBrush(B);
 }
 
 void UEclipseHUDWidget::UpdateChapterClock()
