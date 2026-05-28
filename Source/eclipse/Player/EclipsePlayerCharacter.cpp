@@ -215,9 +215,11 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// ── Passive Heat / Thirst drain ──
-	// Pause draining while a dialogue is open so reading doesn't punish the
-	// player. Subsystem internally throttles its OnStateChanged broadcasts.
+	// ── Chapter clock tick ──
+	// Life meters no longer drain over time (sweet-spot 0..10 model — values
+	// only move on explicit events: items, dialogue effects, etc.). The only
+	// per-frame work here is advancing the chapter clock, which still pauses
+	// while a dialogue is open so reading doesn't burn game-time.
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		UEclipseDialogueSubsystem* Dlg = GI->GetSubsystem<UEclipseDialogueSubsystem>();
@@ -226,7 +228,7 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 		{
 			if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
-				State->TickMeters(DeltaTime);
+				State->TickChapterClock(DeltaTime);
 			}
 		}
 	}

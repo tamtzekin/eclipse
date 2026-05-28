@@ -19,17 +19,34 @@ class AEclipseNpcCharacter;
 //                                   id in ALL_CAPS (matched case-insensitively
 //                                   against the lowercased inventory id).
 //   +N STAT_NAME     StatEffect   — applied on click; STAT_NAME is one of
-//   -N STAT_NAME                    AESTHETICS / STIMULATION / RHYTHM / ZEN /
-//                                   PSYCHEDELICS. Lowercased to a key.
-//   +N ENERGY        EnergyEffect — applied on click; routes through
-//   -N ENERGY                       GameStateSubsystem::DrainEnergy(-Delta).
+//   -N STAT_NAME                    AESTHETICS / RHYTHM / ZEN / PSYCHEDELICS.
+//                                   Lowercased to a key.
+//   +N METER_NAME    MeterEffect  — applied on click; METER_NAME is one of
+//   -N METER_NAME                   HEAT / THIRST / STIMULATION. Signed delta
+//                                   on the 0..10 meter scale.
+//   METER OP N       MeterCompareGate — gates choice availability. METER is
+//                                       HEAT / THIRST / STIMULATION; OP is
+//                                       one of < > <= >= == !=. e.g.
+//                                       "HEAT > 8", "STIMULATION < 3".
 UENUM(BlueprintType)
 enum class EEclipseStageDirectiveKind : uint8
 {
 	StatGate,
 	ItemGate,
 	StatEffect,
-	EnergyEffect,
+	MeterEffect,
+	MeterCompareGate,
+};
+
+UENUM(BlueprintType)
+enum class EEclipseCompareOp : uint8
+{
+	Less,           // <
+	LessEqual,      // <=
+	Equal,          // ==
+	NotEqual,       // !=
+	GreaterEqual,   // >=
+	Greater,        // >
 };
 
 USTRUCT(BlueprintType)
@@ -38,13 +55,21 @@ struct FEclipseStageDirective
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadOnly) EEclipseStageDirectiveKind Kind = EEclipseStageDirectiveKind::StatGate;
-	// For StatGate / StatEffect / EnergyEffect: lowercased stat key
-	// (e.g. "aesthetics" or "energy"). Empty for ItemGate.
+	// Lowercase stat or meter key, depending on Kind:
+	//   StatGate / StatEffect           → "aesthetics" / "rhythm" / "zen" / "psychedelics"
+	//   MeterEffect / MeterCompareGate  → "heat" / "thirst" / "stimulation"
+	//   ItemGate                        → empty
 	UPROPERTY(BlueprintReadOnly) FName Stat;
 	// For ItemGate: lowercased DT_Items row id (e.g. "baggie", "empty_bottle").
 	UPROPERTY(BlueprintReadOnly) FName ItemId;
-	// For StatGate: required threshold; for StatEffect/EnergyEffect: signed delta.
+	// Multi-purpose:
+	//   StatGate                → required threshold (player STAT must be ≥)
+	//   StatEffect / MeterEffect → signed delta
+	//   MeterCompareGate         → right-hand side of the comparison
 	UPROPERTY(BlueprintReadOnly) int32 Value = 0;
+	// Only used by MeterCompareGate. Defaults to >= so a stray non-op'd
+	// comparison still behaves like the old "threshold" gate.
+	UPROPERTY(BlueprintReadOnly) EEclipseCompareOp Op = EEclipseCompareOp::GreaterEqual;
 };
 
 USTRUCT(BlueprintType)
@@ -56,12 +81,14 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) FText Text;
 	UPROPERTY(BlueprintReadOnly) bool bAvailable = true;
 	UPROPERTY(BlueprintReadOnly) bool bIsSkillCheck = false;
-	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "stimulation" | "rhythm" | "zen" | "psychedelics"
+	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly) int32 SkillCheckValue = 0;
-	// Energy cost when this choice is a failed skill check that the player
-	// clicks anyway. Surfaced to the widget so it can render a "[-N ENERGY]"
-	// risk hint, and consumed by MakeChoice via DrainEnergy.
-	UPROPERTY(BlueprintReadOnly) int32 EnergyDamageOnFail = 5;
+	// Stimulation cost when this choice is a failed skill check that the
+	// player clicks anyway. Surfaced to the widget so it can render a
+	// "[-N STIMULATION]" risk hint, consumed in MakeChoice via the
+	// GameStateSubsystem ChangeStimulation API. (Renamed from
+	// EnergyDamageOnFail — Energy meter was absorbed into Stimulation.)
+	UPROPERTY(BlueprintReadOnly) int32 StimulationDamageOnFail = 2;
 
 	// All stage directives parsed from this choice's Articy StageDirections
 	// string. Gates are evaluated when the choice is built (sets bAvailable +
@@ -170,9 +197,11 @@ private:
 	// (with a Log warning so authors notice typos).
 	static TArray<FEclipseStageDirective> ParseStageDirections(const FString& Raw);
 
-	// Apply a single effect-kind directive to the player's state. Stat keys
-	// route through UEclipseGameStateSubsystem::ApplyStatDelta; "energy" routes
-	// through DrainEnergy(-Delta). No-op for non-effect kinds (defensive).
+	// Apply a single effect-kind directive to the player's state. StatEffect
+	// keys route through UEclipseGameStateSubsystem::ApplyStatDelta;
+	// MeterEffect keys route through ChangeMeter (which clamps to [0,10]
+	// and fires OnPlayerDeath on a Stimulation→0 transition). No-op for
+	// non-effect kinds (defensive).
 	void ApplyStageEffect(const FEclipseStageDirective& Eff) const;
 
 	// Evaluate every gate directive on a choice against current state.

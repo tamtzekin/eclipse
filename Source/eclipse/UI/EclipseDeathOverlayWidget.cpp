@@ -112,19 +112,22 @@ void UEclipseDeathOverlayWidget::OnTryAgainClicked()
 
 	// Restore the most recent slot. We don't track "last used" yet — try
 	// slot 0 first. If empty, the LoadFromSlot call returns false and we
-	// fall through to a full restart (Energy = MaxEnergy so the player
-	// isn't stuck dead immediately).
+	// fall through to a full restart (reset meters to defaults so the
+	// player isn't stuck dead immediately).
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
 			const bool bLoaded = GS->LoadFromSlot(0);
 			UE_LOG(LogEclipse, Log, TEXT("DeathOverlay: LoadFromSlot[0] -> %s"),
-				bLoaded ? TEXT("OK") : TEXT("no save, hard-resetting Energy"));
+				bLoaded ? TEXT("OK") : TEXT("no save, hard-resetting meters"));
 			if (!bLoaded)
 			{
-				GS->Energy = GS->MaxEnergy;
-				GS->Thirst = GS->MaxThirst;
+				// Mirror the subsystem defaults — sweet-spot middle for
+				// Thirst, slightly low for Heat, alert for Stimulation.
+				GS->Heat        = 3;
+				GS->Thirst      = 5;
+				GS->Stimulation = 7;
 			}
 		}
 	}

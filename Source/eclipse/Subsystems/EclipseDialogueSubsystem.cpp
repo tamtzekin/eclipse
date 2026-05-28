@@ -41,12 +41,13 @@ namespace
 		FString MenuText;   // Player choice label (if SpeakerId=="PLAYER")
 		TArray<FName> Outputs;
 		FName MenuAction;   // "enterStall" / "giveTabs" / "startGame" / None
-		FName SkillCheckStat;   // "aesthetics" / "stimulation" / "rhythm" / "zen" / "psychedelics" / None
+		FName SkillCheckStat;   // "aesthetics" / "rhythm" / "zen" / "psychedelics" / None
 		int32 SkillCheckValue = 0;
-		// Energy cost if a failed skill check choice is clicked anyway.
-		// Designer-tunable per choice; defaults to 5 so unset legacy data
-		// still feels mildly punishing without being lethal.
-		int32 EnergyDamageOnFail = 5;
+		// Stimulation cost if a failed skill check choice is clicked anyway.
+		// On the 0..10 scale 2 is a meaningful but recoverable hit; old
+		// authoring (which used 0..100 with a default of 5) gets scaled
+		// down to fit the new range.
+		int32 StimulationDamageOnFail = 2;
 		// Raw Articy "Stage directions" string — parsed at OpenDialogue /
 		// AdvanceToNode time. Comma-separated tokens, see the doc on
 		// EEclipseStageDirectiveKind for the grammar.
@@ -550,7 +551,7 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	{
 		const bool bIsEffect =
 			D.Kind == EEclipseStageDirectiveKind::StatEffect ||
-			D.Kind == EEclipseStageDirectiveKind::EnergyEffect;
+			D.Kind == EEclipseStageDirectiveKind::MeterEffect;
 		if (bIsEffect)
 		{
 			ApplyStageEffect(D);
@@ -558,33 +559,36 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	}
 
 	// Skill-check failure tax — if the player clicked a check they didn't
-	// have the stat for (bAvailable=false), drain Energy by the per-choice
-	// declared amount before we route through. The dialogue widget no
-	// longer disables failed-skill buttons; players can attempt risky
-	// checks at a cost.
-	if (Chosen.bIsSkillCheck && !Chosen.bAvailable && Chosen.EnergyDamageOnFail > 0)
+	// have the stat for (bAvailable=false), bump Stimulation toward the
+	// "tweaking" extreme by the per-choice declared amount. The dialogue
+	// widget no longer disables failed-skill buttons; players can attempt
+	// risky checks at a cost.
+	if (Chosen.bIsSkillCheck && !Chosen.bAvailable && Chosen.StimulationDamageOnFail > 0)
 	{
 		if (UGameInstance* GI = GetGameInstance())
 		{
 			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
-				UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d energy"),
+				UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Stimulation"),
 					*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
-					GS->GetStatValue(Chosen.SkillCheckStat), Chosen.EnergyDamageOnFail);
-				GS->DrainEnergy((float)Chosen.EnergyDamageOnFail);
+					GS->GetStatValue(Chosen.SkillCheckStat), Chosen.StimulationDamageOnFail);
+				// "Damage" = push toward 0 (the death extreme).
+				GS->ChangeStimulation(-Chosen.StimulationDamageOnFail);
 			}
 		}
 	}
 
-	// Helper — bump the chapter clock by 20 game-seconds AND drain thirst by
-	// a fixed cost. Called only on continuing choices (see below). Exit
-	// choices that fall through to CloseDialogue pay neither cost — the
-	// live clock just resumes and thirst stays where it was.
+	// Helper — bump the chapter clock by 20 game-seconds on continuing
+	// choices. Exit choices that fall through to CloseDialogue pay no
+	// cost — the live clock just resumes. 20s (not 30) keeps the visible
+	// minute readout from ticking cleanly on every 2nd choice — the
+	// irregular crossings feel less mechanical.
 	//
-	// 20s (not 30) keeps the visible minute readout from ticking cleanly
-	// on every 2nd choice — the irregular crossings feel less mechanical.
-	// 2.0 thirst/click means ~50 continuing choices empty a full bar, so
-	// a few back-to-back conversations push the player toward a drink.
+	// NOTE: thirst no longer auto-drains per choice. The new sweet-spot
+	// meter model is event-driven; thirst only moves when an explicit
+	// stage directive (or item use) pushes it. Designer can add
+	// "+1 THIRST" to Articy choice stage-directions for a per-choice
+	// dehydration tax if they want one.
 	auto BumpClockForContinue = [this]()
 	{
 		if (UGameInstance* GI = GetGameInstance())
@@ -593,9 +597,8 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 			{
 				const float Before = GS->ChapterElapsedSeconds;
 				GS->ChapterElapsedSeconds += 20.0f;
-				GS->DrainThirst(2.0f);
-				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +20s  %.1f -> %.1f  thirst=%.1f"),
-					Before, GS->ChapterElapsedSeconds, GS->Thirst);
+				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +20s  %.1f -> %.1f"),
+					Before, GS->ChapterElapsedSeconds);
 			}
 		}
 	};
@@ -748,7 +751,7 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 				Choice.bIsSkillCheck = (ChoiceNode->SkillCheckStat != NAME_None);
 				Choice.SkillCheckStat = ChoiceNode->SkillCheckStat;
 				Choice.SkillCheckValue = ChoiceNode->SkillCheckValue;
-				Choice.EnergyDamageOnFail = ChoiceNode->EnergyDamageOnFail;
+				Choice.StimulationDamageOnFail = ChoiceNode->StimulationDamageOnFail;
 
 				// Evaluate availability of skill-check choices via the
 				// 5-stat resolver (returns 0 for unknown keys, which makes
@@ -854,29 +857,71 @@ bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& 
 //  Stage-directions plumbing (parser + eval + apply + display-string builder)
 //
 //  Grammar (comma-separated tokens, whitespace flexible):
-//    [STAT_NAME: N]   StatGate     — gates availability
-//    [ITEM_NAME]      ItemGate     — gates availability
-//    +N STAT_NAME     StatEffect   — applied on click
-//    -N STAT_NAME     StatEffect   — applied on click
-//    +N ENERGY        EnergyEffect — applied on click
-//    -N ENERGY        EnergyEffect — applied on click
+//    [STAT_NAME: N]      StatGate          — gates availability
+//    [ITEM_NAME]         ItemGate          — gates availability
+//    +N STAT_NAME        StatEffect        — applied on click
+//    -N STAT_NAME        StatEffect        — applied on click
+//    +N METER_NAME       MeterEffect       — applied on click
+//    -N METER_NAME       MeterEffect       — applied on click
+//    METER_NAME OP N     MeterCompareGate  — gates availability
 //
-//  STAT_NAME ∈ { AESTHETICS, STIMULATION, RHYTHM, ZEN, PSYCHEDELICS }
-//  ITEM_NAME = DT_Items row id in ALL CAPS (matched case-insensitively against
-//  the lowercased inventory ids).
+//  STAT_NAME  ∈ { AESTHETICS, RHYTHM, ZEN, PSYCHEDELICS }
+//  METER_NAME ∈ { HEAT, THIRST, STIMULATION }
+//  OP         ∈ { <, <=, ==, !=, >=, > }
+//  ITEM_NAME  = DT_Items row id in ALL CAPS (matched case-insensitively
+//               against the lowercased inventory ids).
+//
+//  Examples:
+//    "HEAT > 8"             — only available when overheated
+//    "STIMULATION < 3"      — only available when fatigued
+//    "+1 HEAT"              — warms you up one notch on click
+//    "[ZEN: 3], -1 THIRST"  — needs Zen ≥ 3 AND drinks one notch of thirst
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace
 {
-	// Recognise the five gameplay stats. ENERGY is a separate effect kind, not
-	// part of GetStatValue's set.
+	// Recognise the four gameplay stats. (Stimulation moved into the meter
+	// system — see IsKnownMeterKey below.)
 	bool IsKnownStatKey(FName Lower)
 	{
 		return Lower == TEXT("aesthetics")
-			|| Lower == TEXT("stimulation")
 			|| Lower == TEXT("rhythm")
 			|| Lower == TEXT("zen")
 			|| Lower == TEXT("psychedelics");
+	}
+
+	bool IsKnownMeterKey(FName Lower)
+	{
+		return Lower == TEXT("heat")
+			|| Lower == TEXT("thirst")
+			|| Lower == TEXT("stimulation");
+	}
+
+	// Look for any of "<=", ">=", "==", "!=", "<", ">" inside Tok. Returns
+	// the byte index + sets OutOp + sets OutOpLen (1 or 2 chars). Returns
+	// INDEX_NONE if no operator is present.
+	int32 FindCompareOp(const FString& Tok, EEclipseCompareOp& OutOp, int32& OutOpLen)
+	{
+		// Two-char operators take precedence so "<=" doesn't get parsed as "<".
+		struct { const TCHAR* Sym; EEclipseCompareOp Op; int32 Len; } Ops[] = {
+			{ TEXT("<="), EEclipseCompareOp::LessEqual,    2 },
+			{ TEXT(">="), EEclipseCompareOp::GreaterEqual, 2 },
+			{ TEXT("=="), EEclipseCompareOp::Equal,        2 },
+			{ TEXT("!="), EEclipseCompareOp::NotEqual,     2 },
+			{ TEXT("<"),  EEclipseCompareOp::Less,         1 },
+			{ TEXT(">"),  EEclipseCompareOp::Greater,      1 },
+		};
+		for (const auto& Entry : Ops)
+		{
+			const int32 Idx = Tok.Find(Entry.Sym);
+			if (Idx != INDEX_NONE)
+			{
+				OutOp = Entry.Op;
+				OutOpLen = Entry.Len;
+				return Idx;
+			}
+		}
+		return INDEX_NONE;
 	}
 }
 
@@ -923,8 +968,8 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 			continue;
 		}
 
-		// Effect forms start with '+' or '-' (signed integer, then a STAT name
-		// or ENERGY). We tolerate any amount of internal whitespace.
+		// Effect forms start with '+' or '-' (signed integer, then a STAT
+		// or METER name).
 		if (Tok.StartsWith(TEXT("+")) || Tok.StartsWith(TEXT("-")))
 		{
 			// Pull the leading signed-integer.
@@ -944,9 +989,9 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 			}
 			const FName Target(*Rest);
 			FEclipseStageDirective D;
-			if (Target == TEXT("energy"))
+			if (IsKnownMeterKey(Target))
 			{
-				D.Kind = EEclipseStageDirectiveKind::EnergyEffect;
+				D.Kind = EEclipseStageDirectiveKind::MeterEffect;
 				D.Stat = Target;
 			}
 			else if (IsKnownStatKey(Target))
@@ -963,6 +1008,31 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 			D.Value = Delta;
 			Out.Add(D);
 			continue;
+		}
+
+		// Comparison gate: "<METER> <OP> <N>" e.g. "HEAT > 8".
+		{
+			EEclipseCompareOp Op = EEclipseCompareOp::GreaterEqual;
+			int32 OpLen = 0;
+			const int32 OpIdx = FindCompareOp(Tok, Op, OpLen);
+			if (OpIdx != INDEX_NONE)
+			{
+				FString Left  = Tok.Left(OpIdx).TrimStartAndEnd().ToLower();
+				FString Right = Tok.Mid(OpIdx + OpLen).TrimStartAndEnd();
+				const FName Key(*Left);
+				if (IsKnownMeterKey(Key))
+				{
+					FEclipseStageDirective D;
+					D.Kind  = EEclipseStageDirectiveKind::MeterCompareGate;
+					D.Stat  = Key;
+					D.Value = FCString::Atoi(*Right);
+					D.Op    = Op;
+					Out.Add(D);
+					continue;
+				}
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown meter in compare gate '%s'"), *Tok);
+				continue;
+			}
 		}
 
 		UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unrecognised token '%s'"), *Tok);
@@ -983,10 +1053,10 @@ void UEclipseDialogueSubsystem::ApplyStageEffect(const FEclipseStageDirective& E
 	case EEclipseStageDirectiveKind::StatEffect:
 		State->ApplyStatDelta(Eff.Stat, Eff.Value);
 		break;
-	case EEclipseStageDirectiveKind::EnergyEffect:
-		// DrainEnergy(Amount) drains by Amount. A "+N ENERGY" effect = restore
-		// N, so we drain -N (negative amount → addition). DrainEnergy clamps.
-		State->DrainEnergy(static_cast<float>(-Eff.Value));
+	case EEclipseStageDirectiveKind::MeterEffect:
+		// Signed delta on the 0..10 meter scale, clamped + broadcast inside
+		// ChangeMeter. Stimulation==0 also fires OnPlayerDeath from there.
+		State->ChangeMeter(Eff.Stat, Eff.Value);
 		break;
 	default:
 		// Gates aren't effects — silently ignore.
@@ -1033,6 +1103,31 @@ void UEclipseDialogueSubsystem::EvaluateChoiceGates(FEclipseDialogueChoice& Choi
 				}
 			}
 		}
+		else if (D.Kind == EEclipseStageDirectiveKind::MeterCompareGate)
+		{
+			const int32 Cur = State->GetMeterValue(D.Stat);
+			bool bPass = false;
+			const TCHAR* OpSym = TEXT("?");
+			switch (D.Op)
+			{
+			case EEclipseCompareOp::Less:         bPass = Cur <  D.Value; OpSym = TEXT("<");  break;
+			case EEclipseCompareOp::LessEqual:    bPass = Cur <= D.Value; OpSym = TEXT("<="); break;
+			case EEclipseCompareOp::Equal:        bPass = Cur == D.Value; OpSym = TEXT("==");  break;
+			case EEclipseCompareOp::NotEqual:     bPass = Cur != D.Value; OpSym = TEXT("!="); break;
+			case EEclipseCompareOp::GreaterEqual: bPass = Cur >= D.Value; OpSym = TEXT(">="); break;
+			case EEclipseCompareOp::Greater:      bPass = Cur >  D.Value; OpSym = TEXT(">");  break;
+			}
+			if (!bPass)
+			{
+				Choice.bAvailable = false;
+				if (Choice.GateHint.IsEmpty())
+				{
+					Choice.GateHint = FText::FromString(FString::Printf(
+						TEXT("(need %s %s %d)"),
+						*D.Stat.ToString().ToUpper(), OpSym, D.Value));
+				}
+			}
+		}
 	}
 }
 
@@ -1045,9 +1140,9 @@ FText UEclipseDialogueSubsystem::BuildEffectsLineText(const TArray<FEclipseStage
 		{
 			Bits.Add(FString::Printf(TEXT("%+d %s"), D.Value, *D.Stat.ToString().ToUpper()));
 		}
-		else if (D.Kind == EEclipseStageDirectiveKind::EnergyEffect)
+		else if (D.Kind == EEclipseStageDirectiveKind::MeterEffect)
 		{
-			Bits.Add(FString::Printf(TEXT("%+d ENERGY"), D.Value));
+			Bits.Add(FString::Printf(TEXT("%+d %s"), D.Value, *D.Stat.ToString().ToUpper()));
 		}
 	}
 	if (Bits.IsEmpty()) return FText::GetEmpty();

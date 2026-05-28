@@ -892,7 +892,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				FString S = Choice.Text.ToString();
 				if (Choice.bIsSkillCheck && !Choice.bAvailable)
 				{
-					S += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+					S += FString::Printf(TEXT("  [-%d STIMULATION]"), Choice.StimulationDamageOnFail);
 				}
 				if (bHasGateHint)
 				{
@@ -1018,7 +1018,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		FString LabelStr = Choice.Text.ToString();
 		if (Choice.bIsSkillCheck && !Choice.bAvailable)
 		{
-			LabelStr += FString::Printf(TEXT("  [-%d ENERGY]"), Choice.EnergyDamageOnFail);
+			LabelStr += FString::Printf(TEXT("  [-%d STIMULATION]"), Choice.StimulationDamageOnFail);
 		}
 		if (!Choice.GateHint.IsEmpty())
 		{

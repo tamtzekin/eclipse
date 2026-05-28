@@ -259,10 +259,12 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	};
 
 	AestheticsRow   = MakeStatRow(TEXT("AestheticsRow"));
-	StimulationRow  = MakeStatRow(TEXT("StimulationRow"));
 	RhythmRow       = MakeStatRow(TEXT("RhythmRow"));
 	ZenRow          = MakeStatRow(TEXT("ZenRow"));
 	PsychedelicsRow = MakeStatRow(TEXT("PsychedelicsRow"));
+	// (Stimulation row removed — Stimulation is now a life-meter on the
+	// HUD instead of a stat in this panel. StimulationRow UPROPERTY stays
+	// as BindWidgetOptional for backward-compat with older WBPs.)
 
 	// (Heat / Thirst / Currency rows + divider intentionally removed —
 	// those readouts live on the persistent HUD.)
@@ -303,10 +305,10 @@ void UEclipseStatsMenuWidget::RefreshAll()
 		if (T) T->SetText(FText::FromString(FString::Printf(TEXT("%s     %d"), Label, Val)));
 	};
 	SetRow(AestheticsRow,   TEXT("AESTHETICS"),   GS->Aesthetics);
-	SetRow(StimulationRow,  TEXT("STIMULATION"),  GS->Stimulation);
 	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm);
 	SetRow(ZenRow,          TEXT("ZEN"),          GS->Zen);
 	SetRow(PsychedelicsRow, TEXT("PSYCHEDELICS"), GS->Psychedelics);
+	// (StimulationRow no longer populated — see header comment.)
 
 	// HEAT / THIRST / CURRENCY intentionally NOT rendered here — those live
 	// on the persistent HUD (bottom-right). Stats panel is character stats

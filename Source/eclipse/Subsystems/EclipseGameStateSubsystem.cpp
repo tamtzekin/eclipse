@@ -246,10 +246,13 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 			return false;
 		}
 
-		// Usable: restores thirst by Row.Effect.RestoreThirst (per-item tuned
-		// in DT_Items). RestoreThirst <= 0 means "empty container, can't be
-		// consumed" — refuse the use so empty baggies / glasses don't vanish
-		// into nothing when the player clicks USE on them.
+		// Usable: pushes Thirst back toward the sweet spot. In the new
+		// 0..10 sweet-spot model "thirst" measures dehydration (10 = parched,
+		// 0 = waterlogged), so drinking REDUCES the meter value. The legacy
+		// RestoreThirst float in DT_Items is interpreted as a 0..100-style
+		// magnitude — scale by /10 and apply as a negative int delta.
+		// RestoreThirst <= 0 still means "empty container, can't be consumed"
+		// so empty baggies / glasses don't vanish into nothing when used.
 		// (Other Effect fields like HeatGainMult / CoolRate are equip-time
 		// modifiers, applied while an Equippable item is worn — wired up
 		// in a future milestone.)
@@ -261,7 +264,8 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 					*ItemId.ToString());
 				return false;
 			}
-			Thirst = FMath::Clamp(Thirst + Row.Effect.RestoreThirst, 0.f, MaxThirst);
+			const int32 ThirstDelta = -FMath::Max(1, FMath::RoundToInt(Row.Effect.RestoreThirst / 10.f));
+			ChangeThirst(ThirstDelta);
 		}
 
 		UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' (type=%d quest='%s')"),
@@ -274,10 +278,9 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 int32 UEclipseGameStateSubsystem::GetStatValue(FName StatKey) const
 {
 	// Match on lowercase. Designer-authored skill checks pass keys like
-	// "aesthetics" / "rhythm" / "zen" — keep this in sync with
-	// CLAUDE.md §5.2 if the stat list ever grows.
+	// "aesthetics" / "rhythm" / "zen". (Stimulation moved out of the stat
+	// system into the meter system — see GetMeterValue for it.)
 	if (StatKey == TEXT("aesthetics"))   return Aesthetics;
-	if (StatKey == TEXT("stimulation"))  return Stimulation;
 	if (StatKey == TEXT("rhythm"))       return Rhythm;
 	if (StatKey == TEXT("zen"))          return Zen;
 	if (StatKey == TEXT("psychedelics")) return Psychedelics;
@@ -291,7 +294,6 @@ void UEclipseGameStateSubsystem::ApplyStatDelta(FName StatKey, int32 Delta)
 	// negative. Stage-directions parser feeds us the lowercased key.
 	int32* Field = nullptr;
 	if      (StatKey == TEXT("aesthetics"))   Field = &Aesthetics;
-	else if (StatKey == TEXT("stimulation"))  Field = &Stimulation;
 	else if (StatKey == TEXT("rhythm"))       Field = &Rhythm;
 	else if (StatKey == TEXT("zen"))          Field = &Zen;
 	else if (StatKey == TEXT("psychedelics")) Field = &Psychedelics;
@@ -367,72 +369,54 @@ bool UEclipseGameStateSubsystem::GetClothingRow(FName ClothingId, FEclipseClothi
 	return true;
 }
 
-void UEclipseGameStateSubsystem::DrainThirst(float Amount)
+// ── Life meters (Heat / Thirst / Stimulation) ──────────────────────────────
+//
+// Sweet-spot 0..10 model. Meters do NOT drain over time — they only move
+// when consumables, dialogue effects, or other explicit events push them
+// via ChangeMeter / ChangeXxx. Death only triggers at Stimulation == 0;
+// Heat/Thirst extremes are dialogue-gates and HUD-tint cues, not killers.
+
+int32 UEclipseGameStateSubsystem::GetMeterValue(FName MeterKey) const
 {
-	Thirst = FMath::Clamp(Thirst - Amount, 0.f, MaxThirst);
-	NotifyChanged();
+	if (MeterKey == TEXT("heat"))        return Heat;
+	if (MeterKey == TEXT("thirst"))      return Thirst;
+	if (MeterKey == TEXT("stimulation")) return Stimulation;
+	return 0;
 }
 
-void UEclipseGameStateSubsystem::DrainEnergy(float Amount)
+void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 {
-	const float Before = Energy;
-	Energy = FMath::Clamp(Energy - Amount, 0.f, MaxEnergy);
+	int32* Field = nullptr;
+	if      (MeterKey == TEXT("heat"))        Field = &Heat;
+	else if (MeterKey == TEXT("thirst"))      Field = &Thirst;
+	else if (MeterKey == TEXT("stimulation")) Field = &Stimulation;
 
-	// Single-shot death fire: only when crossing > 0 → 0. Successive
-	// DrainEnergy calls while at 0 do nothing extra.
-	if (Before > 0.f && Energy <= 0.f)
+	if (!Field)
 	{
-		UE_LOG(LogEclipse, Log, TEXT("Energy: player died (drained %.1f from %.1f)"),
-			Amount, Before);
+		UE_LOG(LogEclipse, Warning, TEXT("ChangeMeter: unknown meter '%s' (delta %d ignored)"),
+			*MeterKey.ToString(), Delta);
+		return;
+	}
+
+	const int32 Before = *Field;
+	*Field = FMath::Clamp(*Field + Delta, 0, MeterMax);
+	UE_LOG(LogEclipse, Log, TEXT("ChangeMeter: %s %d %+d -> %d"),
+		*MeterKey.ToString(), Before, Delta, *Field);
+
+	// Death is single-shot on the Stimulation 0 transition (no re-fire if
+	// the meter is repeatedly pushed past zero while already at 0).
+	if (Field == &Stimulation && Before > 0 && *Field == 0)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Stimulation reached 0 — player died"));
 		OnPlayerDeath.Broadcast();
 	}
+
 	NotifyChanged();
 }
 
-void UEclipseGameStateSubsystem::TickMeters(float DeltaSeconds)
-{
-	if (DeltaSeconds <= 0.f) return;
-
-	// Thirst no longer drains over time — see UEclipseDialogueSubsystem::MakeChoice
-	// for the per-continuing-choice DrainThirst() call. The `ThirstDrainPerSec`
-	// UPROPERTY is kept on the class so designer-set values from older saves
-	// don't break load; the field is just unused by this path.
-	Heat   = FMath::Max(0.f, Heat   - HeatDrainPerSec   * DeltaSeconds);
-
-	// Thirst-bleed → Energy: once thirst hits 0, energy slowly drains as
-	// dehydration sets in. Stops as soon as thirst is restored above 0
-	// (drink a water) or as soon as energy hits 0 (death takes over).
-	const bool bShouldBleed = (Thirst <= 0.f && Energy > 0.f);
-	if (bShouldBleed)
-	{
-		// Inline drain — bypasses DrainEnergy's broadcast throttle (we
-		// already self-throttle the meters broadcast below), but still
-		// fires OnPlayerDeath via the explicit check.
-		const float Before = Energy;
-		Energy = FMath::Max(0.f, Energy - ThirstBleedPerSec * DeltaSeconds);
-		if (Before > 0.f && Energy <= 0.f)
-		{
-			UE_LOG(LogEclipse, Log, TEXT("Energy: bled to 0 from thirst exhaustion"));
-			OnPlayerDeath.Broadcast();
-		}
-	}
-	bIsBleedingEnergy = bShouldBleed;
-
-	// Tick the chapter clock alongside the meters — same pause / dialogue
-	// gating, since the player character's TickMeters call site already
-	// guards both with bDialogueOpen / world-paused checks.
-	TickChapterClock(DeltaSeconds);
-
-	// Throttle delegate broadcasts to ~1Hz so the HUD doesn't re-bind every
-	// frame. The bar SetPercent inside UpdateBars is cheap, but UMG layout
-	// invalidation still has cost.
-	MetersBroadcastAccum += DeltaSeconds;
-	if (MetersBroadcastAccum >= 1.0f)
-	{
-		MetersBroadcastAccum = 0.f;
-		NotifyChanged();
-	}
-}
+void UEclipseGameStateSubsystem::ChangeHeat(int32 Delta)        { ChangeMeter(TEXT("heat"),        Delta); }
+void UEclipseGameStateSubsystem::ChangeThirst(int32 Delta)      { ChangeMeter(TEXT("thirst"),      Delta); }
+void UEclipseGameStateSubsystem::ChangeStimulation(int32 Delta) { ChangeMeter(TEXT("stimulation"), Delta); }
 
 void UEclipseGameStateSubsystem::TickChapterClock(float DeltaSeconds)
 {
@@ -515,12 +499,6 @@ static FAutoConsoleCommandWithWorld GSkipChapterCmd(
 	})
 );
 
-void UEclipseGameStateSubsystem::GainHeat(float Amount)
-{
-	Heat = FMath::Clamp(Heat + Amount, 0.f, MaxHeat);
-	NotifyChanged();
-}
-
 void UEclipseGameStateSubsystem::OnChapterTransition()
 {
 	++Chapter;
@@ -561,13 +539,12 @@ namespace
 		if (!Save) return nullptr;
 
 		Save->Aesthetics               = GS.Aesthetics;
-		Save->Stimulation              = GS.Stimulation;
 		Save->Rhythm                   = GS.Rhythm;
 		Save->Zen                      = GS.Zen;
 		Save->Psychedelics             = GS.Psychedelics;
 		Save->Heat                     = GS.Heat;
 		Save->Thirst                   = GS.Thirst;
-		Save->Energy                   = GS.Energy;
+		Save->Stimulation              = GS.Stimulation;
 		Save->Inventory                = GS.Inventory;
 		Save->EquippedClothing         = GS.EquippedClothing;
 		Save->Tokens                   = GS.Tokens;
@@ -620,13 +597,23 @@ namespace
 	{
 		bImmediateTeleport = false;
 		GS.Aesthetics               = Save->Aesthetics;
-		GS.Stimulation              = Save->Stimulation;
 		GS.Rhythm                   = Save->Rhythm;
 		GS.Zen                      = Save->Zen;
 		GS.Psychedelics             = Save->Psychedelics;
-		GS.Heat                     = Save->Heat;
-		GS.Thirst                   = Save->Thirst;
-		GS.Energy                   = Save->Energy;
+
+		// Meter migration: old saves stored these as floats on a 0..100
+		// scale. The Save struct's fields are now int32 but auto-load may
+		// have read pre-refactor data that overflowed >10 (e.g. 80 for
+		// "thirst quenched"). Detect any value > MeterMax and rescale.
+		auto MigrateMeter = [](int32 V) -> int32
+		{
+			if (V <= UEclipseGameStateSubsystem::MeterMax) return FMath::Clamp(V, 0, UEclipseGameStateSubsystem::MeterMax);
+			// Old float-scale value packed into the int — round down by 10.
+			return FMath::Clamp(V / 10, 0, UEclipseGameStateSubsystem::MeterMax);
+		};
+		GS.Heat                     = MigrateMeter(Save->Heat);
+		GS.Thirst                   = MigrateMeter(Save->Thirst);
+		GS.Stimulation              = MigrateMeter(Save->Stimulation);
 		GS.Inventory                = Save->Inventory;
 		GS.EquippedClothing         = Save->EquippedClothing;
 		GS.Tokens                   = Save->Tokens;

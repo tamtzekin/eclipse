@@ -6,24 +6,41 @@
 #include "Blueprint/UserWidget.h"
 #include "EclipseHUDWidget.generated.h"
 
-class UProgressBar;
 class UTextBlock;
 class UImage;
+class UBorder;
+class UHorizontalBox;
 
 /**
- * Bottom-right HUD cluster — heat bar, portrait box, thirst bar.
- * Binds to EclipseGameStateSubsystem::OnStateChanged.
+ * Top-left HUD cluster — three life-meters (Heat, Thirst, Stimulation)
+ * stacked vertically as horizontal segmented bars. Binds to
+ * EclipseGameStateSubsystem::OnStateChanged.
  *
- * Mirrors the HTML #hud-status layout:
- *   background: rgba(6,14,36,0.6)  border: #1a3a5c  blur
- *   Heat bar: vertical, blue (#143c8c → #51eefc)
- *   Thirst bar: vertical, cyan (#51eefc)
- *   Portrait: 90×112, cyan border
+ * Per-row layout: [LABEL]  [10 segments + 2 dotted dividers]  [VALUE]
  *
- * Blueprint child must contain:
- *   UProgressBar  HeatBar     — FillType: BottomToTop
- *   UProgressBar  ThirstBar   — FillType: BottomToTop
- *   (portrait Image/Border optional — styled in BP)
+ * Each meter is rendered as a horizontal row of 10 UBorder "segments"
+ * (filling left→right) so the player can read the integer value at a
+ * glance. The 0..10 sweet-spot model means BOTH extremes are bad —
+ * segments at indices 0/1 (critical low, left edge) and 8/9 (critical
+ * high, right edge) render red instead of the meter's base tint when
+ * lit. A thin dotted-line divider sits between segments 1-2 and 7-8 to
+ * mark the critical-zone boundaries.
+ *
+ * Per-meter base tints:
+ *   HEAT          red
+ *   THIRST        cyan
+ *   STIMULATION   yellow-white
+ *
+ * All three bars share identical dimensions — a key UX requirement
+ * since the game revolves around balancing these meters via consumables
+ * + dialogue effects, and side-by-side comparison must be instant.
+ *
+ * Blueprint child names (BindWidgetOptional — populator names match):
+ *   UHorizontalBox  HeatSegmentRow        (parent of HeatSeg_0..9 + dividers)
+ *   UHorizontalBox  ThirstSegmentRow      (likewise)
+ *   UHorizontalBox  StimulationSegmentRow (likewise)
+ *   UTextBlock      HeatValueText / ThirstValueText / StimulationValueText
+ *   UTextBlock      HeatLabelText / ThirstLabelText / StimulationLabelText
  */
 UCLASS()
 class ECLIPSE_API UEclipseHUDWidget : public UUserWidget
@@ -34,35 +51,47 @@ protected:
 	virtual bool Initialize() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
 
-	// Optional bind: built programmatically in Initialize() if WBP omits them.
+	// ── Life-meter segment containers ──────────────────────────────────
+	// The WBP populator fills each row with 10 child segments + 2 dotted
+	// dividers (named HeatSeg_0..HeatSeg_9 etc., left→right). At runtime
+	// UpdateBars walks the children + tints each one based on the meter
+	// value.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> HeatBar;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> ThirstBar;
-
-	// HP-style Energy bar. Red pulse while bIsBleedingEnergy (thirst at 0).
-	// Designer-bindable; built into the fallback tree if WBP doesn't ship one.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> EnergyBar;
+	TObjectPtr<UHorizontalBox> HeatSegmentRow;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> EnergyLabel;
+	TObjectPtr<UHorizontalBox> ThirstSegmentRow;
 
-	// Center-screen crosshair dot — bound from the WBP designer if present,
-	// otherwise built programmatically in Initialize().
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UHorizontalBox> StimulationSegmentRow;
+
+	// Stat-name labels on the left of each row ("HEAT", "THIRST", "STIMULATION").
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeatLabelText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ThirstLabelText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StimulationLabelText;
+
+	// Integer-value labels on the right of each row (e.g. "7"). Updated
+	// alongside the segments in UpdateBars.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeatValueText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ThirstValueText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StimulationValueText;
+
+	// Center-screen crosshair dot — bound from the WBP designer if
+	// present, otherwise built programmatically in Initialize().
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CrosshairImage;
 
-	// Chapter clock readout — "CH 1 · 1:23". Updated on every NativeTick
-	// because the clock advances continuously (the meters' 1Hz throttle
-	// would feel choppy here). Designer-styleable in the WBP details panel.
+	// Chapter clock readout — kept on the HUD class so a future design
+	// can toggle it back on. Today the actual readout lives on the phone
+	// face (UEclipsePhoneWidget); this widget's instance is collapsed at
+	// NativeConstruct time.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ChapterClockText;
 
-	// Currency readout — "◆ 5  ▤ 100" (coins + notes). Updated on
-	// OnStateChanged. Designer-styleable; built programmatically if absent.
+	// Currency readout — same as above, lives on the phone face now.
+	// HUD instance collapsed at NativeConstruct.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CurrencyText;
 
@@ -73,9 +102,19 @@ private:
 	UFUNCTION()
 	void HandlePlayerDeath();
 
-	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
-
+	// Repaints all three bars based on the current GameState meter values
+	// and the integer-value labels above each.
 	void UpdateBars();
+
+	// Tints a single bar's children. Used by UpdateBars; pulled out so
+	// each bar can share the segment-tinting math + the critical-zone
+	// override logic. SegmentRow is the UHorizontalBox; Value is 0..10;
+	// BaseTint is the meter's healthy-zone fill colour.
+	void TintBar(UHorizontalBox* SegmentRow, int32 Value, FLinearColor BaseTint) const;
+
+	// (Kept for back-compat — formats the chapter clock from the shared
+	// subsystem helper. HUD instance is collapsed so this is dormant
+	// today.)
 	void UpdateChapterClock();
 	void UpdateCurrency();
 };

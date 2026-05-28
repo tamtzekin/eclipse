@@ -73,21 +73,23 @@ public:
 	virtual void Deinitialize() override;
 
 	// ── Stats ──
-	// Five-stat system (clubby remix of the original Word/Rhythm/Shadow):
+	// Four-stat system (clubby remix of the original Word/Rhythm/Shadow):
 	//   Aesthetics    — taste, fit, presentation. (~old "Word")
-	//   Stimulation   — energy management, raw drive.
-	//   Rhythm        — flow, timing, beat-sense. (kept)
+	//   Rhythm        — flow, timing, beat-sense.
 	//   Zen           — composure, silence. (~old "Shadow")
 	//   Psychedelics  — perception, openness to weird input.
+	//
+	// (Stimulation was previously a fifth stat but has been absorbed into
+	// the life-meter system — see Meters block below.)
+	//
 	// Skill checks reference these via lowercase StatKey strings:
-	//   "aesthetics" | "stimulation" | "rhythm" | "zen" | "psychedelics"
+	//   "aesthetics" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Aesthetics   = 1;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Stimulation  = 1;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Rhythm       = 1;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Zen          = 1;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 Psychedelics = 1;
 
-	// Resolve a lowercase stat-key string ("aesthetics" / "stimulation" / …)
+	// Resolve a lowercase stat-key string ("aesthetics" / "rhythm" / …)
 	// to the matching int field. Returns 0 for unknown keys. Used by the
 	// dialogue skill-check evaluator and any future "boost a stat by name"
 	// systems.
@@ -95,48 +97,68 @@ public:
 	int32 GetStatValue(FName StatKey) const;
 
 	// Adds Delta (can be negative) to the named stat (lowercase key:
-	// "aesthetics" / "stimulation" / "rhythm" / "zen" / "psychedelics").
-	// Clamped to >= 0. Broadcasts OnStateChanged. Unknown keys log a warning
-	// and no-op so a typo in a stage-directions string can't silently desync state.
+	// "aesthetics" / "rhythm" / "zen" / "psychedelics"). Clamped to >= 0.
+	// Broadcasts OnStateChanged. Unknown keys log a warning and no-op so a
+	// typo in a stage-directions string can't silently desync state.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
 	void ApplyStatDelta(FName StatKey, int32 Delta);
 
-	// ── Meters ──
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Heat      = 60.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxHeat   = 100.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Thirst    = 80.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxThirst = 100.f;
+	// ── Life meters (Heat / Thirst / Stimulation) ─────────────────────
+	//
+	// Integer 0..10 "sweet-spot" model: BOTH extremes are bad. 5 is neutral;
+	// the critical zones are ≤2 (too low) and ≥8 (too high). Meters do NOT
+	// drain over time — they only move when consumables, dialogue effects,
+	// or other explicit events push them via ChangeXxx(Delta). The HUD
+	// renders all three bars at identical dimensions with dotted lines at
+	// the 2 and 8 boundaries so the player can read at a glance how far
+	// each meter is from danger.
+	//
+	// Semantic per meter (low = bad ↔ high = bad):
+	//   HEAT          0 freezing  · 5 comfortable · 10 overheated
+	//   THIRST        0 sloshing  · 5 hydrated    · 10 parched
+	//   STIMULATION   0 sluggish  · 5 alert       · 10 tweaking
+	//
+	// Articy gameplay gates these via stage directives like
+	//   "HEAT > 8"        — choice available only when overheating
+	//   "STIMULATION < 3" — choice available only when fatigued
+	// and apply changes via the same syntax as stat changes:
+	//   "+1 HEAT", "-2 THIRST", "+3 STIMULATION"
+	//
+	// Death: ONLY Stimulation == 0 fires OnPlayerDeath. Heat/Thirst at
+	// either extreme just lock dialogue gates and surface the critical
+	// HUD tint; they don't kill the player directly.
+	static constexpr int32 MeterMax          = 10;
+	static constexpr int32 MeterCriticalLow  = 2;   // value ≤ this → critical
+	static constexpr int32 MeterCriticalHigh = 8;   // value ≥ this → critical
 
-	// HP-style life meter. Damaged by failed skill checks and by the slow
-	// thirst-bleed that kicks in when Thirst hits 0. Hitting 0 fires
-	// OnPlayerDeath and the death overlay takes over.
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float Energy    = 100.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float MaxEnergy = 100.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Heat        = 3;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Thirst      = 5;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Stimulation = 7;
 
-	// True while Thirst == 0 and Energy > 0 — used by HUD to drive a red
-	// pulse on the Energy bar. Updated by TickMeters; readers should treat
-	// it as read-only.
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") bool bIsBleedingEnergy = false;
-
-	// Drain rate while bleeding from thirst (units/sec). Slow enough that
-	// the player has a couple of minutes to find a drink before dying.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
-	float ThirstBleedPerSec = 0.3f;
-
-	// Passive drain rates (units per second). Tuned so a freshly-spawned
-	// player has ~3 minutes before Thirst empties and ~4 minutes for Heat —
-	// long enough to talk to NPCs and explore without being punished.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
-	float ThirstDrainPerSec = 0.5f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters")
-	float HeatDrainPerSec = 0.4f;
-
-	// Called by AEclipsePlayerCharacter::Tick. Drains meters and broadcasts
-	// OnStateChanged at most once per second (throttled so the HUD bars don't
-	// re-render every frame).
+	// Adds Delta (signed) to the named meter (lowercase "heat" / "thirst" /
+	// "stimulation"), clamps to [0, MeterMax], broadcasts OnStateChanged.
+	// If the meter is Stimulation and the post-clamp value is 0, also fires
+	// OnPlayerDeath (single-shot — won't re-fire if you stay at 0).
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
-	void TickMeters(float DeltaSeconds);
+	void ChangeMeter(FName MeterKey, int32 Delta);
+
+	// Convenience wrappers for the common case where the caller knows which
+	// meter at compile time. All three route through ChangeMeter so the
+	// death-trigger + clamp + broadcast logic stays in one place.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	void ChangeHeat(int32 Delta);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	void ChangeThirst(int32 Delta);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	void ChangeStimulation(int32 Delta);
+
+	// Read a meter by name (lowercase "heat" / "thirst" / "stimulation").
+	// Returns 0 for unknown keys. Used by the Articy comparison-gate
+	// evaluator so "HEAT > 8" reads through this single accessor.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
+	int32 GetMeterValue(FName MeterKey) const;
 
 	// ── Inventory ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<FName> Inventory;
@@ -189,7 +211,7 @@ public:
 	float DefaultChapterDurationSeconds = 90.f;
 
 	// True while the clock is ticking. Auto-paused during dialogue (the
-	// player character already skips TickMeters when dialogue is open) and
+	// player character skips TickChapterClock when dialogue is open) and
 	// while the world is paused (pause menu).
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
 	bool bClockRunning = true;
@@ -281,23 +303,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	static FName GetBaseItemId(FName MaybeRuntimeId);
 
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
-	void DrainThirst(float Amount);
-
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
-	void GainHeat(float Amount);
-
-	// Drain Energy by Amount, clamped to [0, MaxEnergy]. Fires OnPlayerDeath
-	// when the new value hits 0 (single broadcast — won't re-fire on
-	// successive zero-drains).
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
-	void DrainEnergy(float Amount);
+	// (Old float-scale Drain/Gain APIs removed — see ChangeHeat /
+	// ChangeThirst / ChangeStimulation / ChangeMeter above for the new
+	// signed-int delta API on the 0..10 integer scale.)
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Quest")
 	void OnChapterTransition();
 
-	// Per-frame clock tick. Hooked from the existing TickMeters call site,
-	// so it auto-pauses when meters are paused (dialogue open, pause menu).
+	// Per-frame clock tick. Called from AEclipsePlayerCharacter::Tick;
+	// auto-pauses when bClockRunning is false (dialogue open, pause menu).
 	void TickChapterClock(float DeltaSeconds);
 
 	// Read the active chapter's duration from the table, or fall back to
@@ -341,9 +355,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
 
-	// Fires once when Energy transitions from > 0 to 0. The HUD listens and
-	// opens the death overlay (TRY AGAIN / QUIT). Reset by Load or a fresh
-	// `Energy = MaxEnergy` write (via DrainEnergy with negative Amount).
+	// Fires once when Stimulation transitions from > 0 to 0. The HUD
+	// listens and opens the death overlay (TRY AGAIN / QUIT). Reset by
+	// Load or by ChangeStimulation lifting the value back above 0.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipsePlayerDied OnPlayerDeath;
 

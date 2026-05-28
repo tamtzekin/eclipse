@@ -589,128 +589,118 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
-		// (Centre crosshair removed — point-and-click interactions don't need
-		// a reticle and the cursor itself is now the aim indicator.)
-
-		// HUD container — bottom-right, navy panel
+		// HUD container — top-left, navy panel.
 		UBorder* HudBg = New<UBorder>(Tree, TEXT("HudBg"));
 		HudBg->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
-		HudBg->SetPadding(FMargin(12.f, 10.f));
+		HudBg->SetPadding(FMargin(14.f, 12.f));
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(HudBg))
 		{
-			S->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
-			S->SetAlignment(FVector2D(1.f, 1.f));
+			S->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+			S->SetAlignment(FVector2D(0.f, 0.f));
 			S->SetAutoSize(true);
-			S->SetPosition(FVector2D(-20.f, -20.f));
+			S->SetPosition(FVector2D(20.f, 20.f));
 		}
 
-		// HudBg holds a vertical column: [ChapterClockText] above [HudRow].
-		// (Inventory ribbon was removed once the I-key inventory overlay
-		// took over chip display — the HUD only carries clock + meters now.)
-		UVerticalBox* HudColumn = New<UVerticalBox>(Tree, TEXT("HudColumn"));
-		HudBg->SetContent(HudColumn);
+		UVerticalBox* MeterCol = New<UVerticalBox>(Tree, TEXT("MeterColumn"));
+		HudBg->SetContent(MeterCol);
 
-		// Chapter clock — top of the column, right-aligned.
-		UTextBlock* ChapterClockText = New<UTextBlock>(Tree, TEXT("ChapterClockText"));
-		ChapterClockText->SetText(FText::FromString(TEXT("CH 0  ·  0:00")));
-		ChapterClockText->SetFont(MakeBMSPA(13, 3.f));
-		ChapterClockText->SetColorAndOpacity(FSlateColor(Cyan));
-		if (UVerticalBoxSlot* VS = HudColumn->AddChildToVerticalBox(ChapterClockText))
+		const float SegW       = 22.f;
+		const float SegH       = 22.f;
+		const float DivW       = 2.f;
+		const float LabelW     = 110.f;
+		const float ValueW     = 28.f;
+		const FLinearColor TrackTint(0.08f, 0.10f, 0.14f, 0.85f);
+		const FLinearColor DividerTint(0.945f, 0.929f, 0.851f, 0.55f);
+		const int32 MeterMax = 10;
+		const int32 CritLow  = 2;
+		const int32 CritHigh = 8;
+
+		auto BuildBar = [&](const TCHAR* Suffix, const FString& Label)
 		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
-			VS->SetHorizontalAlignment(HAlign_Right);
-		}
+			UHorizontalBox* Row = New<UHorizontalBox>(Tree,
+				FName(*FString::Printf(TEXT("%sRow"), Suffix)));
 
-		UHorizontalBox* Row = New<UHorizontalBox>(Tree, TEXT("HudRow"));
-		HudColumn->AddChildToVerticalBox(Row);
+			// Label (left).
+			UTextBlock* LabelTxt = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("%sLabelText"), Suffix)));
+			LabelTxt->SetText(FText::FromString(Label));
+			LabelTxt->SetFont(MakeBMSPA(14, 3.f));
+			LabelTxt->SetColorAndOpacity(FSlateColor(Cream));
+			USizeBox* LabelSize = New<USizeBox>(Tree,
+				FName(*FString::Printf(TEXT("%sLabelSize"), Suffix)));
+			LabelSize->SetWidthOverride(LabelW);
+			LabelSize->AddChild(LabelTxt);
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(LabelSize))
+			{
+				HS->SetVerticalAlignment(VAlign_Center);
+				HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+			}
 
-		// Portrait
-		UBorder* PortraitFrame = New<UBorder>(Tree, TEXT("PortraitFrame"));
-		FSlateBrush PB;
-		PB.DrawAs    = ESlateBrushDrawType::RoundedBox;
-		PB.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
-		PB.OutlineSettings.Color        = FSlateColor(Cyan);
-		PB.OutlineSettings.Width        = 2.f;
-		PB.OutlineSettings.CornerRadii  = FVector4(0,0,0,0);
-		PB.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-		PortraitFrame->SetBrush(PB);
+			// Segment row (middle, left→right).
+			UHorizontalBox* SegRow = New<UHorizontalBox>(Tree,
+				FName(*FString::Printf(TEXT("%sSegmentRow"), Suffix)));
 
-		USizeBox* PortraitSize = New<USizeBox>(Tree, TEXT("PortraitSize"));
-		PortraitSize->SetWidthOverride(90.f);
-		PortraitSize->SetHeightOverride(112.f);
-		PortraitSize->AddChild(PortraitFrame);
+			for (int32 i = 0; i < MeterMax; ++i)
+			{
+				UBorder* Seg = New<UBorder>(Tree,
+					FName(*FString::Printf(TEXT("%sSeg_%d"), Suffix, i)));
+				Seg->SetBrush(SolidBrush(TrackTint));
+				Seg->SetPadding(FMargin(0.f));
+				USizeBox* SegSize = New<USizeBox>(Tree,
+					FName(*FString::Printf(TEXT("%sSegSize_%d"), Suffix, i)));
+				SegSize->SetWidthOverride(SegW);
+				SegSize->SetHeightOverride(SegH);
+				SegSize->AddChild(Seg);
+				SegRow->AddChildToHorizontalBox(SegSize);
 
-		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(PortraitSize))
-		{
-			S->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-			S->SetVerticalAlignment(VAlign_Center);
-		}
+				// Dotted dividers AFTER seg 1 (critical-low boundary) and
+				// AFTER seg 7 (critical-high boundary).
+				const bool bDividerAfter = (i == CritLow - 1) || (i == CritHigh - 1);
+				if (bDividerAfter)
+				{
+					UBorder* Div = New<UBorder>(Tree,
+						FName(*FString::Printf(TEXT("%sDivider_%d"), Suffix, i)));
+					Div->SetBrush(SolidBrush(DividerTint));
+					USizeBox* DivSize = New<USizeBox>(Tree,
+						FName(*FString::Printf(TEXT("%sDivSize_%d"), Suffix, i)));
+					DivSize->SetWidthOverride(DivW);
+					DivSize->SetHeightOverride(SegH);
+					DivSize->AddChild(Div);
+					SegRow->AddChildToHorizontalBox(DivSize);
+				}
+			}
 
-		UTextBlock* PortraitLabel = New<UTextBlock>(Tree, TEXT("PortraitLabel"));
-		PortraitLabel->SetText(FText::FromString(TEXT("YOU")));
-		PortraitLabel->SetFont(MakeBMSPA(14, 4.f));
-		PortraitLabel->SetColorAndOpacity(FSlateColor(Cyan));
-		PortraitLabel->SetJustification(ETextJustify::Center);
-		PortraitFrame->SetContent(PortraitLabel);
-		PortraitFrame->SetHorizontalAlignment(HAlign_Center);
-		PortraitFrame->SetVerticalAlignment(VAlign_Center);
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(SegRow))
+			{
+				HS->SetVerticalAlignment(VAlign_Center);
+				HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+			}
 
-		// Heat cluster
-		UVerticalBox* HeatCluster = New<UVerticalBox>(Tree, TEXT("HeatCluster"));
-		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(HeatCluster))
-		{
-			S->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-			S->SetVerticalAlignment(VAlign_Bottom);
-		}
-		UTextBlock* HeatLabel = New<UTextBlock>(Tree, TEXT("HeatLabel"));
-		HeatLabel->SetText(FText::FromString(TEXT("HEAT")));
-		HeatLabel->SetFont(MakeBMSPA(14, 4.f));
-		HeatLabel->SetColorAndOpacity(FSlateColor(LabelHeat));
-		if (UVerticalBoxSlot* S = HeatCluster->AddChildToVerticalBox(HeatLabel))
-			S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+			// Value label (right).
+			UTextBlock* ValueTxt = New<UTextBlock>(Tree,
+				FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
+			ValueTxt->SetText(FText::FromString(TEXT("0")));
+			ValueTxt->SetFont(MakeBMSPA(16, 2.f));
+			ValueTxt->SetColorAndOpacity(FSlateColor(Cream));
+			ValueTxt->SetJustification(ETextJustify::Right);
+			USizeBox* ValSize = New<USizeBox>(Tree,
+				FName(*FString::Printf(TEXT("%sValueSize"), Suffix)));
+			ValSize->SetWidthOverride(ValueW);
+			ValSize->AddChild(ValueTxt);
+			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(ValSize))
+			{
+				HS->SetVerticalAlignment(VAlign_Center);
+			}
 
-		UProgressBar* HeatBar = New<UProgressBar>(Tree, TEXT("HeatBar"));
-		{
-			FProgressBarStyle PS;
-			PS.BackgroundImage = SolidBrush(BarTrack);
-			PS.FillImage       = SolidBrush(HeatLow);
-			HeatBar->SetWidgetStyle(PS);
-		}
-		HeatBar->SetBarFillType(EProgressBarFillType::BottomToTop);
-		HeatBar->SetPercent(0.6f);
-		USizeBox* HeatSize = New<USizeBox>(Tree, TEXT("HeatSize"));
-		HeatSize->SetWidthOverride(16.f);
-		HeatSize->SetHeightOverride(112.f);
-		HeatSize->AddChild(HeatBar);
-		HeatCluster->AddChildToVerticalBox(HeatSize);
+			if (UVerticalBoxSlot* VS = MeterCol->AddChildToVerticalBox(Row))
+			{
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+			}
+		};
 
-		// Thirst cluster
-		UVerticalBox* ThirstCluster = New<UVerticalBox>(Tree, TEXT("ThirstCluster"));
-		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(ThirstCluster))
-		{
-			S->SetVerticalAlignment(VAlign_Bottom);
-		}
-		UTextBlock* ThirstLabel = New<UTextBlock>(Tree, TEXT("ThirstLabel"));
-		ThirstLabel->SetText(FText::FromString(TEXT("THIRST")));
-		ThirstLabel->SetFont(MakeBMSPA(14, 4.f));
-		ThirstLabel->SetColorAndOpacity(FSlateColor(LabelThirst));
-		if (UVerticalBoxSlot* S = ThirstCluster->AddChildToVerticalBox(ThirstLabel))
-			S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
-
-		UProgressBar* ThirstBar = New<UProgressBar>(Tree, TEXT("ThirstBar"));
-		{
-			FProgressBarStyle PS;
-			PS.BackgroundImage = SolidBrush(BarTrack);
-			PS.FillImage       = SolidBrush(Cyan);
-			ThirstBar->SetWidgetStyle(PS);
-		}
-		ThirstBar->SetBarFillType(EProgressBarFillType::BottomToTop);
-		ThirstBar->SetPercent(0.8f);
-		USizeBox* ThirstSize = New<USizeBox>(Tree, TEXT("ThirstSize"));
-		ThirstSize->SetWidthOverride(16.f);
-		ThirstSize->SetHeightOverride(112.f);
-		ThirstSize->AddChild(ThirstBar);
-		ThirstCluster->AddChildToVerticalBox(ThirstSize);
+		BuildBar(TEXT("Heat"),        TEXT("HEAT"));
+		BuildBar(TEXT("Thirst"),      TEXT("THIRST"));
+		BuildBar(TEXT("Stimulation"), TEXT("STIMULATION"));
 	});
 #else
 	(void)WBPAssetPath; return false;
