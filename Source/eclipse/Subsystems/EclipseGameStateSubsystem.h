@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Data/EclipseClothingDefinition.h"   // EEclipseSlotType
 #include "EclipseGameStateSubsystem.generated.h"
 
 /**
@@ -71,6 +72,11 @@ class ECLIPSE_API UEclipseGameStateSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+
+	// Fills EquippedSlots / EquippedClothing with shirt+jeans+shoes if
+	// the slot map is empty. Called from Initialize (fresh game) and
+	// after save load (legacy saves predate the wearables system).
+	void ApplyDefaultOutfitIfEmpty();
 
 	// ── Stats ──
 	// Four-stat system (clubby remix of the original Word/Rhythm/Shadow):
@@ -171,6 +177,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") TArray<int32> Tokens;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") bool bHasWristband = false;
 
+	// Slot-keyed equipped wearables — one ClothingId per slot. The
+	// canonical source of truth for "what is the player wearing" since
+	// the legacy EquippedClothing array doesn't enforce one-per-slot.
+	// Keys are the EEclipseSlotType enum values (Head / Eyes / Neck /
+	// Top / Bottom / Shoes). Save / load round-trips this via
+	// UEclipseSaveGame::EquippedSlots.
+	//
+	// Updated through EquipClothingToSlot / UnequipSlot, which also
+	// keep EquippedClothing in sync for any legacy reader.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory")
+	TMap<EEclipseSlotType, FName> EquippedSlots;
+
 	// ── Currency ──
 	// Counters rather than inventory chips — picking up a "coins" actor adds
 	// to Coins, doesn't take a grid slot. The HUD reads these directly. Used
@@ -249,6 +267,26 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool UnequipClothing(FName ClothingId);
+
+	// ── Slot-based equip / unequip ───────────────────────────────────
+	// Looks up ClothingId's row in DT_Clothing to find its target slot,
+	// then moves the chip from Inventory[] into EquippedSlots[slot]. If
+	// the slot was already occupied, the previous occupant goes back to
+	// Inventory (one wearable per slot). Returns false if the row
+	// doesn't exist, the slot is somehow invalid, or the chip isn't in
+	// the inventory to begin with. Broadcasts OnStateChanged.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool EquipClothingToSlot(FName ClothingId);
+
+	// Unequips whatever lives in `Slot`, moving it back to Inventory.
+	// Returns true if there was something to unequip. Broadcasts
+	// OnStateChanged.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool UnequipSlot(EEclipseSlotType Slot);
+
+	// Returns the ClothingId currently equipped in `Slot`, or NAME_None.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	FName GetEquippedInSlot(EEclipseSlotType Slot) const;
 
 	// ── Currency mutators ──
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")

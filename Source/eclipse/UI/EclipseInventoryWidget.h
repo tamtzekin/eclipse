@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/DragDropOperation.h"
 #include "EclipseChipOwner.h"
+#include "Data/EclipseClothingDefinition.h"   // EEclipseSlotType
 #include "EclipseInventoryWidget.generated.h"
 
 class UVerticalBox;
@@ -12,10 +14,29 @@ class UHorizontalBox;
 class UTextBlock;
 class UButton;
 class UBorder;
+class UWidget;
 class UUniformGridPanel;
 class UDragDropOperation;
 class UEclipseGameStateSubsystem;
 class UEclipseInventoryWidget;
+
+/**
+ * Drag operation for inventory chips. Carries the source chip as Payload
+ * plus a reference to a "strike-through" line widget baked into the drag
+ * visual — the inventory panel toggles that line on while the cursor is
+ * over a clothing slot the item can't go into, giving the classic
+ * crossed-out "no" feedback.
+ */
+UCLASS()
+class ECLIPSE_API UEclipseInventoryDragOp : public UDragDropOperation
+{
+	GENERATED_BODY()
+
+public:
+	// Strike line inside DefaultDragVisual — Collapsed normally, shown
+	// when hovering an incompatible slot.
+	UPROPERTY() TObjectPtr<UWidget> StrikeLine;
+};
 
 /**
  * One inventory chip — used inside UEclipseInventoryWidget's grid. Each chip
@@ -101,6 +122,61 @@ private:
 };
 
 /**
+ * One wearable slot — a drop target inside the inventory overlay. Each
+ * slot has a fixed EEclipseSlotType (Head / Eyes / Neck / Top / Bottom /
+ * Shoes) and accepts drops of clothing chips whose DT_Clothing row
+ * matches that slot type. Dropping a matching chip calls the parent
+ * inventory widget back to fire EquipClothingToSlot on the GameState.
+ * The slot also fires drag operations of its own — dragging the
+ * equipped item OUT goes through the regular chip-drop flow which lands
+ * the chip back in the inventory grid.
+ */
+UCLASS()
+class ECLIPSE_API UEclipseClothingSlotWidget : public UUserWidget
+{
+	GENERATED_BODY()
+
+public:
+	// Set by the parent inventory widget when constructed. Determines
+	// which clothing rows this slot accepts.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Eclipse|Slot")
+	EEclipseSlotType SlotType = EEclipseSlotType::Head;
+
+	// Back-pointer so drop handlers can call into the inventory widget
+	// to do the actual equip/unequip.
+	UPROPERTY()
+	TObjectPtr<class UEclipseInventoryWidget> OwningInventory;
+
+	// Reads the currently-equipped item for this slot from the GameState
+	// and updates the label / icon. Called whenever the inventory widget
+	// rebuilds.
+	void RefreshFromState();
+
+	// Drag-over feedback state, driven by the inventory panel while a chip
+	// is dragged over this slot. 0 = idle, 1 = valid target (green),
+	// 2 = invalid target (greyed out).
+	enum class EHoverState : uint8 { Idle, Valid, Invalid };
+	void SetHoverFeedback(EHoverState State);
+
+protected:
+	virtual bool Initialize() override;
+
+	virtual bool NativeOnDragOver(const FGeometry&, const FDragDropEvent&, UDragDropOperation*) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent&, UDragDropOperation*) override;
+	virtual bool NativeOnDrop(const FGeometry&, const FDragDropEvent&, UDragDropOperation*) override;
+	virtual void NativeOnDragDetected(const FGeometry&, const FPointerEvent&, UDragDropOperation*& Op) override;
+
+	// Slot label ("HEAD" / "EYES" / etc.) — set from SlotType on construct.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SlotLabel;
+
+	// Icon glyph for the equipped item. Empty when slot is empty.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SlotIcon;
+
+	// Frame border — tint flashes briefly on a valid drop accept.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder>    SlotFrame;
+};
+
+/**
  * Disco Elysium-style inventory overlay. Toggled with `I`, freezes input
  * while open, two-column layout:
  *
@@ -144,12 +220,26 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+
+	// Resolve which clothing slot (if any) the screen point is over.
+	// Shared by drag-over (live feedback) and drop (equip resolution).
+	UEclipseClothingSlotWidget* SlotUnderPoint(const FVector2D& ScreenPos) const;
+	void ResetSlotHovers();
 
 	// New tabbed layout: 3 tab buttons + a 6×3 ItemGrid + detail row.
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabConsumables;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabWearables;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabKey;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UUniformGridPanel> ItemGrid;
+
+	// ConsumablesPanel / WearablesPanel / WearablePool live inside the
+	// populator-built widget tree as named children — SetActiveTab and
+	// Rebuild look them up via WidgetTree->FindWidget at call time. We
+	// avoid UPROPERTY BindWidgetOptional here on purpose: adding new
+	// reflected fields requires a full UBT rebuild (Live Coding can't
+	// patch them in), and the lookup is cheap enough at panel-open time.
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>        SelectedNameText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>        SelectedDescText;
@@ -162,6 +252,29 @@ protected:
 	// haven't been re-populated to the tabbed layout yet.
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UHorizontalBox>    HeldGrid;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UVerticalBox>      EquippedColumn;
+
+	// ── Wearable slot drop targets ─────────────────────────────────────
+	// Six instances live in a horizontal strip above the chip grid. The
+	// inventory widget owns them so it can iterate / refresh them when
+	// the GameState changes. They're built in NativeConstruct if not
+	// already bound by the WBP populator.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> HeadSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> EyesSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> NeckSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> TopSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> BottomSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> ShoesSlot;
+
+public:
+	// Called by UEclipseClothingSlotWidget::NativeOnDrop after a valid
+	// chip-on-slot drop. Forwards to GameState's EquipClothingToSlot
+	// then rebuilds the panel so the chip leaves the grid and the slot
+	// shows it equipped.
+	void EquipChipToSlot(FName ClothingId, EEclipseSlotType Slot);
+
+	// Called when the player drags an equipped item OUT of a slot.
+	// Forwards to GameState's UnequipSlot then rebuilds.
+	void UnequipFromSlot(EEclipseSlotType Slot);
 
 private:
 	UFUNCTION() void OnUse();

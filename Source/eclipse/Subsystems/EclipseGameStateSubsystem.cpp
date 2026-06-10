@@ -31,10 +31,61 @@ void UEclipseGameStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	}
 	if (!ClothingTable)
 	{
-		ClothingTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Justin/Data/DT_Clothing.DT_Clothing"));
+		// Authoritative location is /Game/Data/DT_Clothing — try Justin
+		// folder first only for legacy /Justin/* projects.
+		ClothingTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_Clothing.DT_Clothing"));
+		if (!ClothingTable)
+		{
+			ClothingTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Justin/Data/DT_Clothing.DT_Clothing"));
+		}
 		UE_LOG(LogEclipse, Log, TEXT("ClothingTable auto-load %s"),
 			ClothingTable ? TEXT("OK") : TEXT("not present (designer can author later)"));
 	}
+
+	// ── Fresh-game defaults ────────────────────────────────────────────
+	ApplyDefaultOutfitIfEmpty();
+}
+
+// Apply baseline shirt/jeans/shoes outfit if the slot map is empty.
+// Called from Initialize() (fresh game) AND from ApplySnapshot() after
+// a save load — old saves that pre-date the wearables system come back
+// with empty EquippedSlots, and we don't want the paperdoll to render
+// naked just because the player's existing save lacks outfit data.
+void UEclipseGameStateSubsystem::ApplyDefaultOutfitIfEmpty()
+{
+	if (EquippedSlots.Num() != 0 || EquippedClothing.Num() != 0) return;
+
+	auto AutoEquip = [this](FName Id, EEclipseSlotType Slot)
+	{
+		// Only equip if the DT_Clothing row exists for this id —
+		// silent skip if missing so refactors don't crash on init.
+		FEclipseClothingRow Row;
+		if (!GetClothingRow(Id, Row)) return;
+		EquippedSlots.Add(Slot, Id);
+		EquippedClothing.AddUnique(Id);
+	};
+	AutoEquip(TEXT("shirt"), EEclipseSlotType::Top);
+	AutoEquip(TEXT("jeans"), EEclipseSlotType::Bottom);
+	AutoEquip(TEXT("shoes"), EEclipseSlotType::Shoes);
+
+	// Test wardrobe: drop a handful of unequipped wearables into the
+	// inventory so the Wearables tab's AVAILABLE grid has chips to drag.
+	// TODO(design): remove once real pickups populate the wardrobe.
+	auto GiveUnequipped = [this](FName Id)
+	{
+		FEclipseClothingRow Row;
+		if (!GetClothingRow(Id, Row)) return;
+		if (!Inventory.Contains(Id)) Inventory.Add(Id);
+	};
+	GiveUnequipped(TEXT("jacket"));
+	GiveUnequipped(TEXT("hoodie"));
+	GiveUnequipped(TEXT("beret"));
+	GiveUnequipped(TEXT("cap"));
+	GiveUnequipped(TEXT("chain"));
+	GiveUnequipped(TEXT("scarf"));
+	GiveUnequipped(TEXT("sunglasses"));
+
+	UE_LOG(LogEclipse, Log, TEXT("GS: applied default outfit + test wardrobe (empty slot map)"));
 }
 
 void UEclipseGameStateSubsystem::Deinitialize()
@@ -116,6 +167,87 @@ bool UEclipseGameStateSubsystem::UnequipClothing(FName ClothingId)
 		NotifyChanged();
 	}
 	return N > 0;
+}
+
+// ── Slot-based equip / unequip ─────────────────────────────────────────────
+
+bool UEclipseGameStateSubsystem::EquipClothingToSlot(FName ClothingId)
+{
+	// Resolve the target slot from DT_Clothing — chips don't know their
+	// own slot, the DT row does. Strip the runtime "__N" suffix in case
+	// the chip was uniquified on pickup.
+	FEclipseClothingRow Row;
+	if (!GetClothingRow(ClothingId, Row))
+	{
+		UE_LOG(LogEclipse, Warning,
+			TEXT("EquipClothingToSlot: no DT_Clothing row for '%s'"), *ClothingId.ToString());
+		return false;
+	}
+	const EEclipseSlotType Slot = Row.SlotType;
+
+	// The chip must be in the inventory grid before it can be equipped.
+	const int32 InvIdx = Inventory.IndexOfByKey(ClothingId);
+	if (InvIdx == INDEX_NONE)
+	{
+		UE_LOG(LogEclipse, Warning,
+			TEXT("EquipClothingToSlot: '%s' not in inventory"), *ClothingId.ToString());
+		return false;
+	}
+
+	// Swap out whatever's currently in the slot (back to inventory) before
+	// moving the new chip in. One wearable per slot, always.
+	if (FName* Existing = EquippedSlots.Find(Slot))
+	{
+		if (!Existing->IsNone() && *Existing != ClothingId)
+		{
+			Inventory.Add(*Existing);
+			EquippedClothing.Remove(*Existing);
+			UE_LOG(LogEclipse, Log,
+				TEXT("EquipClothingToSlot: slot %d previously had '%s' → back to inventory"),
+				(int32)Slot, *Existing->ToString());
+		}
+	}
+
+	// Move ClothingId out of the inventory grid into the slot.
+	Inventory.RemoveAt(InvIdx);
+	ItemSlotPositions.Remove(ClothingId);
+	EquippedSlots.Add(Slot, ClothingId);
+	if (!EquippedClothing.Contains(ClothingId))
+	{
+		EquippedClothing.Add(ClothingId);
+	}
+
+	UE_LOG(LogEclipse, Log,
+		TEXT("EquipClothingToSlot: '%s' → slot %d"),
+		*ClothingId.ToString(), (int32)Slot);
+	NotifyChanged();
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::UnequipSlot(EEclipseSlotType Slot)
+{
+	FName* Existing = EquippedSlots.Find(Slot);
+	if (!Existing || Existing->IsNone()) return false;
+
+	const FName ClothingId = *Existing;
+	EquippedSlots.Remove(Slot);
+	EquippedClothing.Remove(ClothingId);
+	Inventory.Add(ClothingId);
+
+	UE_LOG(LogEclipse, Log,
+		TEXT("UnequipSlot: slot %d → '%s' back to inventory"),
+		(int32)Slot, *ClothingId.ToString());
+	NotifyChanged();
+	return true;
+}
+
+FName UEclipseGameStateSubsystem::GetEquippedInSlot(EEclipseSlotType Slot) const
+{
+	if (const FName* Existing = EquippedSlots.Find(Slot))
+	{
+		return *Existing;
+	}
+	return NAME_None;
 }
 
 // ── Currency ──
@@ -570,6 +702,7 @@ namespace
 		Save->Stimulation              = GS.Stimulation;
 		Save->Inventory                = GS.Inventory;
 		Save->EquippedClothing         = GS.EquippedClothing;
+		Save->EquippedSlots            = GS.EquippedSlots;
 		Save->Tokens                   = GS.Tokens;
 		Save->bHasWristband            = GS.bHasWristband;
 		Save->Coins                    = GS.Coins;
@@ -639,6 +772,7 @@ namespace
 		GS.Stimulation              = MigrateMeter(Save->Stimulation);
 		GS.Inventory                = Save->Inventory;
 		GS.EquippedClothing         = Save->EquippedClothing;
+		GS.EquippedSlots            = Save->EquippedSlots;
 		GS.Tokens                   = Save->Tokens;
 		GS.bHasWristband            = Save->bHasWristband;
 		GS.Coins                    = Save->Coins;
@@ -650,6 +784,11 @@ namespace
 		GS.bVipAccessGranted        = Save->bVipAccessGranted;
 		GS.Chapter                  = Save->Chapter;
 		GS.ChapterElapsedSeconds    = Save->ChapterElapsedSeconds;
+
+		// Saves from before the 6-slot wearables system don't carry an
+		// EquippedSlots map. Re-apply baseline outfit so old saves get
+		// the same fresh-game wardrobe instead of an empty paperdoll.
+		GS.ApplyDefaultOutfitIfEmpty();
 
 		if (W)
 		{

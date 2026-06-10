@@ -10,8 +10,19 @@
 UENUM(BlueprintType)
 enum class EEclipseSlotType : uint8
 {
-	Head, Jacket, Neck
+	Head      UMETA(DisplayName = "Head"),
+	Eyes      UMETA(DisplayName = "Eyes"),
+	Neck      UMETA(DisplayName = "Neck"),
+	Top       UMETA(DisplayName = "Top"),
+	Bottom    UMETA(DisplayName = "Bottom"),
+	Shoes     UMETA(DisplayName = "Shoes"),
 };
+
+// Aliases for code that still references the old names — Jacket → Top
+// is the spiritual successor since both occupy the torso. Keep these
+// here for one revision so DT rows authored against the old enum keep
+// loading.
+//#define EEclipseSlotType_Jacket EEclipseSlotType::Top
 
 USTRUCT(BlueprintType)
 struct FEclipseClothingRow : public FTableRowBase

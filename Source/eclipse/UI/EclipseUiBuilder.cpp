@@ -21,6 +21,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
+#include "UI/EclipseInventoryWidget.h"   // UEclipseClothingSlotWidget
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Components/UniformGridPanel.h"
@@ -1036,7 +1037,11 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 		{
 			S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 			S->SetAlignment(FVector2D(0.5f, 0.5f));
-			S->SetSize(FVector2D(820.f, 560.f));
+			// Enlarged to fit the Deus Ex–style paperdoll on the left
+			// (silhouette + 6 positioned slots + connector lines) AND
+			// a side-by-side AVAILABLE grid of unequipped wearables on
+			// the right. Designer can shrink later if it feels excessive.
+			S->SetSize(FVector2D(1280.f, 860.f));
 			S->SetZOrder(1);
 		}
 
@@ -1079,7 +1084,7 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 		};
 
 		MakeTab(TEXT("CONSUMABLES"), TEXT("TabConsumables"));
-		MakeTab(TEXT("WEARABLES"),   TEXT("TabWearables"));
+		MakeTab(TEXT("OUTFIT"),      TEXT("TabWearables"));
 		MakeTab(TEXT("KEY"),         TEXT("TabKey"));
 
 		// Thin chalk separator under the tabs
@@ -1091,40 +1096,257 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 		UnderlineSize->AddChild(TabUnderline);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(UnderlineSize))
 		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
 		}
 
-		// ── 6×3 item grid ────────────────────────────────────────────────
-		UUniformGridPanel* ItemGrid = New<UUniformGridPanel>(Tree, TEXT("ItemGrid"));
-		ItemGrid->SetSlotPadding(FMargin(6.f));
-		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(ItemGrid))
+		// ── Content swap region ────────────────────────────────────────
+		// Two sibling panels share the same screen real estate; only one
+		// is visible at a time. SetActiveTab on the inventory widget
+		// toggles which one shows. Using a UOverlay keeps the layout
+		// stable when switching tabs (no reflow / jitter).
+		UOverlay* ContentSwap = New<UOverlay>(Tree, TEXT("ContentSwap"));
+		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(ContentSwap))
 		{
 			VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
 
-		// Pre-populate 18 empty slot frames so the layout reads even with
-		// no items. Runtime overlays chips for items in the active tab.
-		for (int32 r = 0; r < 3; ++r)
+		// ── Consumables / Key panel (chip grid) ────────────────────────
 		{
-			for (int32 c = 0; c < 6; ++c)
+			UVerticalBox* ConsumablesPanel = New<UVerticalBox>(Tree, TEXT("ConsumablesPanel"));
+			if (UOverlaySlot* OS = ContentSwap->AddChildToOverlay(ConsumablesPanel))
 			{
-				UBorder* Slot = New<UBorder>(Tree,
-					FName(*FString::Printf(TEXT("Slot_%d_%d"), r, c)));
-				Slot->SetBrush(RoundedBrush(
-					FLinearColor(0.f, 0.f, 0.f, 0.f),
-					FLinearColor(0.945f, 0.929f, 0.851f, 0.6f),
-					1.f, 2.f));
-				Slot->SetPadding(FMargin(0.f));
-				USizeBox* SlotSize = New<USizeBox>(Tree,
-					FName(*FString::Printf(TEXT("SlotSize_%d_%d"), r, c)));
-				SlotSize->SetWidthOverride(96.f);
-				SlotSize->SetHeightOverride(72.f);
-				SlotSize->AddChild(Slot);
-				if (UUniformGridSlot* GS = ItemGrid->AddChildToUniformGrid(SlotSize, r, c))
+				OS->SetHorizontalAlignment(HAlign_Fill);
+				OS->SetVerticalAlignment(VAlign_Fill);
+			}
+
+			UUniformGridPanel* ItemGrid = New<UUniformGridPanel>(Tree, TEXT("ItemGrid"));
+			ItemGrid->SetSlotPadding(FMargin(6.f));
+			if (UVerticalBoxSlot* GVS = ConsumablesPanel->AddChildToVerticalBox(ItemGrid))
+			{
+				GVS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				GVS->SetHorizontalAlignment(HAlign_Center);
+			}
+
+			// Pre-populate 18 empty slot frames so the layout reads even
+			// with no items. Runtime overlays chips for items in the
+			// active tab.
+			for (int32 r = 0; r < 3; ++r)
+			{
+				for (int32 c = 0; c < 6; ++c)
 				{
-					GS->SetHorizontalAlignment(HAlign_Center);
-					GS->SetVerticalAlignment(VAlign_Center);
+					UBorder* Slot = New<UBorder>(Tree,
+						FName(*FString::Printf(TEXT("Slot_%d_%d"), r, c)));
+					Slot->SetBrush(RoundedBrush(
+						FLinearColor(0.f, 0.f, 0.f, 0.f),
+						FLinearColor(0.945f, 0.929f, 0.851f, 0.6f),
+						1.f, 2.f));
+					Slot->SetPadding(FMargin(0.f));
+					USizeBox* SlotSize = New<USizeBox>(Tree,
+						FName(*FString::Printf(TEXT("SlotSize_%d_%d"), r, c)));
+					SlotSize->SetWidthOverride(96.f);
+					SlotSize->SetHeightOverride(72.f);
+					SlotSize->AddChild(Slot);
+					if (UUniformGridSlot* GSlot = ItemGrid->AddChildToUniformGrid(SlotSize, r, c))
+					{
+						GSlot->SetHorizontalAlignment(HAlign_Center);
+						GSlot->SetVerticalAlignment(VAlign_Center);
+					}
 				}
+			}
+		}
+
+		// ── Wearables panel (Deus Ex–style paperdoll + side grid) ──────
+		// Left half: CanvasPanel with silhouette centred + 6 slot
+		// widgets positioned around it, each linked to the body by a
+		// thin connector line. Right half: AVAILABLE label + grid of
+		// chips for owned-but-not-equipped wearables.
+		{
+			UHorizontalBox* WearablesPanel = New<UHorizontalBox>(Tree, TEXT("WearablesPanel"));
+			if (UOverlaySlot* OS = ContentSwap->AddChildToOverlay(WearablesPanel))
+			{
+				OS->SetHorizontalAlignment(HAlign_Fill);
+				OS->SetVerticalAlignment(VAlign_Fill);
+			}
+			WearablesPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+			// ── PaperdollCanvas (absolute-positioned children) ─────────
+			UCanvasPanel* PaperdollCanvas = New<UCanvasPanel>(Tree, TEXT("PaperdollCanvas"));
+			USizeBox* CanvasSize = New<USizeBox>(Tree, TEXT("PaperdollCanvasSize"));
+			CanvasSize->SetHeightOverride(620.f);
+			CanvasSize->SetWidthOverride(760.f);
+			CanvasSize->AddChild(PaperdollCanvas);
+			if (UHorizontalBoxSlot* HS = WearablesPanel->AddChildToHorizontalBox(CanvasSize))
+			{
+				HS->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
+				HS->SetVerticalAlignment(VAlign_Top);
+			}
+
+			// Layout constants — silhouette anchored to canvas centre.
+			const float CanvasW   = 760.f;
+			const float SilhX     = 280.f;   // left edge of silhouette
+			const float SilhY     = 30.f;
+			const float SilhW     = 200.f;
+			const float SilhH     = 540.f;
+			const float SilhRightX = SilhX + SilhW;   // 480
+			const float SlotW     = 140.f;
+			const float SlotH     = 80.f;
+			const float LeftSlotX = 40.f;             // right edge: 180
+			const float RightSlotX = CanvasW - LeftSlotX - SlotW;  // 580
+			const FLinearColor ConnectorTint(EclipseUI::Cyan.R, EclipseUI::Cyan.G, EclipseUI::Cyan.B, 0.45f);
+
+			// ── Silhouette ─────────────────────────────────────────────
+			UBorder* Silhouette = New<UBorder>(Tree, TEXT("PaperdollSilhouette"));
+			{
+				FSlateBrush B;
+				B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+				B.TintColor = FSlateColor(FLinearColor(0.039f, 0.063f, 0.118f, 1.f));
+				B.OutlineSettings.Color        = FSlateColor(EclipseUI::Cyan);
+				B.OutlineSettings.Width        = 1.5f;
+				B.OutlineSettings.CornerRadii  = FVector4(4, 4, 4, 4);
+				B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+				Silhouette->SetBrush(B);
+			}
+			Silhouette->SetHorizontalAlignment(HAlign_Center);
+			Silhouette->SetVerticalAlignment(VAlign_Center);
+			UTextBlock* YouLabel = New<UTextBlock>(Tree, TEXT("PaperdollYouLabel"));
+			YouLabel->SetText(FText::FromString(TEXT("YOU")));
+			YouLabel->SetFont(MakeBMSPA(28, 6.f));
+			YouLabel->SetColorAndOpacity(FSlateColor(EclipseUI::Cyan));
+			YouLabel->SetJustification(ETextJustify::Center);
+			Silhouette->SetContent(YouLabel);
+			if (UCanvasPanelSlot* CS = PaperdollCanvas->AddChildToCanvas(Silhouette))
+			{
+				CS->SetPosition(FVector2D(SilhX, SilhY));
+				CS->SetSize(FVector2D(SilhW, SilhH));
+			}
+
+			// ── Slot positions (y) keyed to body region on the silhouette ──
+			struct FSlotSpec
+			{
+				const TCHAR*       Name;
+				EEclipseSlotType   Type;
+				bool               bLeftSide;
+				float              SlotY;
+				float              BodyY;   // y on silhouette where connector terminates
+			};
+			// y-positions and body-region targets spread across the
+			// silhouette top (head/eyes) → neck/torso → waist/feet.
+			const FSlotSpec Specs[] = {
+				{ TEXT("HeadSlot"),   EEclipseSlotType::Head,   true,  30.f,  70.f  },
+				{ TEXT("EyesSlot"),   EEclipseSlotType::Eyes,   false, 30.f,  110.f },
+				{ TEXT("NeckSlot"),   EEclipseSlotType::Neck,   true,  170.f, 180.f },
+				{ TEXT("TopSlot"),    EEclipseSlotType::Top,    false, 230.f, 260.f },
+				{ TEXT("BottomSlot"), EEclipseSlotType::Bottom, true,  380.f, 410.f },
+				{ TEXT("ShoesSlot"),  EEclipseSlotType::Shoes,  false, 490.f, 530.f },
+			};
+
+			for (const FSlotSpec& Spec : Specs)
+			{
+				const float SlotX = Spec.bLeftSide ? LeftSlotX : RightSlotX;
+
+				// Empty mount placeholder — the slot widget itself is
+				// created at RUNTIME via CreateWidget (see NativeConstruct)
+				// and inserted here. Embedding a UEclipseClothingSlotWidget
+				// directly in the populator's tree renders an invisible
+				// SSpacer because a ConstructWidget'd C++ UserWidget has a
+				// null RootWidget. Named "<Slot>Mount" so the inventory
+				// widget can find it. A faint frame keeps the empty slot
+				// readable even before runtime fills it.
+				UBorder* Mount = New<UBorder>(Tree,
+					FName(*FString::Printf(TEXT("%sMount"), Spec.Name)));
+				{
+					FSlateBrush B;
+					B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+					B.TintColor = FSlateColor(FLinearColor(0.094f, 0.122f, 0.180f, 0.55f));
+					B.OutlineSettings.Color        = FSlateColor(FLinearColor(EclipseUI::Cyan.R, EclipseUI::Cyan.G, EclipseUI::Cyan.B, 0.5f));
+					B.OutlineSettings.Width        = 1.f;
+					B.OutlineSettings.CornerRadii  = FVector4(3, 3, 3, 3);
+					B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+					Mount->SetBrush(B);
+				}
+				Mount->SetPadding(FMargin(0.f));
+				Mount->SetHorizontalAlignment(HAlign_Fill);
+				Mount->SetVerticalAlignment(VAlign_Fill);
+				if (UCanvasPanelSlot* CS = PaperdollCanvas->AddChildToCanvas(Mount))
+				{
+					CS->SetPosition(FVector2D(SlotX, Spec.SlotY));
+					CS->SetSize(FVector2D(SlotW, SlotH));
+				}
+
+				// Connector line — thin cyan stripe from slot edge to body.
+				const float SlotMidY = Spec.SlotY + SlotH * 0.5f;
+				const float LineLeftX  = Spec.bLeftSide ? (SlotX + SlotW) : SilhRightX;
+				const float LineRightX = Spec.bLeftSide ? SilhX           : RightSlotX;
+				const float LineW = LineRightX - LineLeftX;
+
+				UBorder* Line = New<UBorder>(Tree,
+					FName(*FString::Printf(TEXT("%sLine"), Spec.Name)));
+				Line->SetBrush(SolidBrush(ConnectorTint));
+				Line->SetPadding(FMargin(0.f));
+				if (UCanvasPanelSlot* CS = PaperdollCanvas->AddChildToCanvas(Line))
+				{
+					CS->SetPosition(FVector2D(LineLeftX, SlotMidY));
+					CS->SetSize(FVector2D(LineW, 1.f));
+					CS->SetZOrder(-1);   // behind silhouette/slots
+				}
+
+				// Vertical drop to body terminus — visual cue that the
+				// line plugs into the relevant body region.
+				const float DropTopY    = FMath::Min(SlotMidY, Spec.BodyY);
+				const float DropBottomY = FMath::Max(SlotMidY, Spec.BodyY);
+				const float DropH       = FMath::Max(1.f, DropBottomY - DropTopY);
+				const float DropX       = Spec.bLeftSide ? SilhX : SilhRightX;
+
+				UBorder* Drop = New<UBorder>(Tree,
+					FName(*FString::Printf(TEXT("%sDrop"), Spec.Name)));
+				Drop->SetBrush(SolidBrush(ConnectorTint));
+				Drop->SetPadding(FMargin(0.f));
+				if (UCanvasPanelSlot* CS = PaperdollCanvas->AddChildToCanvas(Drop))
+				{
+					CS->SetPosition(FVector2D(DropX, DropTopY));
+					CS->SetSize(FVector2D(1.f, DropH));
+					CS->SetZOrder(-1);
+				}
+			}
+
+			// ── Available wearables grid (right side) ──────────────────
+			// Vertical column: "AVAILABLE" header + UWrapBox sized to a
+			// 3-chip wide grid (chip ~110 wide × 80 tall, 3 cols = ~360).
+			UVerticalBox* PoolCol = New<UVerticalBox>(Tree, TEXT("WearablePoolColumn"));
+			if (UHorizontalBoxSlot* HS = WearablesPanel->AddChildToHorizontalBox(PoolCol))
+			{
+				HS->SetVerticalAlignment(VAlign_Top);
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+
+			UTextBlock* AvailableLabel = New<UTextBlock>(Tree, TEXT("WearablePoolLabel"));
+			AvailableLabel->SetText(FText::FromString(TEXT("AVAILABLE")));
+			AvailableLabel->SetFont(MakeBMSPA(16, 4.f));
+			AvailableLabel->SetColorAndOpacity(FSlateColor(EclipseUI::Cyan));
+			if (UVerticalBoxSlot* VS = PoolCol->AddChildToVerticalBox(AvailableLabel))
+			{
+				VS->SetPadding(FMargin(0.f, 8.f, 0.f, 10.f));
+			}
+
+			// Thin underline under "AVAILABLE" to mirror the tab strip.
+			UBorder* AvailUnderline = New<UBorder>(Tree, TEXT("WearablePoolUnderline"));
+			AvailUnderline->SetBrush(SolidBrush(FLinearColor(EclipseUI::Cyan.R, EclipseUI::Cyan.G, EclipseUI::Cyan.B, 0.35f)));
+			AvailUnderline->SetPadding(FMargin(0.f));
+			USizeBox* AvailUSize = New<USizeBox>(Tree, TEXT("WearablePoolUnderlineSize"));
+			AvailUSize->SetHeightOverride(1.f);
+			AvailUSize->AddChild(AvailUnderline);
+			if (UVerticalBoxSlot* VS = PoolCol->AddChildToVerticalBox(AvailUSize))
+			{
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+			}
+
+			UWrapBox* WearablePool = New<UWrapBox>(Tree, TEXT("WearablePool"));
+			WearablePool->SetInnerSlotPadding(FVector2D(6.f, 6.f));
+			WearablePool->SetExplicitWrapSize(true);
+			WearablePool->SetWrapSize(360.f);   // ~3 chips × 110 + padding
+			if (UVerticalBoxSlot* VS = PoolCol->AddChildToVerticalBox(WearablePool))
+			{
+				VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			}
 		}
 

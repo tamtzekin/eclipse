@@ -16,6 +16,10 @@
 #include "Components/SizeBox.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
@@ -229,14 +233,17 @@ void UEclipseInventoryChipWidget::NativeOnMouseLeave(const FPointerEvent& InMous
 
 void UEclipseInventoryChipWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
 {
+	using namespace EclipseUI;
 	if (bIsEmpty) return;
 
-	UDragDropOperation* Op = NewObject<UDragDropOperation>(this);
+	UEclipseInventoryDragOp* Op = NewObject<UEclipseInventoryDragOp>(this);
 	Op->Payload  = this;
 	Op->Pivot    = EDragPivot::CenterCenter;
 
 	// Build a lightweight visual preview that follows the cursor — a fresh
-	// chip widget initialised with the same data, no click handlers.
+	// chip widget initialised with the same data, no click handlers. We
+	// wrap it in an overlay so a strike-through line can be toggled on top
+	// when the cursor is over a slot the item can't go into.
 	UEclipseInventoryChipWidget* Preview =
 		CreateWidget<UEclipseInventoryChipWidget>(GetOwningPlayer(), GetClass());
 	if (Preview)
@@ -244,7 +251,39 @@ void UEclipseInventoryChipWidget::NativeOnDragDetected(const FGeometry& InGeomet
 		const FString IconStr = ChipIconText ? ChipIconText->GetText().ToString() : TEXT("?");
 		const FString NameStr = ChipNameText ? ChipNameText->GetText().ToString() : ItemId.ToString();
 		Preview->InitChip(Owner, ItemId, bIsEquipped, IconStr, NameStr, Tint);
-		Op->DefaultDragVisual = Preview;
+
+		UOverlay* Wrap = WidgetTree
+			? WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass())
+			: NewObject<UOverlay>(this);
+		if (Wrap)
+		{
+			Wrap->AddChildToOverlay(Preview);
+
+			// Diagonal-ish strike bar (a thick red line) centred over the
+			// chip. Collapsed until the panel detects an invalid hover.
+			UBorder* Strike = WidgetTree
+				? WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass())
+				: NewObject<UBorder>(this);
+			Strike->SetBrush(SolidBrush(FLinearColor(0.95f, 0.20f, 0.20f, 0.95f)));
+			Strike->SetPadding(FMargin(0.f));
+			USizeBox* StrikeSize = WidgetTree
+				? WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass())
+				: NewObject<USizeBox>(this);
+			StrikeSize->SetHeightOverride(4.f);
+			StrikeSize->AddChild(Strike);
+			StrikeSize->SetVisibility(ESlateVisibility::Collapsed);
+			if (UOverlaySlot* OS = Wrap->AddChildToOverlay(StrikeSize))
+			{
+				OS->SetHorizontalAlignment(HAlign_Fill);
+				OS->SetVerticalAlignment(VAlign_Center);
+			}
+			Op->StrikeLine        = StrikeSize;
+			Op->DefaultDragVisual = Wrap;
+		}
+		else
+		{
+			Op->DefaultDragVisual = Preview;
+		}
 	}
 
 	OutOperation = Op;
@@ -304,6 +343,353 @@ bool UEclipseInventoryChipWidget::NativeOnDrop(const FGeometry& InGeometry, cons
 		Host->HandleChipDroppedOnSlot(Source->ItemId, Source->bIsEquipped, SlotIndex);
 	}
 	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Clothing slot — one drop target per body part (Head/Eyes/Neck/Top/
+//  Bottom/Shoes). Sits in a horizontal strip above the chip grid; drops
+//  a chip onto it to equip, drags out to unequip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Pretty label for a slot — matches the enum's DisplayName meta but
+	// uppercased for the UI.
+	const TCHAR* SlotLabelText(EEclipseSlotType Slot)
+	{
+		switch (Slot)
+		{
+		case EEclipseSlotType::Head:   return TEXT("HEAD");
+		case EEclipseSlotType::Eyes:   return TEXT("EYES");
+		case EEclipseSlotType::Neck:   return TEXT("NECK");
+		case EEclipseSlotType::Top:    return TEXT("TOP");
+		case EEclipseSlotType::Bottom: return TEXT("BOTTOM");
+		case EEclipseSlotType::Shoes:  return TEXT("SHOES");
+		}
+		return TEXT("?");
+	}
+
+	// 3-letter body-part code shown faintly in an EMPTY slot — letters
+	// render reliably in the pixel font (emoji glyphs don't), and keep
+	// every drop target identifiable before anything is equipped.
+	const TCHAR* SlotPlaceholderCode(EEclipseSlotType Slot)
+	{
+		switch (Slot)
+		{
+		case EEclipseSlotType::Head:   return TEXT("HED");
+		case EEclipseSlotType::Eyes:   return TEXT("EYE");
+		case EEclipseSlotType::Neck:   return TEXT("NCK");
+		case EEclipseSlotType::Top:    return TEXT("TOP");
+		case EEclipseSlotType::Bottom: return TEXT("BTM");
+		case EEclipseSlotType::Shoes:  return TEXT("SHO");
+		}
+		return TEXT("---");
+	}
+
+	// Compact letter badge for an equipped item — first 3 letters of its
+	// display name, uppercased. Keeps the slot a "square with letters"
+	// rather than an emoji symbol.
+	FString ItemAbbrev(const FString& DisplayName, FName FallbackId)
+	{
+		FString Src = DisplayName.IsEmpty() ? FallbackId.ToString() : DisplayName;
+		Src.TrimStartAndEndInline();
+		Src = Src.ToUpper();
+		return Src.Left(3);
+	}
+}
+
+bool UEclipseClothingSlotWidget::Initialize()
+{
+	using namespace EclipseUI;
+
+	// This is a C++-only UUserWidget with no compiled WBP, so its private
+	// WidgetTree is null until Super::Initialize() (called at the bottom)
+	// lazily creates an EMPTY one. But UUserWidget::RebuildWidget() reads
+	// WidgetTree->RootWidget to produce the slate — if that's null it
+	// returns an SSpacer and the slot renders invisible. So we must build
+	// our own tree + RootWidget here, before Super runs.
+	if (!WidgetTree)
+	{
+		WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
+	}
+
+	// Build a minimal C++ fallback tree if the WBP didn't ship widgets
+	// for the slot — designer can replace by binding SlotLabel/SlotIcon/
+	// SlotFrame in their own WBP_Slot later.
+	if (!SlotFrame && !SlotLabel && !SlotIcon)
+	{
+		SlotFrame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotFrame"));
+		{
+			FSlateBrush B;
+			B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+			// Lighter slate fill so the box reads against the dark panel,
+			// with a bright cyan outline (Deus Ex augmentation-slot look).
+			B.TintColor = FSlateColor(FLinearColor(0.094f, 0.122f, 0.180f, 0.92f));
+			B.OutlineSettings.Color        = FSlateColor(Cyan);
+			B.OutlineSettings.Width        = 1.5f;
+			B.OutlineSettings.CornerRadii  = FVector4(3.f, 3.f, 3.f, 3.f);
+			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+			SlotFrame->SetBrush(B);
+		}
+		SlotFrame->SetPadding(FMargin(6.f, 4.f));
+		SlotFrame->SetHorizontalAlignment(HAlign_Fill);
+		SlotFrame->SetVerticalAlignment(VAlign_Fill);
+		WidgetTree->RootWidget = SlotFrame;
+
+		UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(), TEXT("SlotCol"));
+		SlotFrame->SetContent(Col);
+
+		SlotLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotLabel"));
+		SlotLabel->SetFont(MakeBMSPA(/*Size=*/11, /*Letter=*/2.f));
+		SlotLabel->SetColorAndOpacity(FSlateColor(Cyan));
+		SlotLabel->SetJustification(ETextJustify::Center);
+		SlotLabel->SetText(FText::FromString(SlotLabelText(SlotType)));
+		if (UVerticalBoxSlot* LS = Col->AddChildToVerticalBox(SlotLabel))
+		{
+			LS->SetHorizontalAlignment(HAlign_Center);
+			LS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+		}
+
+		SlotIcon = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotIcon"));
+		// Sized for a 3-letter badge ("JKT", "SHO", …) inside the square.
+		SlotIcon->SetFont(MakeBMSPA(/*Size=*/20, /*Letter=*/3.f));
+		SlotIcon->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.22f)));
+		SlotIcon->SetJustification(ETextJustify::Center);
+		SlotIcon->SetText(FText::FromString(SlotPlaceholderCode(SlotType)));
+		if (UVerticalBoxSlot* IS = Col->AddChildToVerticalBox(SlotIcon))
+		{
+			IS->SetHorizontalAlignment(HAlign_Center);
+		}
+	}
+
+	// Even when the WBP has the bindings, refresh the label text from
+	// SlotType so the populator can build all six with the same widget
+	// class and the right caption shows up at runtime.
+	if (SlotLabel)
+	{
+		SlotLabel->SetText(FText::FromString(SlotLabelText(SlotType)));
+	}
+
+	return Super::Initialize();
+}
+
+void UEclipseClothingSlotWidget::RefreshFromState()
+{
+	using namespace EclipseUI;
+
+	// The label is also re-applied here (not just in Initialize) because
+	// the slot's SlotType is assigned by the inventory AFTER CreateWidget
+	// has already run Initialize with the default type — so without this
+	// every slot would keep showing "HEAD".
+	if (SlotLabel)
+	{
+		SlotLabel->SetText(FText::FromString(SlotLabelText(SlotType)));
+	}
+
+	UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return;
+
+	const FName Equipped = GS->GetEquippedInSlot(SlotType);
+	if (Equipped.IsNone())
+	{
+		if (SlotIcon)
+		{
+			// Faint 3-letter body-part code so the empty slot reads as
+			// "drop here" without an emoji glyph.
+			SlotIcon->SetText(FText::FromString(SlotPlaceholderCode(SlotType)));
+			SlotIcon->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.22f)));
+		}
+	}
+	else
+	{
+		// Equipped: show a letter badge (3-letter abbrev of the item's
+		// name) in the item's tint colour — a "square with letters",
+		// not an emoji symbol.
+		FEclipseClothingRow Row;
+		const bool bHasRow = GS->GetClothingRow(Equipped, Row);
+		const FString Abbrev = ItemAbbrev(
+			bHasRow ? Row.DisplayName.ToString() : FString(), Equipped);
+		if (SlotIcon)
+		{
+			SlotIcon->SetText(FText::FromString(Abbrev));
+			SlotIcon->SetColorAndOpacity(FSlateColor(bHasRow ? Row.TintColor : Cream));
+		}
+	}
+}
+
+void UEclipseClothingSlotWidget::SetHoverFeedback(EHoverState State)
+{
+	using namespace EclipseUI;
+	if (!SlotFrame) return;
+
+	// Re-tint the slot frame to signal whether the dragged item belongs
+	// here. Invalid = greyed out (the "no" state the design asked for).
+	FSlateBrush B;
+	B.DrawAs                        = ESlateBrushDrawType::RoundedBox;
+	B.OutlineSettings.CornerRadii   = FVector4(3.f, 3.f, 3.f, 3.f);
+	B.OutlineSettings.RoundingType  = ESlateBrushRoundingType::FixedRadius;
+
+	const FLinearColor Green(0.36f, 0.85f, 0.45f, 1.f);
+	const FLinearColor Grey (0.45f, 0.45f, 0.48f, 1.f);
+
+	switch (State)
+	{
+	case EHoverState::Valid:
+		B.TintColor             = FSlateColor(FLinearColor(0.10f, 0.22f, 0.13f, 0.95f));
+		B.OutlineSettings.Color = FSlateColor(Green);
+		B.OutlineSettings.Width = 2.f;
+		break;
+	case EHoverState::Invalid:
+		B.TintColor             = FSlateColor(FLinearColor(0.10f, 0.10f, 0.11f, 0.92f));
+		B.OutlineSettings.Color = FSlateColor(Grey);
+		B.OutlineSettings.Width = 1.5f;
+		break;
+	case EHoverState::Idle:
+	default:
+		B.TintColor             = FSlateColor(FLinearColor(0.094f, 0.122f, 0.180f, 0.92f));
+		B.OutlineSettings.Color = FSlateColor(Cyan);
+		B.OutlineSettings.Width = 1.5f;
+		break;
+	}
+	SlotFrame->SetBrush(B);
+
+	// Dim the label + icon when greyed out so the whole tile reads dead.
+	const float ContentAlpha = (State == EHoverState::Invalid) ? 0.35f : 1.f;
+	if (SlotLabel)
+	{
+		const FLinearColor LabelCol = (State == EHoverState::Invalid)
+			? FLinearColor(Grey.R, Grey.G, Grey.B, ContentAlpha)
+			: (State == EHoverState::Valid ? Green : Cyan);
+		SlotLabel->SetColorAndOpacity(FSlateColor(LabelCol));
+	}
+}
+
+bool UEclipseClothingSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
+
+	// Live feedback while a chip hovers over this slot: green if the item
+	// belongs here, greyed-out + strike-through on the dragged icon if not.
+	UEclipseInventoryChipWidget* Source = InOperation
+		? Cast<UEclipseInventoryChipWidget>(InOperation->Payload) : nullptr;
+	if (Source)
+	{
+		UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+		FEclipseClothingRow Row;
+		const bool bValid = GS
+			&& GS->GetClothingRow(Source->GetItemId(), Row)
+			&& Row.SlotType == SlotType;
+
+		SetHoverFeedback(bValid ? EHoverState::Valid : EHoverState::Invalid);
+
+		if (UEclipseInventoryDragOp* Op = Cast<UEclipseInventoryDragOp>(InOperation))
+		{
+			if (Op->StrikeLine)
+			{
+				Op->StrikeLine->SetVisibility(bValid
+					? ESlateVisibility::Collapsed
+					: ESlateVisibility::HitTestInvisible);
+			}
+		}
+	}
+
+	// Always accept drag-over so Slate routes the drop to us. The actual
+	// "is this clothing of the right slot" check happens in NativeOnDrop.
+	return true;
+}
+
+void UEclipseClothingSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	// Cursor left this slot — clear its feedback and the strike line.
+	SetHoverFeedback(EHoverState::Idle);
+	if (UEclipseInventoryDragOp* Op = Cast<UEclipseInventoryDragOp>(InOperation))
+	{
+		if (Op->StrikeLine) Op->StrikeLine->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
+}
+
+bool UEclipseClothingSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	// Drop landed — clear hover tint regardless of accept/reject outcome.
+	SetHoverFeedback(EHoverState::Idle);
+
+	UEclipseInventoryChipWidget* Source = InOperation
+		? Cast<UEclipseInventoryChipWidget>(InOperation->Payload) : nullptr;
+	if (!Source || !OwningInventory)
+	{
+		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	const FName ItemId = Source->GetItemId();
+
+	// Verify the dropped chip is clothing of this slot's type. Reject
+	// drops of consumables, or of clothing for a different body part.
+	UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+
+	FEclipseClothingRow Row;
+	if (!GS->GetClothingRow(ItemId, Row))
+	{
+		UE_LOG(LogEclipse, Log,
+			TEXT("Slot[%s]: drop of '%s' rejected — not in DT_Clothing"),
+			SlotLabelText(SlotType), *ItemId.ToString());
+		return true;   // consume the drop so it doesn't fall through
+	}
+	if (Row.SlotType != SlotType)
+	{
+		UE_LOG(LogEclipse, Log,
+			TEXT("Slot[%s]: drop of '%s' rejected — wrong slot type (%d vs %d)"),
+			SlotLabelText(SlotType), *ItemId.ToString(),
+			(int32)Row.SlotType, (int32)SlotType);
+		return true;
+	}
+
+	OwningInventory->EquipChipToSlot(ItemId, SlotType);
+	return true;
+}
+
+void UEclipseClothingSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+	UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS || !OwningInventory) return;
+
+	const FName Equipped = GS->GetEquippedInSlot(SlotType);
+	if (Equipped.IsNone()) return;   // nothing to drag out of an empty slot
+
+	// Build a drag op carrying the equipped item id so the chip-grid drop
+	// handler can route it back. Since the existing chip-on-chip drop
+	// expects a UEclipseInventoryChipWidget as Payload, we synthesise a
+	// transient one here as the drag visual + payload.
+	UEclipseInventoryChipWidget* Stand =
+		CreateWidget<UEclipseInventoryChipWidget>(GetOwningPlayer(), UEclipseInventoryChipWidget::StaticClass());
+	if (Stand)
+	{
+		FEclipseClothingRow Row;
+		const bool bHasRow = GS->GetClothingRow(Equipped, Row);
+		Stand->InitChip(OwningInventory, Equipped, /*bEquipped=*/true,
+			bHasRow ? Row.Icon : Equipped.ToString().Left(1),
+			bHasRow ? Row.DisplayName.ToString() : Equipped.ToString(),
+			bHasRow ? Row.TintColor : FLinearColor::White);
+	}
+
+	// On drag-cancel (drop outside any target), unequip the slot — the
+	// item goes back to the inventory grid via UnequipFromSlot anyway,
+	// but firing here makes the visual feedback immediate.
+	UDragDropOperation* Op = NewObject<UDragDropOperation>(this);
+	Op->Payload          = Stand;   // chip widget for compatibility
+	Op->DefaultDragVisual = Stand;
+	Op->Pivot            = EDragPivot::CenterCenter;
+	OutOperation = Op;
+
+	// Optimistically unequip — if the drop lands somewhere invalid the
+	// chip is still in the inventory, which is the correct outcome.
+	OwningInventory->UnequipFromSlot(SlotType);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -563,6 +949,92 @@ void UEclipseInventoryWidget::NativeConstruct()
 		GS->OnStateChanged.AddDynamic(this, &UEclipseInventoryWidget::HandleStateChanged);
 	}
 
+	// ── Wearable slot drop targets ─────────────────────────────────────
+	//
+	// Build the 6 slots and slot them into a horizontal row inside the
+	// inventory panel if the WBP didn't already ship them. Each slot
+	// stores its SlotType + a back-pointer so its NativeOnDrop can call
+	// back into EquipChipToSlot.
+	auto SetupOrBuildSlot = [&](TObjectPtr<UEclipseClothingSlotWidget>& Slot,
+	                             EEclipseSlotType SlotType,
+	                             const TCHAR* Name) -> UEclipseClothingSlotWidget*
+	{
+		if (!WidgetTree) return nullptr;
+
+		// Always create the slot at RUNTIME via CreateWidget — this fully
+		// initialises the UserWidget (builds its WidgetTree + RootWidget),
+		// exactly like the item-grid chips. A slot embedded by the
+		// populator (ConstructWidget) renders as an invisible SSpacer
+		// because its RootWidget is null, so we never reuse a bound one.
+		UEclipseClothingSlotWidget* W = CreateWidget<UEclipseClothingSlotWidget>(
+			this, UEclipseClothingSlotWidget::StaticClass());
+		if (!W) return nullptr;
+		W->SlotType = SlotType;
+		W->OwningInventory = this;
+		// UUserWidget defaults to SelfHitTestInvisible, which means the
+		// slot itself never captures drag-over / drop events (they pass
+		// straight through to the panel behind it). Force Visible so the
+		// slot's NativeOnDrop fires when a chip is dropped on it.
+		W->SetVisibility(ESlateVisibility::Visible);
+
+		// Insert into the populator-built mount placeholder at the right
+		// canvas position ("<Name>Mount"). The mount is a UBorder, so
+		// SetContent swaps our freshly-built slot in. Mount itself is made
+		// SelfHitTestInvisible so only the slot (its child) is the drop
+		// target — the border background never intercepts.
+		const FString MountName = FString::Printf(TEXT("%sMount"), Name);
+		if (UBorder* Mount = Cast<UBorder>(WidgetTree->FindWidget(FName(*MountName))))
+		{
+			Mount->SetContent(W);
+			Mount->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+
+		// Re-apply label + placeholder now that SlotType is set (Initialize
+		// ran during CreateWidget with the default type).
+		W->RefreshFromState();
+
+		Slot = W;
+		return W;
+	};
+	SetupOrBuildSlot(HeadSlot,   EEclipseSlotType::Head,   TEXT("HeadSlot"));
+	SetupOrBuildSlot(EyesSlot,   EEclipseSlotType::Eyes,   TEXT("EyesSlot"));
+	SetupOrBuildSlot(NeckSlot,   EEclipseSlotType::Neck,   TEXT("NeckSlot"));
+	SetupOrBuildSlot(TopSlot,    EEclipseSlotType::Top,    TEXT("TopSlot"));
+	SetupOrBuildSlot(BottomSlot, EEclipseSlotType::Bottom, TEXT("BottomSlot"));
+	SetupOrBuildSlot(ShoesSlot,  EEclipseSlotType::Shoes,  TEXT("ShoesSlot"));
+
+	// If none of the 6 slots had a parent in the WBP, build a horizontal
+	// strip and add them all to the InventoryPanel above the chip grid.
+	// (When the populator runs, the slots will already be parented and
+	// this branch is a no-op.)
+	if (HeadSlot && !HeadSlot->GetParent() && WidgetTree)
+	{
+		// Find the InventoryPanel column the populator builds (or fall
+		// back to RootWidget if missing). Insert a horizontal box at the
+		// top with the 6 slots inside.
+		UPanelWidget* TopColumn = Cast<UPanelWidget>(WidgetTree->FindWidget(TEXT("InventoryColumn")));
+		if (!TopColumn) TopColumn = Cast<UPanelWidget>(WidgetTree->RootWidget);
+		if (TopColumn)
+		{
+			UHorizontalBox* SlotRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+				UHorizontalBox::StaticClass(), TEXT("SlotRow"));
+			UEclipseClothingSlotWidget* All[] = {
+				HeadSlot, EyesSlot, NeckSlot, TopSlot, BottomSlot, ShoesSlot };
+			for (UEclipseClothingSlotWidget* S : All)
+			{
+				if (!S) continue;
+				if (UHorizontalBoxSlot* HS = SlotRow->AddChildToHorizontalBox(S))
+				{
+					HS->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
+				}
+			}
+			// Slot it at the top of the inventory's main column. If
+			// TopColumn is a vertical box, AddChild + ShiftChild to 0.
+			TopColumn->AddChild(SlotRow);
+			TopColumn->ShiftChild(0, SlotRow);
+		}
+	}
+
 	// Make drag essentially "instant on first cursor move". Default Slate
 	// threshold is 5px which feels laggy for inventory chips. The setting
 	// is global to FSlateApplication; we restore it in NativeDestruct.
@@ -572,9 +1044,9 @@ void UEclipseInventoryWidget::NativeConstruct()
 		FSlateApplication::Get().SetDragTriggerDistance(0.f);
 	}
 
-	RefreshTabStyling();
-	Rebuild();
-	RefreshDetailPanel();
+	// Apply initial tab state (default Consumables) — toggles paperdoll
+	// visibility + tab styling + chip grid contents in one call.
+	SetActiveTab(ActiveTab);
 }
 
 void UEclipseInventoryWidget::NativeDestruct()
@@ -620,10 +1092,136 @@ bool UEclipseInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const FD
 	// item-from-inventory.
 	UEclipseInventoryChipWidget* Source = InOperation
 		? Cast<UEclipseInventoryChipWidget>(InOperation->Payload) : nullptr;
+
+	// Drag is ending — clear any hover feedback regardless of outcome.
+	ResetSlotHovers();
+
+	// ── Clothing-slot resolve by geometry ──────────────────────────────
+	// Slate's per-widget drop routing doesn't reliably deliver the drop to
+	// the canvas-positioned clothing slots (the drag-decorator layer sits
+	// over them, so the hit-test bubbles past to this panel). Instead we
+	// resolve the target slot here from the drop's screen point.
+	if (Source)
+	{
+		const FVector2D ScreenPos = InDragDropEvent.GetScreenSpacePosition();
+		if (UEclipseClothingSlotWidget* Slot = SlotUnderPoint(ScreenPos))
+		{
+			UEclipseGameStateSubsystem* GS = GetGameInstance()
+				? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+			const FName ItemId = Source->GetItemId();
+			FEclipseClothingRow Row;
+			if (GS && GS->GetClothingRow(ItemId, Row) && Row.SlotType == Slot->SlotType)
+			{
+				UE_LOG(LogEclipse, Log, TEXT("Inv[panel]: drop '%s' → slot %s (equip)"),
+					*ItemId.ToString(), *Slot->GetName());
+				EquipChipToSlot(ItemId, Slot->SlotType);
+			}
+			else
+			{
+				UE_LOG(LogEclipse, Log,
+					TEXT("Inv[panel]: drop '%s' on slot %s rejected — wrong body part"),
+					*ItemId.ToString(), *Slot->GetName());
+			}
+			return true;   // consumed (correct slot or rejected) — no drop-to-world
+		}
+	}
+
 	UE_LOG(LogEclipse, Log, TEXT("Inv[panel]: drop on panel background — no-op (src='%s' slot=%d)"),
 		Source ? *Source->GetItemId().ToString() : TEXT("?"),
 		Source ? Source->GetSlotIndex() : -1);
 	return true;
+}
+
+// Resolve which clothing slot the screen point is over, via each slot's
+// cached (absolute-space) geometry. Returns nullptr if over none.
+UEclipseClothingSlotWidget* UEclipseInventoryWidget::SlotUnderPoint(const FVector2D& ScreenPos) const
+{
+	UEclipseClothingSlotWidget* Slots[] = {
+		HeadSlot, EyesSlot, NeckSlot, TopSlot, BottomSlot, ShoesSlot };
+	for (UEclipseClothingSlotWidget* S : Slots)
+	{
+		if (S && S->GetCachedGeometry().IsUnderLocation(ScreenPos))
+		{
+			return S;
+		}
+	}
+	return nullptr;
+}
+
+void UEclipseInventoryWidget::ResetSlotHovers()
+{
+	UEclipseClothingSlotWidget* Slots[] = {
+		HeadSlot, EyesSlot, NeckSlot, TopSlot, BottomSlot, ShoesSlot };
+	for (UEclipseClothingSlotWidget* S : Slots)
+	{
+		if (S) S->SetHoverFeedback(UEclipseClothingSlotWidget::EHoverState::Idle);
+	}
+}
+
+bool UEclipseInventoryWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
+
+	UEclipseInventoryChipWidget* Source = InOperation
+		? Cast<UEclipseInventoryChipWidget>(InOperation->Payload) : nullptr;
+	if (!Source) return true;
+
+	UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+
+	const FVector2D ScreenPos = InDragDropEvent.GetScreenSpacePosition();
+	UEclipseClothingSlotWidget* Hovered = SlotUnderPoint(ScreenPos);
+
+	// Is this item allowed in the hovered slot?
+	bool bValid = false;
+	if (Hovered && GS)
+	{
+		FEclipseClothingRow Row;
+		bValid = GS->GetClothingRow(Source->GetItemId(), Row)
+			&& Row.SlotType == Hovered->SlotType;
+	}
+
+	// Repaint every slot: hovered one gets Valid/Invalid, the rest reset.
+	UEclipseClothingSlotWidget* Slots[] = {
+		HeadSlot, EyesSlot, NeckSlot, TopSlot, BottomSlot, ShoesSlot };
+	for (UEclipseClothingSlotWidget* S : Slots)
+	{
+		if (!S) continue;
+		if (S == Hovered)
+		{
+			S->SetHoverFeedback(bValid
+				? UEclipseClothingSlotWidget::EHoverState::Valid
+				: UEclipseClothingSlotWidget::EHoverState::Invalid);
+		}
+		else
+		{
+			S->SetHoverFeedback(UEclipseClothingSlotWidget::EHoverState::Idle);
+		}
+	}
+
+	// Strike-through on the dragged icon: shown only over an invalid slot.
+	if (UEclipseInventoryDragOp* Op = Cast<UEclipseInventoryDragOp>(InOperation))
+	{
+		if (Op->StrikeLine)
+		{
+			const bool bStrike = (Hovered != nullptr) && !bValid;
+			Op->StrikeLine->SetVisibility(bStrike
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+		}
+	}
+
+	return true;
+}
+
+void UEclipseInventoryWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	ResetSlotHovers();
+	if (UEclipseInventoryDragOp* Op = Cast<UEclipseInventoryDragOp>(InOperation))
+	{
+		if (Op->StrikeLine) Op->StrikeLine->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 
 void UEclipseInventoryWidget::HandleChipDroppedOutside(FName ItemId, bool bIsClothing)
@@ -736,12 +1334,64 @@ void UEclipseInventoryWidget::HandleChipDroppedOnSlot(FName SourceItemId, bool b
 
 void UEclipseInventoryWidget::HandleStateChanged() { Rebuild(); }
 
+void UEclipseInventoryWidget::EquipChipToSlot(FName ClothingId, EEclipseSlotType Slot)
+{
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		if (GS->EquipClothingToSlot(ClothingId))
+		{
+			UE_LOG(LogEclipse, Log, TEXT("Inv: equipped '%s' → slot %d"),
+				*ClothingId.ToString(), (int32)Slot);
+		}
+	}
+	Rebuild();
+}
+
+void UEclipseInventoryWidget::UnequipFromSlot(EEclipseSlotType Slot)
+{
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		if (GS->UnequipSlot(Slot))
+		{
+			UE_LOG(LogEclipse, Log, TEXT("Inv: unequipped slot %d"), (int32)Slot);
+		}
+	}
+	Rebuild();
+}
+
 void UEclipseInventoryWidget::SetActiveTab(int32 TabIndex)
 {
 	ActiveTab = FMath::Clamp(TabIndex, 0, 2);
 	SelectedItemId = NAME_None;
 	bSelectedIsClothing = false;
 	RefreshTabStyling();
+
+	// Tab-content swap. Two sibling panels live inside the same modal
+	// frame; we collapse one and show the other so the Wearables tab is
+	// a true paperdoll layout, not a paperdoll-stacked-above-the-grid.
+	// Key tab reuses ConsumablesPanel (it's the same chip-grid widget,
+	// just filtered to key items by Rebuild).
+	const bool bShowWearables   = (ActiveTab == 1);
+	const bool bShowConsumables = !bShowWearables;   // Consumables OR Key
+	if (WidgetTree)
+	{
+		auto SetPanelVis = [&](const TCHAR* Name, bool bShow)
+		{
+			if (UWidget* W = WidgetTree->FindWidget(FName(Name)))
+			{
+				W->SetVisibility(bShow
+					? ESlateVisibility::SelfHitTestInvisible
+					: ESlateVisibility::Collapsed);
+			}
+		};
+		SetPanelVis(TEXT("ConsumablesPanel"), bShowConsumables);
+		SetPanelVis(TEXT("WearablesPanel"),   bShowWearables);
+		// Legacy single-paperdoll path (older WBPs).
+		SetPanelVis(TEXT("PaperdollContainer"), bShowWearables);
+	}
+
 	Rebuild();
 	RefreshDetailPanel();
 }
@@ -788,10 +1438,25 @@ void UEclipseInventoryWidget::Rebuild()
 	// Clear ItemGrid contents (keep the 18 slot frames built by the
 	// populator? — actually re-use, by replacing chip overlay per cell).
 	if (ItemGrid) ItemGrid->ClearChildren();
+	// WearablePool is a UWrapBox built by the populator — look it up
+	// by name so we don't need a UPROPERTY field (cheaper for Live Coding).
+	UWrapBox* WearablePool = WidgetTree
+		? Cast<UWrapBox>(WidgetTree->FindWidget(FName(TEXT("WearablePool"))))
+		: nullptr;
+	if (WearablePool) WearablePool->ClearChildren();
 	// Legacy paths: clear any old held/equipped containers if a designer
 	// is still on the pre-tab WBP layout. Harmless no-op once they're gone.
 	if (HeldGrid) HeldGrid->ClearChildren();
 	if (EquippedColumn) EquippedColumn->ClearChildren();
+
+	// Repaint each wearable slot's icon based on the current GameState.
+	auto RefreshSlot = [](UEclipseClothingSlotWidget* S) { if (S) S->RefreshFromState(); };
+	RefreshSlot(HeadSlot);
+	RefreshSlot(EyesSlot);
+	RefreshSlot(NeckSlot);
+	RefreshSlot(TopSlot);
+	RefreshSlot(BottomSlot);
+	RefreshSlot(ShoesSlot);
 
 	// Helper that builds a clickable chip for an item ID, looking up its
 	// row from the appropriate DataTable for icon + display name.
@@ -893,7 +1558,59 @@ void UEclipseInventoryWidget::Rebuild()
 		if (bAdd) Entries.Add({Id, true});
 	}
 
-	if (ItemGrid)
+	// ── Wearables tab: skip the chip grid entirely. Fill WearablePool
+	// (a UWrapBox) with chips for wearables not currently equipped, and
+	// rely on RefreshSlot() above for what's on the body. This gives the
+	// Wearables tab a fundamentally different shape from Consumables.
+	if (ActiveTab == 1)
+	{
+		ActiveChips.Reset();
+		if (WearablePool)
+		{
+			// Surface only inventory items that are wearables and NOT
+			// currently equipped — those already show up on the silhouette
+			// slots. Skip ones whose slot is taken by themselves (would
+			// be duplicated visually).
+			TArray<FName> EquippedIds;
+			EquippedIds.Reserve(GS->EquippedClothing.Num() + GS->EquippedSlots.Num());
+			for (const FName& Id : GS->EquippedClothing) EquippedIds.AddUnique(Id);
+			for (const auto& KV : GS->EquippedSlots)     EquippedIds.AddUnique(KV.Value);
+
+			for (const FName& Id : GS->Inventory)
+			{
+				// Wearable = has a row in DT_Clothing. (Items can also be
+				// flagged Equippable in DT_Items, but DT_Clothing is the
+				// authoritative source for slot routing.)
+				FEclipseClothingRow CRow;
+				if (!GS->GetClothingRow(Id, CRow)) continue;
+				if (EquippedIds.Contains(Id))     continue;
+
+				FString IconText = CRow.Icon.IsEmpty() ? TEXT("?") : CRow.Icon;
+				FString NameText = CRow.DisplayName.IsEmpty()
+					? Id.ToString() : CRow.DisplayName.ToString();
+
+				UEclipseInventoryChipWidget* Chip = CreateWidget<UEclipseInventoryChipWidget>(
+					this, UEclipseInventoryChipWidget::StaticClass());
+				if (!Chip) continue;
+				Chip->InitChip(this, Id, /*bEquipped=*/false,
+					IconText, NameText, CRow.TintColor, /*SlotIndex=*/INDEX_NONE);
+
+				USizeBox* SizeWrap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+				SizeWrap->SetWidthOverride(96.f);
+				SizeWrap->SetHeightOverride(72.f);
+				SizeWrap->AddChild(Chip);
+				if (UPanelSlot* PS = WearablePool->AddChild(SizeWrap))
+				{
+					if (UWrapBoxSlot* WS = Cast<UWrapBoxSlot>(PS))
+					{
+						WS->SetPadding(FMargin(4.f));
+					}
+				}
+				ActiveChips.Add(Chip);
+			}
+		}
+	}
+	else if (ItemGrid)
 	{
 		ActiveChips.Reset();
 		const int32 MaxSlots = 18;
@@ -1142,15 +1859,12 @@ void UEclipseInventoryWidget::OnEquip()
 	if (SelectedItemId.IsNone() || bSelectedIsClothing) return;
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
-		// Move from Inventory → EquippedClothing. Slot-exclusivity / proper
-		// FEclipseClothingRow lookup will come in a future milestone — for
-		// now this just lets you wear anything.
-		if (GS->RemoveItem(SelectedItemId))
-		{
-			GS->EquipClothing(SelectedItemId);
-		}
+		// Resolve slot from DT_Clothing + equip. Only fires for chips that
+		// have a DT_Clothing row; consumables silently no-op.
+		GS->EquipClothingToSlot(SelectedItemId);
 		SelectedItemId = NAME_None;
 	}
+	Rebuild();
 }
 
 void UEclipseInventoryWidget::OnDropItem()

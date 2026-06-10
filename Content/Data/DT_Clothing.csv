@@ -1,7 +1,11 @@
 Name,Id,DisplayName,Icon,Description,TintColor,Effect_SpeedMult,Effect_CoolRate,Effect_HeatGainMult,Effect_ThirstDrainMult,Effect_bMotionBlur,Effect_bRevealNPCs,Effect_bDarken,Effect_bCharisma,TokenNum,SlotType
-jacket,jacket,JACKET,🧥,+Heat gain (warm),"(R=0.427,G=0.604,B=0.780,A=1)",1.0,1.0,1.3,1.0,False,False,False,False,14,Jacket
-beret,beret,BERET,🎨,More NPCs talkable,"(R=0.831,G=0.647,B=0.647,A=1)",1.0,1.0,1.0,1.0,False,False,False,True,27,Head
-scarf,scarf,SCARF,🧣,+Heat gain (warm) / -Thirst,"(R=0.769,G=0.718,B=0.651,A=1)",1.0,1.0,1.5,0.4,False,False,False,False,42,Head
-hoodie,hoodie,HOODIE,🧤,+Speed / +Heat gain (warm),"(R=0.478,G=0.612,B=0.776,A=1)",1.3,1.0,1.4,1.0,False,False,False,False,31,Jacket
+jacket,jacket,JACKET,🧥,+Heat gain (warm),"(R=0.427,G=0.604,B=0.780,A=1)",1.0,1.0,1.3,1.0,False,False,False,False,14,Top
+beret,beret,BERET,🎩,More NPCs talkable,"(R=0.831,G=0.647,B=0.647,A=1)",1.0,1.0,1.0,1.0,False,False,False,True,27,Head
+scarf,scarf,SCARF,🧣,+Heat gain (warm) / -Thirst,"(R=0.769,G=0.718,B=0.651,A=1)",1.0,1.0,1.5,0.4,False,False,False,False,42,Neck
+hoodie,hoodie,HOODIE,👚,+Speed / +Heat gain (warm),"(R=0.478,G=0.612,B=0.776,A=1)",1.3,1.0,1.4,1.0,False,False,False,False,31,Top
 cap,cap,CAP,🧢,Reveal hidden NPCs,"(R=0.420,G=0.557,B=0.353,A=1)",1.0,1.0,1.0,1.0,False,True,False,False,53,Head
-chain,chain,CHAIN,⛓️,+Cooling rate,"(R=0.753,G=0.753,B=0.753,A=1)",1.0,2.0,1.0,1.0,False,False,False,False,67,Jacket
+chain,chain,CHAIN,⛓️,+Cooling rate,"(R=0.753,G=0.753,B=0.753,A=1)",1.0,2.0,1.0,1.0,False,False,False,False,67,Neck
+shirt,shirt,SHIRT,👕,Basic tee — neutral,"(R=0.900,G=0.900,B=0.900,A=1)",1.0,1.0,1.0,1.0,False,False,False,False,71,Top
+jeans,jeans,JEANS,👖,Standard denim,"(R=0.247,G=0.318,B=0.510,A=1)",1.0,1.0,1.0,1.0,False,False,False,False,73,Bottom
+shoes,shoes,SHOES,👟,Comfortable sneakers,"(R=0.560,G=0.560,B=0.560,A=1)",1.05,1.0,1.0,1.0,False,False,False,False,79,Shoes
+sunglasses,sunglasses,SHADES,🕶️,Cool factor / hides eyes,"(R=0.140,G=0.140,B=0.160,A=1)",1.0,1.0,1.0,1.0,False,False,True,False,88,Eyes

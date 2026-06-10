@@ -32,6 +32,7 @@ public:
 	UPROPERTY() int32 Stimulation = 7;
 	UPROPERTY() TArray<FName> Inventory;
 	UPROPERTY() TArray<FName> EquippedClothing;
+	UPROPERTY() TMap<EEclipseSlotType, FName> EquippedSlots;
 	UPROPERTY() TArray<int32> Tokens;
 	UPROPERTY() bool bHasWristband = false;
 
