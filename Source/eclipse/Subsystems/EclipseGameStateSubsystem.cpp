@@ -6,6 +6,7 @@
 #include "Data/EclipseChapterDefinition.h"
 #include "Data/EclipseItemDefinition.h"
 #include "Data/EclipseClothingDefinition.h"
+#include "Data/EclipseCharacterDefinition.h"
 #include "Engine/DataTable.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/GameInstance.h"
@@ -41,9 +42,43 @@ void UEclipseGameStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 		UE_LOG(LogEclipse, Log, TEXT("ClothingTable auto-load %s"),
 			ClothingTable ? TEXT("OK") : TEXT("not present (designer can author later)"));
 	}
+	if (!CharacterTable)
+	{
+		CharacterTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Justin/Data/DT_Characters.DT_Characters"));
+		if (!CharacterTable)
+		{
+			CharacterTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_Characters.DT_Characters"));
+		}
+		UE_LOG(LogEclipse, Log, TEXT("CharacterTable auto-load %s"),
+			CharacterTable ? TEXT("OK") : TEXT("not present (Select Screen roster — author later)"));
+	}
 
 	// ── Fresh-game defaults ────────────────────────────────────────────
 	ApplyDefaultOutfitIfEmpty();
+	EnsureDefaultCharacterSelected();
+}
+
+// Seed a fallback character on a fresh game so Gender/Race aren't "unset"
+// before the Select Screen exists — otherwise every IdentityGate fails and
+// those dialogue branches are unreachable. A save load runs after this and
+// overwrites the selection via ApplySnapshot, so this only sticks for a
+// genuinely new game (or a legacy save with no SelectedCharacterId).
+void UEclipseGameStateSubsystem::EnsureDefaultCharacterSelected()
+{
+	if (!SelectedCharacterId.IsNone()) return;          // already chosen
+	if (DefaultCharacterId.IsNone())   return;          // opted out
+	if (!CharacterTable)
+	{
+		UE_LOG(LogEclipse, Log,
+			TEXT("EnsureDefaultCharacterSelected: no CharacterTable — leaving identity unset"));
+		return;
+	}
+	if (!SelectCharacter(DefaultCharacterId))
+	{
+		UE_LOG(LogEclipse, Warning,
+			TEXT("EnsureDefaultCharacterSelected: default '%s' not in DT_Characters — identity stays unset"),
+			*DefaultCharacterId.ToString());
+	}
 }
 
 // Apply baseline shirt/jeans/shoes outfit if the slot map is empty.
@@ -466,6 +501,90 @@ void UEclipseGameStateSubsystem::ApplyStatDelta(FName StatKey, int32 Delta)
 	NotifyChanged();
 }
 
+// ── Hidden social stats (Gender / Race / Annoyance) ────────────────────────
+
+FName UEclipseGameStateSubsystem::GetIdentityValue(FName IdentityKey) const
+{
+	if (IdentityKey == TEXT("gender")) return Gender;
+	if (IdentityKey == TEXT("race"))   return Race;
+	return NAME_None;
+}
+
+int32 UEclipseGameStateSubsystem::GetHiddenStatValue(FName Key) const
+{
+	if (Key == TEXT("annoyance")) return Annoyance;
+	return 0;
+}
+
+void UEclipseGameStateSubsystem::ChangeHiddenStat(FName Key, int32 Delta)
+{
+	if (Key == TEXT("annoyance"))
+	{
+		const int32 Before = Annoyance;
+		Annoyance = FMath::Clamp(Annoyance + Delta, 0, AnnoyanceMax);
+		UE_LOG(LogEclipse, Log, TEXT("ChangeHiddenStat: annoyance %d %+d -> %d"),
+			Before, Delta, Annoyance);
+		NotifyChanged();
+		return;
+	}
+	UE_LOG(LogEclipse, Warning, TEXT("ChangeHiddenStat: unknown key '%s' (delta %d ignored)"),
+		*Key.ToString(), Delta);
+}
+
+void UEclipseGameStateSubsystem::SetGender(FName NewGender)
+{
+	Gender = NewGender;
+	UE_LOG(LogEclipse, Log, TEXT("SetGender: %s"), *Gender.ToString());
+	NotifyChanged();
+}
+
+void UEclipseGameStateSubsystem::SetRace(FName NewRace)
+{
+	Race = NewRace;
+	UE_LOG(LogEclipse, Log, TEXT("SetRace: %s"), *Race.ToString());
+	NotifyChanged();
+}
+
+void UEclipseGameStateSubsystem::ChangeAnnoyance(int32 Delta)
+{
+	ChangeHiddenStat(TEXT("annoyance"), Delta);
+}
+
+// ── Character selection (Select Screen framework) ──────────────────────────
+
+bool UEclipseGameStateSubsystem::GetCharacterRow(FName CharacterId, FEclipseCharacterRow& OutRow) const
+{
+	if (!CharacterTable || CharacterId.IsNone()) return false;
+	const FEclipseCharacterRow* Found =
+		CharacterTable->FindRow<FEclipseCharacterRow>(CharacterId, TEXT("SelectCharacter"));
+	if (!Found) return false;
+	OutRow = *Found;
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::SelectCharacter(FName CharacterId)
+{
+	FEclipseCharacterRow Row;
+	if (!GetCharacterRow(CharacterId, Row))
+	{
+		UE_LOG(LogEclipse, Warning,
+			TEXT("SelectCharacter: '%s' not found in DT_Characters (state unchanged)"),
+			*CharacterId.ToString());
+		return false;
+	}
+
+	SelectedCharacterId = CharacterId;
+	Gender    = Row.Gender;
+	Race      = Row.Race;
+	Annoyance = FMath::Clamp(Row.StartingAnnoyance, 0, AnnoyanceMax);
+
+	UE_LOG(LogEclipse, Log,
+		TEXT("SelectCharacter: '%s' → gender=%s race=%s annoyance=%d"),
+		*CharacterId.ToString(), *Gender.ToString(), *Race.ToString(), Annoyance);
+	NotifyChanged();
+	return true;
+}
+
 FName UEclipseGameStateSubsystem::GetBaseItemId(FName MaybeRuntimeId)
 {
 	// Runtime ids look like "<base>__<actor-name>" — see
@@ -697,6 +816,8 @@ namespace
 		Save->Rhythm                   = GS.Rhythm;
 		Save->Zen                      = GS.Zen;
 		Save->Psychedelics             = GS.Psychedelics;
+		Save->SelectedCharacterId      = GS.SelectedCharacterId;
+		Save->Annoyance                = GS.Annoyance;
 		Save->Heat                     = GS.Heat;
 		Save->Thirst                   = GS.Thirst;
 		Save->Stimulation              = GS.Stimulation;
@@ -756,6 +877,15 @@ namespace
 		GS.Rhythm                   = Save->Rhythm;
 		GS.Zen                      = Save->Zen;
 		GS.Psychedelics             = Save->Psychedelics;
+
+		// Re-derive Gender/Race from the saved character, then restore the
+		// dynamic Annoyance value (SelectCharacter seeds it from
+		// StartingAnnoyance; the saved runtime value overrides that). If the
+		// character id is empty/unknown (legacy save), leave identity at
+		// defaults and just restore Annoyance.
+		GS.SelectCharacter(Save->SelectedCharacterId);
+		GS.SelectedCharacterId = Save->SelectedCharacterId;
+		GS.Annoyance           = FMath::Clamp(Save->Annoyance, 0, UEclipseGameStateSubsystem::AnnoyanceMax);
 
 		// Meter migration: old saves stored these as floats on a 0..100
 		// scale. The Save struct's fields are now int32 but auto-load may

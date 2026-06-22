@@ -23,6 +23,14 @@ public:
 	UPROPERTY() int32 Zen          = 1;
 	UPROPERTY() int32 Psychedelics = 1;
 
+	// Selected playable character (roster row in DT_Characters). Gender +
+	// Race are PER-CHARACTER, so we persist only the character id and
+	// re-derive Gender/Race from the def on load. Annoyance is dynamic
+	// (moves during play) so its runtime value is saved separately and
+	// re-applied after the character def initialises it.
+	UPROPERTY() FName SelectedCharacterId;
+	UPROPERTY() int32 Annoyance = 0;
+
 	// Meters — sweet-spot 0..10 ints. Defaults match the subsystem
 	// (Heat=3, Thirst=5, Stimulation=7). Old float-scale saves from prior
 	// builds are migrated at load time in TryLoadCurrent / LoadFromSlot:

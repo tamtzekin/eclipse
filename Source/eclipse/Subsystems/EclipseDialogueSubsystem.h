@@ -28,6 +28,16 @@ class AEclipseNpcCharacter;
 //                                       HEAT / THIRST / STIMULATION; OP is
 //                                       one of < > <= >= == !=. e.g.
 //                                       "HEAT > 8", "STIMULATION < 3".
+//   GENDER == female    IdentityGate  — gates choice availability on a hidden
+//   RACE != brown                       identity tag (GENDER / RACE). Only ==
+//                                        and != are meaningful. Hidden: a
+//                                        failed gate just closes the option,
+//                                        with no revealing "why" hint.
+//   ANNOYANCE OP N      HiddenStatGate — numeric gate on a hidden social stat
+//                                        (currently ANNOYANCE 0..10). e.g.
+//                                        "ANNOYANCE >= 4" unlocks deeper trees.
+//   +N ANNOYANCE        HiddenStatEffect — moves a hidden numeric stat on click.
+//   -N ANNOYANCE
 UENUM(BlueprintType)
 enum class EEclipseStageDirectiveKind : uint8
 {
@@ -36,6 +46,9 @@ enum class EEclipseStageDirectiveKind : uint8
 	StatEffect,
 	MeterEffect,
 	MeterCompareGate,
+	IdentityGate,       // GENDER / RACE name == / != comparison
+	HiddenStatGate,     // ANNOYANCE numeric compare
+	HiddenStatEffect,   // +N / -N ANNOYANCE
 };
 
 UENUM(BlueprintType)
@@ -55,17 +68,23 @@ struct FEclipseStageDirective
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadOnly) EEclipseStageDirectiveKind Kind = EEclipseStageDirectiveKind::StatGate;
-	// Lowercase stat or meter key, depending on Kind:
-	//   StatGate / StatEffect           → "aesthetics" / "rhythm" / "zen" / "psychedelics"
-	//   MeterEffect / MeterCompareGate  → "heat" / "thirst" / "stimulation"
-	//   ItemGate                        → empty
+	// Lowercase stat / meter / hidden key, depending on Kind:
+	//   StatGate / StatEffect                → "aesthetics" / "rhythm" / "zen" / "psychedelics"
+	//   MeterEffect / MeterCompareGate       → "heat" / "thirst" / "stimulation"
+	//   HiddenStatGate / HiddenStatEffect    → "annoyance"
+	//   IdentityGate                         → "gender" / "race"
+	//   ItemGate                             → empty
 	UPROPERTY(BlueprintReadOnly) FName Stat;
 	// For ItemGate: lowercased DT_Items row id (e.g. "baggie", "empty_bottle").
+	// For IdentityGate: the lowercased right-hand identity value to compare
+	// against (e.g. "female", "brown").
 	UPROPERTY(BlueprintReadOnly) FName ItemId;
 	// Multi-purpose:
-	//   StatGate                → required threshold (player STAT must be ≥)
-	//   StatEffect / MeterEffect → signed delta
-	//   MeterCompareGate         → right-hand side of the comparison
+	//   StatGate                         → required threshold (player STAT must be ≥)
+	//   StatEffect / MeterEffect /
+	//   HiddenStatEffect                 → signed delta
+	//   MeterCompareGate / HiddenStatGate → right-hand side of the comparison
+	//   IdentityGate                     → unused (RHS is a name in ItemId)
 	UPROPERTY(BlueprintReadOnly) int32 Value = 0;
 	// Only used by MeterCompareGate. Defaults to >= so a stray non-op'd
 	// comparison still behaves like the old "threshold" gate.

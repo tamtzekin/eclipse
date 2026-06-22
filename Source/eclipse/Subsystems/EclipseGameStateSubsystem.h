@@ -109,6 +109,89 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
 	void ApplyStatDelta(FName StatKey, int32 Delta);
 
+	// ── Hidden social stats ───────────────────────────────────────────
+	//
+	// NOT shown on the HUD. They shape how NPCs talk to the player and
+	// which dialogue branches open. Set at character creation (Gender /
+	// Race) or moved by dialogue (Annoyance); read by the Articy
+	// Scene-Direction gate evaluator. Foundation only — content authoring
+	// + character-creation UI come later.
+	//
+	//   Gender / Race  — identity tags (open-ended FName, lowercase:
+	//                    "female"/"male"/"nonbinary", "brown"/"white"/…).
+	//                    Gates compare by equality:
+	//                      "GENDER == female"  → only when female
+	//                      "RACE != brown"     → closed off when brown
+	//   Annoyance      — 0 (bored) .. 10 (annoyed). Gates by numeric
+	//                    compare like a meter:
+	//                      "ANNOYANCE >= 4"    → unlocks deeper branches
+	//                    Moved by stage effects "+1 ANNOYANCE" /
+	//                    "-2 ANNOYANCE". Clamped [0, AnnoyanceMax].
+	static constexpr int32 AnnoyanceMax = 10;
+
+	// Runtime identity of the ACTIVE character. Gender + Race are seeded
+	// from the selected character's DT_Characters row (per-character, see
+	// SelectCharacter) — not edited directly in normal play. Annoyance is
+	// seeded from StartingAnnoyance then moves during play.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Hidden") FName Gender    = TEXT("unset");
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Hidden") FName Race      = TEXT("unset");
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Hidden") int32 Annoyance = 0;
+
+	// Id of the chosen roster character (DT_Characters row). Persisted in
+	// the save; Gender/Race are re-derived from it on load.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Character") FName SelectedCharacterId;
+
+	// Fallback character used on a fresh game until the Select Screen exists.
+	// Without this, Gender/Race sit at "unset" on a new game and every
+	// IdentityGate ("GENDER == female", "RACE != white") silently fails, so
+	// none of those dialogue branches can be reached in testing. Seeded at
+	// Initialize time via EnsureDefaultCharacterSelected(). Set to NAME_None
+	// to opt out (genuinely start unset) once the Select Screen ships.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Character") FName DefaultCharacterId = TEXT("maya");
+
+	// If no character is selected yet (SelectedCharacterId is None), select
+	// DefaultCharacterId. No-op once a character is chosen or after a save
+	// restores one. Safe to call repeatedly. Called from Initialize().
+	void EnsureDefaultCharacterSelected();
+
+	// Look up a character row by id. Returns false if no CharacterTable or
+	// row. (Framework hook for the future Select Screen.)
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Character")
+	bool GetCharacterRow(FName CharacterId, struct FEclipseCharacterRow& OutRow) const;
+
+	// Select a playable character: copies its Gender / Race / StartingAnnoyance
+	// into the runtime hidden stats and records SelectedCharacterId. This is
+	// the single entry point the Select Screen calls. Returns false (and
+	// leaves state untouched) if the id isn't in DT_Characters.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Character")
+	bool SelectCharacter(FName CharacterId);
+
+	// Read an identity tag by lowercase key ("gender" / "race"). Returns
+	// NAME_None for unknown keys. Used by the IdentityGate evaluator.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	FName GetIdentityValue(FName IdentityKey) const;
+
+	// Read a hidden numeric stat by lowercase key ("annoyance"). Returns 0
+	// for unknown keys. Used by the HiddenStatGate evaluator.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	int32 GetHiddenStatValue(FName Key) const;
+
+	// Add Delta to a hidden numeric stat ("annoyance"), clamped to
+	// [0, AnnoyanceMax], broadcasts OnStateChanged. Unknown keys warn +
+	// no-op. Drives "+N ANNOYANCE" stage effects.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	void ChangeHiddenStat(FName Key, int32 Delta);
+
+	// Convenience setters/mutators (character-creation + scripted events).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	void SetGender(FName NewGender);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	void SetRace(FName NewRace);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
+	void ChangeAnnoyance(int32 Delta);
+
 	// ── Life meters (Heat / Thirst / Stimulation) ─────────────────────
 	//
 	// Integer 0..10 "sweet-spot" model: BOTH extremes are bad. 5 is neutral;
@@ -212,6 +295,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Inventory")
 	TObjectPtr<class UDataTable> ClothingTable;
+
+	// Playable-character roster (DT_Characters). The Select Screen lists
+	// these and calls SelectCharacter(rowId) on pick. Auto-loaded on init
+	// from /Game/Justin/Data/DT_Characters if present.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Character")
+	TObjectPtr<class UDataTable> CharacterTable;
 
 	// ── Quest ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Quest") FEclipseQuestState Quest;

@@ -551,7 +551,8 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	{
 		const bool bIsEffect =
 			D.Kind == EEclipseStageDirectiveKind::StatEffect ||
-			D.Kind == EEclipseStageDirectiveKind::MeterEffect;
+			D.Kind == EEclipseStageDirectiveKind::MeterEffect ||
+			D.Kind == EEclipseStageDirectiveKind::HiddenStatEffect;
 		if (bIsEffect)
 		{
 			ApplyStageEffect(D);
@@ -897,6 +898,20 @@ namespace
 			|| Lower == TEXT("stimulation");
 	}
 
+	// Hidden numeric social stats (currently just Annoyance). Numeric like
+	// meters — gated by compare ops, moved by signed effects.
+	bool IsKnownHiddenStatKey(FName Lower)
+	{
+		return Lower == TEXT("annoyance");
+	}
+
+	// Hidden identity tags. Compared by name equality (== / !=) only.
+	bool IsKnownIdentityKey(FName Lower)
+	{
+		return Lower == TEXT("gender")
+			|| Lower == TEXT("race");
+	}
+
 	// Look for any of "<=", ">=", "==", "!=", "<", ">" inside Tok. Returns
 	// the byte index + sets OutOp + sets OutOpLen (1 or 2 chars). Returns
 	// INDEX_NONE if no operator is present.
@@ -999,6 +1014,11 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 				D.Kind = EEclipseStageDirectiveKind::StatEffect;
 				D.Stat = Target;
 			}
+			else if (IsKnownHiddenStatKey(Target))
+			{
+				D.Kind = EEclipseStageDirectiveKind::HiddenStatEffect;
+				D.Stat = Target;
+			}
 			else
 			{
 				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown effect target '%s' in '%s'"),
@@ -1030,7 +1050,38 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 					Out.Add(D);
 					continue;
 				}
-				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown meter in compare gate '%s'"), *Tok);
+				if (IsKnownHiddenStatKey(Key))
+				{
+					// Numeric compare on a hidden social stat, e.g.
+					// "ANNOYANCE >= 4".
+					FEclipseStageDirective D;
+					D.Kind  = EEclipseStageDirectiveKind::HiddenStatGate;
+					D.Stat  = Key;
+					D.Value = FCString::Atoi(*Right);
+					D.Op    = Op;
+					Out.Add(D);
+					continue;
+				}
+				if (IsKnownIdentityKey(Key))
+				{
+					// Name equality on a hidden identity tag, e.g.
+					// "GENDER == female". Only == / != make sense.
+					if (Op != EEclipseCompareOp::Equal && Op != EEclipseCompareOp::NotEqual)
+					{
+						UE_LOG(LogEclipse, Warning,
+							TEXT("ParseStageDirections: identity gate '%s' needs == or != (got other op) — ignored"),
+							*Tok);
+						continue;
+					}
+					FEclipseStageDirective D;
+					D.Kind   = EEclipseStageDirectiveKind::IdentityGate;
+					D.Stat   = Key;                          // "gender" / "race"
+					D.ItemId = FName(*Right.ToLower());      // RHS value, e.g. "female"
+					D.Op     = Op;
+					Out.Add(D);
+					continue;
+				}
+				UE_LOG(LogEclipse, Warning, TEXT("ParseStageDirections: unknown key in compare gate '%s'"), *Tok);
 				continue;
 			}
 		}
@@ -1057,6 +1108,11 @@ void UEclipseDialogueSubsystem::ApplyStageEffect(const FEclipseStageDirective& E
 		// Signed delta on the 0..10 meter scale, clamped + broadcast inside
 		// ChangeMeter. Stimulation==0 also fires OnPlayerDeath from there.
 		State->ChangeMeter(Eff.Stat, Eff.Value);
+		break;
+	case EEclipseStageDirectiveKind::HiddenStatEffect:
+		// Signed delta on a hidden social stat (Annoyance), clamped to
+		// [0, AnnoyanceMax] inside ChangeHiddenStat.
+		State->ChangeHiddenStat(Eff.Stat, Eff.Value);
 		break;
 	default:
 		// Gates aren't effects — silently ignore.
@@ -1126,6 +1182,40 @@ void UEclipseDialogueSubsystem::EvaluateChoiceGates(FEclipseDialogueChoice& Choi
 						TEXT("(need %s %s %d)"),
 						*D.Stat.ToString().ToUpper(), OpSym, D.Value));
 				}
+			}
+		}
+		else if (D.Kind == EEclipseStageDirectiveKind::HiddenStatGate)
+		{
+			// Numeric compare on a hidden social stat (Annoyance). Hidden —
+			// when it fails we just close the option, no revealing hint.
+			const int32 Cur = State->GetHiddenStatValue(D.Stat);
+			bool bPass = false;
+			switch (D.Op)
+			{
+			case EEclipseCompareOp::Less:         bPass = Cur <  D.Value; break;
+			case EEclipseCompareOp::LessEqual:    bPass = Cur <= D.Value; break;
+			case EEclipseCompareOp::Equal:        bPass = Cur == D.Value; break;
+			case EEclipseCompareOp::NotEqual:     bPass = Cur != D.Value; break;
+			case EEclipseCompareOp::GreaterEqual: bPass = Cur >= D.Value; break;
+			case EEclipseCompareOp::Greater:      bPass = Cur >  D.Value; break;
+			}
+			if (!bPass)
+			{
+				Choice.bAvailable = false;   // hidden: leave GateHint empty
+			}
+		}
+		else if (D.Kind == EEclipseStageDirectiveKind::IdentityGate)
+		{
+			// Name equality on a hidden identity tag (Gender / Race).
+			// "GENDER == female" passes only when the player's gender is
+			// female; "RACE != brown" closes off when race is brown.
+			// Hidden — no revealing GateHint on failure.
+			const FName Cur = State->GetIdentityValue(D.Stat);
+			const bool bMatch = (Cur == D.ItemId);
+			const bool bPass  = (D.Op == EEclipseCompareOp::NotEqual) ? !bMatch : bMatch;
+			if (!bPass)
+			{
+				Choice.bAvailable = false;
 			}
 		}
 	}
