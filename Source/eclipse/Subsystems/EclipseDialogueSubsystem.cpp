@@ -273,9 +273,39 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		{SV1_C1, SV1_C2});
 	AddChoice(SV1_C1, TEXT("Why?"),    {SV1_N2});
 	AddChoice(SV1_C2, TEXT("[Leave]"), {});
+
+	// ── TEST-ONLY stat-XP grind hub (calm stall voice) ───────────────────
+	// Mock content for exercising the learn-by-doing XP loop — one check
+	// per stat, all looping back so they can be re-clicked to grind.
+	// [PSYCHEDELICS:8] fails at default stats → half XP + -2 Stimulation.
+	// NOTE: this dialogue id is shared by Stall Voice 1 AND Stall Voice 4,
+	// so both stalls offer the hub. STRIP when real content lands; restore
+	// SV1_N2's outputs to {}.
+	const FName SV1_HUB(TEXT("0x0100000000000B20"));
+	const FName SV1_TA (TEXT("0x0100000000000B21"));
+	const FName SV1_TR (TEXT("0x0100000000000B22"));
+	const FName SV1_TZ (TEXT("0x0100000000000B23"));
+	const FName SV1_TP (TEXT("0x0100000000000B24"));
+	const FName SV1_TX (TEXT("0x0100000000000B25"));
+
 	AddNPC(SV1_N2,
-		TEXT("\"Whatever's in there isn't alone. And it remembers names. Don't give it yours.\""),
-		{});
+		TEXT("\"Whatever's in there isn't alone. And it remembers names. Don't give it yours.\" A pause. \"…You're still standing there. Fine. Talk, then. The wall doesn't mind.\""),
+		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_TX});
+
+	AddChoice(SV1_TA, TEXT("[AESTHETICS:1] Describe the stall graffiti back to her like a gallery piece."),
+		{SV1_HUB}, NAME_None, TEXT("aesthetics"),   1);
+	AddChoice(SV1_TR, TEXT("[RHYTHM:1] Tap the partition twice, in time with the dripping tap."),
+		{SV1_HUB}, NAME_None, TEXT("rhythm"),       1);
+	AddChoice(SV1_TZ, TEXT("[ZEN:1] Sit with the silence until it feels shared."),
+		{SV1_HUB}, NAME_None, TEXT("zen"),          1);
+	AddChoice(SV1_TP, TEXT("[PSYCHEDELICS:8] Ask her what the grout is whispering."),
+		{SV1_HUB}, NAME_None, TEXT("psychedelics"), 8);
+	AddChoice(SV1_TX, TEXT("[Leave]"), {});
+
+	AddNPC(SV1_HUB,
+		TEXT("A dry breath through the partition. \"Hm. Again, if you want. Nobody's timing you.\""),
+		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_TX});
+
 	AddDialogue(SV1_DLG, SV1_N1);
 
 	// ─── STALL VOICE 2  (erratic)  0x0100000000000C00 ───────────────────────
@@ -291,9 +321,36 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		{SV2_C1, SV2_C2});
 	AddChoice(SV2_C1, TEXT("Are you alright?"), {SV2_N2});
 	AddChoice(SV2_C2, TEXT("[Back away]"),       {});
+
+	// ── TEST-ONLY stat-XP grind hub (erratic stall voice) ────────────────
+	// Same shape as the calm-voice hub above — mock skill checks looping
+	// for XP-grind testing. STRIP when real content lands; restore
+	// SV2_N2's outputs to {}.
+	const FName SV2_HUB(TEXT("0x0100000000000C20"));
+	const FName SV2_TA (TEXT("0x0100000000000C21"));
+	const FName SV2_TR (TEXT("0x0100000000000C22"));
+	const FName SV2_TZ (TEXT("0x0100000000000C23"));
+	const FName SV2_TP (TEXT("0x0100000000000C24"));
+	const FName SV2_TX (TEXT("0x0100000000000C25"));
+
 	AddNPC(SV2_N2,
-		TEXT("\"Mm. Mm. I'm fine. I'm — fine. Fine fine fine. The mirror in here keeps blinking and I can't tell which side I'm on. But fine.\""),
-		{});
+		TEXT("\"Mm. Mm. I'm fine. I'm — fine. Fine fine fine. The mirror in here keeps blinking and I can't tell which side I'm on. But fine.\" Nails drum the door from inside. \"Say something else. SAY something else.\""),
+		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_TX});
+
+	AddChoice(SV2_TA, TEXT("[AESTHETICS:1] Tell her the blinking mirror suits her."),
+		{SV2_HUB}, NAME_None, TEXT("aesthetics"),   1);
+	AddChoice(SV2_TR, TEXT("[RHYTHM:1] Knock a beat on the door and wait for her offbeat answer."),
+		{SV2_HUB}, NAME_None, TEXT("rhythm"),       1);
+	AddChoice(SV2_TZ, TEXT("[ZEN:1] \"Breathe with me. In. Out.\""),
+		{SV2_HUB}, NAME_None, TEXT("zen"),          1);
+	AddChoice(SV2_TP, TEXT("[PSYCHEDELICS:8] Agree that the mirror has sides — and tell her which one she's on."),
+		{SV2_HUB}, NAME_None, TEXT("psychedelics"), 8);
+	AddChoice(SV2_TX, TEXT("[Back away]"), {});
+
+	AddNPC(SV2_HUB,
+		TEXT("A giggle ricochets off the tiles. \"Again! Again again again. The mirror LOVED that one.\""),
+		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_TX});
+
 	AddDialogue(SV2_DLG, SV2_N1);
 
 	// ─── ENLIGHTENED RAVER  (Articy Dlg_0E4D4F6A) ──────────────────────────
@@ -320,9 +377,41 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		TEXT("She stands. Her face is so… bright? Something is up — the way she stares into you, like she sees the universe in your eyes. \"I'm looking for the angel. There's an angel, under this club.\""),
 		{ER_C3});
 	AddChoice(ER_C3, TEXT("I'll help you find it."), {ER_N3});
+
+	// ── TEST-ONLY stat-XP grind hub ──────────────────────────────────────
+	// Mock content to exercise the learn-by-doing XP system: one skill
+	// check per stat, looping back to the same hub so checks can be
+	// re-clicked to grind. The three :1 checks pass on default stats
+	// (+SkillXPOnPass each); the [PSYCHEDELICS:8] check fails at default
+	// stats → half XP + the -2 Stimulation failure tax (watch the meter —
+	// spamming it into 0 triggers the death overlay, which is itself a
+	// valid test). STRIP THIS HUB when real Articy content lands; restore
+	// ER_N3's outputs to {}.
+	const FName ER_HUB (TEXT("Dlg_0E4D4F6A.TestHub"));
+	const FName ER_TA  (TEXT("Dlg_0E4D4F6A.TestAes"));
+	const FName ER_TR  (TEXT("Dlg_0E4D4F6A.TestRhy"));
+	const FName ER_TZ  (TEXT("Dlg_0E4D4F6A.TestZen"));
+	const FName ER_TP  (TEXT("Dlg_0E4D4F6A.TestPsy"));
+	const FName ER_TX  (TEXT("Dlg_0E4D4F6A.TestExit"));
+
 	AddNPC(ER_N3,
-		TEXT("\"I need the angel's hair — the parts of itself it sheds when witnessed by the mass. And its eye. Bring me both.\""),
-		{});
+		TEXT("\"I need the angel's hair — the parts of itself it sheds when witnessed by the mass. And its eye. Bring me both.\" She tilts her head, waiting. Like she has all night."),
+		{ER_TA, ER_TR, ER_TZ, ER_TP, ER_TX});
+
+	AddChoice(ER_TA, TEXT("[AESTHETICS:1] \"Your glow. It's arranged. Curated. Who did your light?\""),
+		{ER_HUB}, NAME_None, TEXT("aesthetics"),   1);
+	AddChoice(ER_TR, TEXT("[RHYTHM:1] Answer her in time with the bass bleeding through the wall."),
+		{ER_HUB}, NAME_None, TEXT("rhythm"),       1);
+	AddChoice(ER_TZ, TEXT("[ZEN:1] Say nothing. Let the hum of the pipes speak for you."),
+		{ER_HUB}, NAME_None, TEXT("zen"),          1);
+	AddChoice(ER_TP, TEXT("[PSYCHEDELICS:8] Look where she's looking. See the angel through the floor."),
+		{ER_HUB}, NAME_None, TEXT("psychedelics"), 8);
+	AddChoice(ER_TX, TEXT("[Leave]"), {});
+
+	AddNPC(ER_HUB,
+		TEXT("She nods slowly, eyes never leaving yours. \"Again. Show me again. The angel is listening.\""),
+		{ER_TA, ER_TR, ER_TZ, ER_TP, ER_TX});
+
 	AddDialogue(ER_DLG, ER_INTRO);
 
 	// ─── DAESUNG (the rich guy is passed out)  (Articy Dlg_97F8ED64) ───────
@@ -559,22 +648,34 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 		}
 	}
 
-	// Skill-check failure tax — if the player clicked a check they didn't
-	// have the stat for (bAvailable=false), bump Stimulation toward the
-	// "tweaking" extreme by the per-choice declared amount. The dialogue
-	// widget no longer disables failed-skill buttons; players can attempt
-	// risky checks at a cost.
-	if (Chosen.bIsSkillCheck && !Chosen.bAvailable && Chosen.StimulationDamageOnFail > 0)
+	// Skill-check resolution — every clicked check grinds its stat
+	// (learn-by-doing: use a skill in conversation, earn XP toward its next
+	// level). Passing grants the full SkillXPOnPass; a failed attempt still
+	// teaches at half rate but also pays the Stimulation failure tax. The
+	// dialogue widget no longer disables failed-skill buttons; players can
+	// attempt risky checks at a cost.
+	if (Chosen.bIsSkillCheck)
 	{
 		if (UGameInstance* GI = GetGameInstance())
 		{
 			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
-				UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Stimulation"),
-					*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
-					GS->GetStatValue(Chosen.SkillCheckStat), Chosen.StimulationDamageOnFail);
-				// "Damage" = push toward 0 (the death extreme).
-				GS->ChangeStimulation(-Chosen.StimulationDamageOnFail);
+				if (Chosen.bAvailable)
+				{
+					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnPass);
+				}
+				else
+				{
+					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnFail);
+					if (Chosen.StimulationDamageOnFail > 0)
+					{
+						UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Stimulation"),
+							*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
+							GS->GetStatValue(Chosen.SkillCheckStat), Chosen.StimulationDamageOnFail);
+						// "Damage" = push toward 0 (the death extreme).
+						GS->ChangeStimulation(-Chosen.StimulationDamageOnFail);
+					}
+				}
 			}
 		}
 	}

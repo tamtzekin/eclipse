@@ -23,6 +23,14 @@ public:
 	UPROPERTY() int32 Zen          = 1;
 	UPROPERTY() int32 Psychedelics = 1;
 
+	// Learn-by-doing XP toward each stat's next level (0..StatXPToLevel-1).
+	// Legacy saves without these fields load as 0 — progress starts fresh,
+	// stat levels themselves are unaffected.
+	UPROPERTY() int32 AestheticsXP   = 0;
+	UPROPERTY() int32 RhythmXP       = 0;
+	UPROPERTY() int32 ZenXP          = 0;
+	UPROPERTY() int32 PsychedelicsXP = 0;
+
 	// Selected playable character (roster row in DT_Characters). Gender +
 	// Race are PER-CHARACTER, so we persist only the character id and
 	// re-derive Gender/Race from the def on load. Annoyance is dynamic

@@ -174,6 +174,11 @@ private:
 	UFUNCTION()
 	void HandleDialogueClosed();
 
+	// Injects a mint-green "ZEN: +20 XP" system line into the transcript
+	// whenever GrantStatXP fires (skill-check clicks during dialogue).
+	UFUNCTION()
+	void HandleStatXPGranted(FName StatKey, int32 Amount, int32 NewLevel, bool bLeveledUp);
+
 	UFUNCTION()
 	void OnCloseClicked();
 

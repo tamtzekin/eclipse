@@ -501,6 +501,58 @@ void UEclipseGameStateSubsystem::ApplyStatDelta(FName StatKey, int32 Delta)
 	NotifyChanged();
 }
 
+// ── Stat XP — learn-by-doing progression ───────────────────────────────────
+
+int32 UEclipseGameStateSubsystem::GetStatXP(FName StatKey) const
+{
+	if (StatKey == TEXT("aesthetics"))   return AestheticsXP;
+	if (StatKey == TEXT("rhythm"))       return RhythmXP;
+	if (StatKey == TEXT("zen"))          return ZenXP;
+	if (StatKey == TEXT("psychedelics")) return PsychedelicsXP;
+	return 0;
+}
+
+void UEclipseGameStateSubsystem::GrantStatXP(FName StatKey, int32 Amount)
+{
+	if (Amount <= 0) return;
+
+	int32* Stat = nullptr;
+	int32* XP   = nullptr;
+	if      (StatKey == TEXT("aesthetics"))   { Stat = &Aesthetics;   XP = &AestheticsXP; }
+	else if (StatKey == TEXT("rhythm"))       { Stat = &Rhythm;       XP = &RhythmXP; }
+	else if (StatKey == TEXT("zen"))          { Stat = &Zen;          XP = &ZenXP; }
+	else if (StatKey == TEXT("psychedelics")) { Stat = &Psychedelics; XP = &PsychedelicsXP; }
+
+	if (!Stat)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("GrantStatXP: unknown stat key '%s' (+%d XP ignored)"),
+			*StatKey.ToString(), Amount);
+		return;
+	}
+
+	*XP += Amount;
+	int32 LevelUps = 0;
+	while (*XP >= StatXPToLevel)
+	{
+		*XP -= StatXPToLevel;
+		++(*Stat);
+		++LevelUps;
+	}
+
+	if (LevelUps > 0)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("GrantStatXP: %s +%d XP -> LEVEL UP x%d (now %d, %d/%d XP)"),
+			*StatKey.ToString(), Amount, LevelUps, *Stat, *XP, StatXPToLevel);
+	}
+	else
+	{
+		UE_LOG(LogEclipse, Log, TEXT("GrantStatXP: %s +%d XP (%d/%d)"),
+			*StatKey.ToString(), Amount, *XP, StatXPToLevel);
+	}
+	OnStatXPGranted.Broadcast(StatKey, Amount, *Stat, LevelUps > 0);
+	NotifyChanged();
+}
+
 // ── Hidden social stats (Gender / Race / Annoyance) ────────────────────────
 
 FName UEclipseGameStateSubsystem::GetIdentityValue(FName IdentityKey) const
@@ -816,6 +868,10 @@ namespace
 		Save->Rhythm                   = GS.Rhythm;
 		Save->Zen                      = GS.Zen;
 		Save->Psychedelics             = GS.Psychedelics;
+		Save->AestheticsXP             = GS.AestheticsXP;
+		Save->RhythmXP                 = GS.RhythmXP;
+		Save->ZenXP                    = GS.ZenXP;
+		Save->PsychedelicsXP           = GS.PsychedelicsXP;
 		Save->SelectedCharacterId      = GS.SelectedCharacterId;
 		Save->Annoyance                = GS.Annoyance;
 		Save->Heat                     = GS.Heat;
@@ -877,6 +933,10 @@ namespace
 		GS.Rhythm                   = Save->Rhythm;
 		GS.Zen                      = Save->Zen;
 		GS.Psychedelics             = Save->Psychedelics;
+		GS.AestheticsXP             = Save->AestheticsXP;
+		GS.RhythmXP                 = Save->RhythmXP;
+		GS.ZenXP                    = Save->ZenXP;
+		GS.PsychedelicsXP           = Save->PsychedelicsXP;
 
 		// Re-derive Gender/Race from the saved character, then restore the
 		// dynamic Annoyance value (SelectCharacter seeds it from

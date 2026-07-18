@@ -48,6 +48,11 @@ struct FEclipseSaveSlotInfo
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipsePlayerDied);
+// Fired by GrantStatXP so UI (dialogue transcript, future HUD toast) can show
+// "ZEN: +20 XP" feedback at the moment of the grant. NewLevel is the stat's
+// value AFTER any roll-over; bLeveledUp is true when the grant crossed
+// StatXPToLevel at least once.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FEclipseStatXPGranted, FName, StatKey, int32, Amount, int32, NewLevel, bool, bLeveledUp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const FText&, Title);
 
 // Fires after Chapter is incremented by the clock. Subsystems hook this for
@@ -108,6 +113,35 @@ public:
 	// typo in a stage-directions string can't silently desync state.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
 	void ApplyStatDelta(FName StatKey, int32 Delta);
+
+	// ── Stat XP — learn-by-doing progression ──
+	// Using a skill-check dialogue option grants XP to that stat (grind
+	// model: the more you use a skill in conversation, the better you get).
+	// At StatXPToLevel the stat levels up (+1) and the XP counter rolls
+	// over, keeping any overflow. Grants come from the dialogue subsystem
+	// on skill-check clicks; nothing decays XP.
+	static constexpr int32 StatXPToLevel = 100;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 AestheticsXP   = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 RhythmXP       = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 ZenXP          = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Stats") int32 PsychedelicsXP = 0;
+
+	// Current XP toward the next level of the named stat. 0 for unknown keys.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
+	int32 GetStatXP(FName StatKey) const;
+
+	// Grant XP to the named stat (lowercase key). Rolls the stat up by +1
+	// per StatXPToLevel crossed, carrying overflow XP into the next level.
+	// Negative amounts are ignored. Unknown keys warn + no-op. Broadcasts
+	// OnStateChanged.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Stats")
+	void GrantStatXP(FName StatKey, int32 Amount);
+
+	// XP-grant feedback event — see the delegate declaration at the top of
+	// this header. Dialogue widget listens to inject a transcript line.
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Stats")
+	FEclipseStatXPGranted OnStatXPGranted;
 
 	// ── Hidden social stats ───────────────────────────────────────────
 	//

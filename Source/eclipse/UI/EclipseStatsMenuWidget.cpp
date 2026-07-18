@@ -300,14 +300,17 @@ void UEclipseStatsMenuWidget::RefreshAll()
 	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
 	if (!GS) return;
 
-	auto SetRow = [](UTextBlock* T, const TCHAR* Label, int32 Val)
+	// Each row: name, level, learn-by-doing XP toward the next level
+	// ("AESTHETICS     3     40/100").
+	auto SetRow = [](UTextBlock* T, const TCHAR* Label, int32 Val, int32 XP)
 	{
-		if (T) T->SetText(FText::FromString(FString::Printf(TEXT("%s     %d"), Label, Val)));
+		if (T) T->SetText(FText::FromString(FString::Printf(TEXT("%s     %d     %d/%d"),
+			Label, Val, XP, UEclipseGameStateSubsystem::StatXPToLevel)));
 	};
-	SetRow(AestheticsRow,   TEXT("AESTHETICS"),   GS->Aesthetics);
-	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm);
-	SetRow(ZenRow,          TEXT("ZEN"),          GS->Zen);
-	SetRow(PsychedelicsRow, TEXT("PSYCHEDELICS"), GS->Psychedelics);
+	SetRow(AestheticsRow,   TEXT("AESTHETICS"),   GS->Aesthetics,   GS->AestheticsXP);
+	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm,       GS->RhythmXP);
+	SetRow(ZenRow,          TEXT("ZEN"),          GS->Zen,          GS->ZenXP);
+	SetRow(PsychedelicsRow, TEXT("PSYCHEDELICS"), GS->Psychedelics, GS->PsychedelicsXP);
 	// (StimulationRow no longer populated — see header comment.)
 
 	// HEAT / THIRST / CURRENCY intentionally NOT rendered here — those live

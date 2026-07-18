@@ -171,6 +171,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
 
+	// Learn-by-doing XP granted to a stat each time the player clicks one of
+	// its skill-check choices (see UEclipseGameStateSubsystem::GrantStatXP;
+	// levels roll at StatXPToLevel=100). Failed attempts still teach —
+	// half rate — on top of the Stimulation damage they already cost.
+	static constexpr int32 SkillXPOnPass = 20;
+	static constexpr int32 SkillXPOnFail = 10;
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	void CloseDialogue();
 

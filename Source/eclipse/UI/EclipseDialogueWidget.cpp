@@ -23,6 +23,7 @@
 #include "NPC/EclipseNpcCharacter.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
+#include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Sound/SoundBase.h"
 #include "Components/AudioComponent.h"
 
@@ -454,6 +455,10 @@ void UEclipseDialogueWidget::NativeConstruct()
 		DS->OnNodeChanged.AddDynamic(this, &UEclipseDialogueWidget::HandleNodeChanged);
 		DS->OnDialogueClosed.AddDynamic(this, &UEclipseDialogueWidget::HandleDialogueClosed);
 	}
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
+	{
+		GS->OnStatXPGranted.AddDynamic(this, &UEclipseDialogueWidget::HandleStatXPGranted);
+	}
 }
 
 void UEclipseDialogueWidget::NativeDestruct()
@@ -465,6 +470,10 @@ void UEclipseDialogueWidget::NativeDestruct()
 			DS->OnDialogueOpened.RemoveDynamic(this, &UEclipseDialogueWidget::HandleDialogueOpened);
 			DS->OnNodeChanged.RemoveDynamic(this, &UEclipseDialogueWidget::HandleNodeChanged);
 			DS->OnDialogueClosed.RemoveDynamic(this, &UEclipseDialogueWidget::HandleDialogueClosed);
+		}
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			GS->OnStatXPGranted.RemoveDynamic(this, &UEclipseDialogueWidget::HandleStatXPGranted);
 		}
 	}
 	Super::NativeDestruct();
@@ -748,6 +757,37 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 	}
 
 	RebuildChoices(Node.Choices);
+}
+
+void UEclipseDialogueWidget::HandleStatXPGranted(FName StatKey, int32 Amount, int32 NewLevel, bool bLeveledUp)
+{
+	// Only annotate an open transcript — XP granted outside dialogue (future
+	// systems) has nowhere sensible to land here.
+	if (!RightHistoryScroll || !WidgetTree || GetVisibility() == ESlateVisibility::Collapsed) return;
+
+	// Mint green — deliberately outside the transcript's palette (cream
+	// player / cyan NPC / orange effects) so XP reads as a system event.
+	const FLinearColor XPGreen(0.35f, 1.f, 0.60f, 0.95f);
+
+	FString Msg = FString::Printf(TEXT("%s: +%d XP"), *StatKey.ToString().ToUpper(), Amount);
+	if (bLeveledUp)
+	{
+		Msg += FString::Printf(TEXT("  —  LEVEL UP! %d"), NewLevel);
+	}
+
+	UTextBlock* Line = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), NAME_None);
+	Line->SetFont(EclipseUI::MakeBMSPA(/*Size=*/13, /*Letter=*/1.5f));
+	Line->SetColorAndOpacity(FSlateColor(XPGreen));
+	Line->SetText(FText::FromString(Msg));
+
+	// Naked line (no bubble), left-aligned under the player's chosen line.
+	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(Line)))
+	{
+		SS->SetHorizontalAlignment(HAlign_Left);
+		SS->SetPadding(FMargin(6.f, 0.f, 0.f, 10.f));
+	}
+	RightHistoryScroll->ScrollToEnd();
 }
 
 void UEclipseDialogueWidget::HandleDialogueClosed()
