@@ -192,6 +192,14 @@ private:
 	void MakeChoice(int32 Index);
 	void RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices);
 
+	// Resolves the display tint for a choice row. Skill-check choices are
+	// colour-coded by stat (pink=AESTHETICS, gold=RHYTHM, blue=ZEN,
+	// violet=PSYCHEDELICS) — plain cream at levels 1-2, blending toward
+	// the stat hue from level 3 up (full saturation ~level 9). A vivid
+	// violet option reads "my Psychedelics is high" at a glance.
+	// Non-skill choices keep cream (red when gate-blocked).
+	FLinearColor ChoiceTint(const struct FEclipseDialogueChoice& Choice) const;
+
 	// ── Bubble construction helpers ─────────────────────────────────────
 	//
 	// Appends a new black semi-transparent bubble to one of the history

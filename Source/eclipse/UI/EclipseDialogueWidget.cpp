@@ -873,6 +873,42 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 //  Choice buttons — circle-numbered + text, mirrors HTML .dialogue-choice
 // ─────────────────────────────────────────────────────────────
 
+FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Choice) const
+{
+	using namespace EclipseUI;
+
+	if (!Choice.bIsSkillCheck)
+	{
+		return Choice.bAvailable
+			? Cream
+			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red hint for blocked picks
+	}
+
+	// Per-stat hue. Deliberately distinct from the transcript palette
+	// (cream player / cyan NPC / orange effects / mint XP).
+	FLinearColor Hue = Cream;
+	const FName S = Choice.SkillCheckStat;
+	if      (S == TEXT("aesthetics"))   Hue = FLinearColor(1.00f, 0.42f, 0.72f);   // pink
+	else if (S == TEXT("rhythm"))       Hue = FLinearColor(1.00f, 0.80f, 0.30f);   // gold
+	else if (S == TEXT("zen"))          Hue = FLinearColor(0.45f, 0.75f, 1.00f);   // sky blue
+	else if (S == TEXT("psychedelics")) Hue = FLinearColor(0.72f, 0.45f, 1.00f);   // violet
+
+	// The colour EARNS its way in: levels 1-2 render plain cream like any
+	// other option; from level 3 the text blends toward the stat hue,
+	// reaching full saturation around level 9. Levelling a stat visibly
+	// colours-in every dialogue option keyed to it.
+	int32 Level = 1;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			Level = GS->GetStatValue(S);
+		}
+	}
+	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
+	return FMath::Lerp(Cream, Hue, Blend);
+}
+
 void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices)
 {
 	using namespace EclipseUI;
@@ -938,9 +974,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				{
 					S += TEXT("  ") + Choice.GateHint.ToString();
 				}
-				const FLinearColor Tint = Choice.bAvailable
-					? Cream
-					: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red-tinted hint for risky picks
+				// Per-stat colour coding + level-scaled opacity (see ChoiceTint).
+				const FLinearColor Tint = ChoiceTint(Choice);
 
 				// Each choice row stays Collapsed until the body has finished
 				// cascading; then they ripple in one-by-one. NativeTick flips
@@ -1066,9 +1101,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		}
 		Label->SetText(FText::FromString(LabelStr));
 		Label->SetFont(MakeRodin(15));
-		Label->SetColorAndOpacity(FSlateColor(Choice.bAvailable
-			? Cream
-			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f)));
+		// Per-stat colour coding + level-scaled opacity (see ChoiceTint).
+		Label->SetColorAndOpacity(FSlateColor(ChoiceTint(Choice)));
 		Label->SetAutoWrapText(true);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
@@ -1427,7 +1461,10 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		// Cubic ease-out: 1 - (1-t)^3. Eye-pleasing for short fades.
 		const float Eased = 1.f - FMath::Pow(1.f - tLin, 3.f);
 
-		FLinearColor C = Tint; C.A = Eased;
+		// Multiply (not overwrite) the fade progress into the tint's own
+		// alpha — skill-check tints carry level-scaled opacity that must
+		// survive the animation's final frame.
+		FLinearColor C = Tint; C.A = Eased * Tint.A;
 		Block->SetColorAndOpacity(FSlateColor(C));
 
 		// Slide-up: start `SlideUpPx` below resting (positive Y in Slate
