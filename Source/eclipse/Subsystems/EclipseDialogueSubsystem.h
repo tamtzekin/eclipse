@@ -49,6 +49,9 @@ enum class EEclipseStageDirectiveKind : uint8
 	IdentityGate,       // GENDER / RACE name == / != comparison
 	HiddenStatGate,     // ANNOYANCE numeric compare
 	HiddenStatEffect,   // +N / -N ANNOYANCE
+	StatCompareGate,    // "ZEN >= 3" — silent unlock on a visible stat: the
+	                    // choice is REMOVED (not greyed) until the level is
+	                    // reached, so new options simply appear as you grow.
 };
 
 UENUM(BlueprintType)
@@ -99,6 +102,10 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) FName ChoiceId;
 	UPROPERTY(BlueprintReadOnly) FText Text;
 	UPROPERTY(BlueprintReadOnly) bool bAvailable = true;
+	// True when a HIDING gate failed (IdentityGate / HiddenStatGate /
+	// StatCompareGate). Such choices are dropped from the node view
+	// entirely — the player never sees them, no greyed row, no hint.
+	UPROPERTY(BlueprintReadOnly) bool bHiddenGateFailed = false;
 	UPROPERTY(BlueprintReadOnly) bool bIsSkillCheck = false;
 	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly) int32 SkillCheckValue = 0;

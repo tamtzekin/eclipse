@@ -287,10 +287,14 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	const FName SV1_TZ (TEXT("0x0100000000000B23"));
 	const FName SV1_TP (TEXT("0x0100000000000B24"));
 	const FName SV1_TX (TEXT("0x0100000000000B25"));
+	// Silent level-unlocks — these rows don't EXIST until the stat reaches
+	// the bar ("RHYTHM >= 2" StatCompareGate), then appear as new dialogue.
+	const FName SV1_UR (TEXT("0x0100000000000B26"));   // RHYTHM >= 2
+	const FName SV1_UZ (TEXT("0x0100000000000B27"));   // ZEN >= 3
 
 	AddNPC(SV1_N2,
 		TEXT("\"Whatever's in there isn't alone. And it remembers names. Don't give it yours.\" A pause. \"…You're still standing there. Fine. Talk, then. The wall doesn't mind.\""),
-		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_TX});
+		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_UR, SV1_UZ, SV1_TX});
 
 	AddChoice(SV1_TA, TEXT("[AESTHETICS:1] Describe the stall graffiti back to her like a gallery piece."),
 		{SV1_HUB}, NAME_None, TEXT("aesthetics"),   1);
@@ -300,11 +304,15 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		{SV1_HUB}, NAME_None, TEXT("zen"),          1);
 	AddChoice(SV1_TP, TEXT("[PSYCHEDELICS:8] Ask her what the grout is whispering."),
 		{SV1_HUB}, NAME_None, TEXT("psychedelics"), 8);
+	AddChoice(SV1_UR, TEXT("[RHYTHM:2] Drum the melody she's been humming back at her, note for note."),
+		{SV1_HUB}, NAME_None, TEXT("rhythm"), 2, TEXT("RHYTHM >= 2"));
+	AddChoice(SV1_UZ, TEXT("[ZEN:3] Hold so still the stall door stops creaking on its own."),
+		{SV1_HUB}, NAME_None, TEXT("zen"), 3, TEXT("ZEN >= 3"));
 	AddChoice(SV1_TX, TEXT("[Leave]"), {});
 
 	AddNPC(SV1_HUB,
 		TEXT("A dry breath through the partition. \"Hm. Again, if you want. Nobody's timing you.\""),
-		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_TX});
+		{SV1_TA, SV1_TR, SV1_TZ, SV1_TP, SV1_UR, SV1_UZ, SV1_TX});
 
 	AddDialogue(SV1_DLG, SV1_N1);
 
@@ -332,10 +340,13 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 	const FName SV2_TZ (TEXT("0x0100000000000C23"));
 	const FName SV2_TP (TEXT("0x0100000000000C24"));
 	const FName SV2_TX (TEXT("0x0100000000000C25"));
+	// Silent level-unlocks (StatCompareGate — appear only at the level).
+	const FName SV2_UA (TEXT("0x0100000000000C26"));   // AESTHETICS >= 2
+	const FName SV2_UP (TEXT("0x0100000000000C27"));   // PSYCHEDELICS >= 3
 
 	AddNPC(SV2_N2,
 		TEXT("\"Mm. Mm. I'm fine. I'm — fine. Fine fine fine. The mirror in here keeps blinking and I can't tell which side I'm on. But fine.\" Nails drum the door from inside. \"Say something else. SAY something else.\""),
-		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_TX});
+		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_UA, SV2_UP, SV2_TX});
 
 	AddChoice(SV2_TA, TEXT("[AESTHETICS:1] Tell her the blinking mirror suits her."),
 		{SV2_HUB}, NAME_None, TEXT("aesthetics"),   1);
@@ -345,11 +356,15 @@ void UEclipseDialogueSubsystem::InjectSyntheticDialogues()
 		{SV2_HUB}, NAME_None, TEXT("zen"),          1);
 	AddChoice(SV2_TP, TEXT("[PSYCHEDELICS:8] Agree that the mirror has sides — and tell her which one she's on."),
 		{SV2_HUB}, NAME_None, TEXT("psychedelics"), 8);
+	AddChoice(SV2_UA, TEXT("[AESTHETICS:2] Describe her outfit back to her — the version the good mirror shows."),
+		{SV2_HUB}, NAME_None, TEXT("aesthetics"), 2, TEXT("AESTHETICS >= 2"));
+	AddChoice(SV2_UP, TEXT("[PSYCHEDELICS:3] Blink in time with the mirror. Now you're both on the same side."),
+		{SV2_HUB}, NAME_None, TEXT("psychedelics"), 3, TEXT("PSYCHEDELICS >= 3"));
 	AddChoice(SV2_TX, TEXT("[Back away]"), {});
 
 	AddNPC(SV2_HUB,
 		TEXT("A giggle ricochets off the tiles. \"Again! Again again again. The mirror LOVED that one.\""),
-		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_TX});
+		{SV2_TA, SV2_TR, SV2_TZ, SV2_TP, SV2_UA, SV2_UP, SV2_TX});
 
 	AddDialogue(SV2_DLG, SV2_N1);
 
@@ -791,6 +806,9 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 				}
 
 				EvaluateChoiceGates(Choice);
+				// Hidden-gate failures don't exist for this player — drop
+				// them entirely (no greyed row, no hint).
+				if (Choice.bHiddenGateFailed) continue;
 				CurrentNode.Choices.Add(Choice);
 			}
 
@@ -871,6 +889,10 @@ void UEclipseDialogueSubsystem::AdvanceToNode(FName NodeId)
 				// first failing gate's "(need …)" message.
 				Choice.StageDirectives = ParseStageDirections(ChoiceNode->StageDirections);
 				EvaluateChoiceGates(Choice);
+
+				// Hidden-gate failures don't exist for this player — drop
+				// them entirely (no greyed row, no hint).
+				if (Choice.bHiddenGateFailed) continue;
 
 				CurrentNode.Choices.Add(Choice);
 			}
@@ -1163,6 +1185,19 @@ TArray<FEclipseStageDirective> UEclipseDialogueSubsystem::ParseStageDirections(c
 					Out.Add(D);
 					continue;
 				}
+				if (IsKnownStatKey(Key))
+				{
+					// Silent unlock on a visible stat, e.g. "ZEN >= 3" —
+					// the choice is dropped entirely until the level is
+					// reached (vs "[ZEN: 3]" StatGate which greys + hints).
+					FEclipseStageDirective D;
+					D.Kind  = EEclipseStageDirectiveKind::StatCompareGate;
+					D.Stat  = Key;
+					D.Value = FCString::Atoi(*Right);
+					D.Op    = Op;
+					Out.Add(D);
+					continue;
+				}
 				if (IsKnownIdentityKey(Key))
 				{
 					// Name equality on a hidden identity tag, e.g.
@@ -1302,7 +1337,32 @@ void UEclipseDialogueSubsystem::EvaluateChoiceGates(FEclipseDialogueChoice& Choi
 			}
 			if (!bPass)
 			{
-				Choice.bAvailable = false;   // hidden: leave GateHint empty
+				// Hidden: no GateHint, and the choice is dropped from the
+				// node view entirely (bHiddenGateFailed).
+				Choice.bAvailable = false;
+				Choice.bHiddenGateFailed = true;
+			}
+		}
+		else if (D.Kind == EEclipseStageDirectiveKind::StatCompareGate)
+		{
+			// Silent unlock on a visible stat ("ZEN >= 3"): below the bar the
+			// option simply doesn't exist — new dialogue appears as the stat
+			// grows, with no revealing greyed row or hint.
+			const int32 Cur = State->GetStatValue(D.Stat);
+			bool bPass = false;
+			switch (D.Op)
+			{
+			case EEclipseCompareOp::Less:         bPass = Cur <  D.Value; break;
+			case EEclipseCompareOp::LessEqual:    bPass = Cur <= D.Value; break;
+			case EEclipseCompareOp::Equal:        bPass = Cur == D.Value; break;
+			case EEclipseCompareOp::NotEqual:     bPass = Cur != D.Value; break;
+			case EEclipseCompareOp::GreaterEqual: bPass = Cur >= D.Value; break;
+			case EEclipseCompareOp::Greater:      bPass = Cur >  D.Value; break;
+			}
+			if (!bPass)
+			{
+				Choice.bAvailable = false;
+				Choice.bHiddenGateFailed = true;
 			}
 		}
 		else if (D.Kind == EEclipseStageDirectiveKind::IdentityGate)
@@ -1317,6 +1377,7 @@ void UEclipseDialogueSubsystem::EvaluateChoiceGates(FEclipseDialogueChoice& Choi
 			if (!bPass)
 			{
 				Choice.bAvailable = false;
+				Choice.bHiddenGateFailed = true;
 			}
 		}
 	}
