@@ -67,10 +67,19 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseButton;
 
-	// Speaker portrait — sticks off the left edge of the dialogue panel,
-	// slightly overlapping. Texture sourced from active NPC's PortraitTexture.
+	// Speaker portrait — top-left of the screen, next to SpeakerNameText.
+	// Texture sourced from active NPC's PortraitTexture. Visible only
+	// during the NPC's "turn" (see HandleNodeChanged / MakeChoice) —
+	// hidden the instant the player commits a choice, re-shown when the
+	// NPC's next line arrives.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> SpeakerPortrait;
+
+	// Whether the active NPC actually has a portrait texture assigned.
+	// Turn-based show/hide only re-shows the portrait when this is true —
+	// otherwise an NPC with no portrait would flash an empty frame every
+	// time it's "their turn" again.
+	bool bSpeakerHasPortrait = false;
 
 	// ── Speech-bubble history (Visual-Novel L/R stacking) ───────────────
 	// Two scroll boxes anchored to the screen edges. The player's chosen
@@ -192,6 +201,11 @@ private:
 	void MakeChoice(int32 Index);
 	void RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices);
 
+	// Base tint per choice row (parallel to ChoiceButtons). NativeTick's
+	// hover pass paints the row's text white while hovered or selected,
+	// and restores this base tint otherwise.
+	TArray<FLinearColor> ChoiceBaseTints;
+
 	// Resolves the display tint for a choice row. Skill-check choices are
 	// colour-coded by stat (pink=AESTHETICS, gold=RHYTHM, blue=ZEN,
 	// violet=PSYCHEDELICS) — plain cream at levels 1-2, blending toward
@@ -200,22 +214,65 @@ private:
 	// Non-skill choices keep cream (red when gate-blocked).
 	FLinearColor ChoiceTint(const struct FEclipseDialogueChoice& Choice) const;
 
-	// ── Bubble construction helpers ─────────────────────────────────────
+	// ── Caption-row construction helpers ────────────────────────────────
 	//
-	// Appends a new black semi-transparent bubble to one of the history
-	// scroll boxes. Returns the inner UWrapBox so the caller can drive the
-	// per-word fade-in (HandleNodeChanged redirects `BodyWords` here so
-	// StartBodyAnimation lands on the new bubble). The speaker caption
-	// renders above the words inside the bubble.
+	// Appends a new closed-caption-style row to one of the history scroll
+	// boxes: a speaker-caption label above a UWrapBox of individually
+	// black-boxed word chips (no chat-bubble container, no tail). Returns
+	// the inner UWrapBox so the caller can drive the word reveal
+	// (HandleNodeChanged redirects `BodyWords` here so StartBodyAnimation
+	// lands in the new row's wrap box).
 	//
 	// EffectsOut, when non-null, receives a UTextBlock the caller can fill
-	// with the orange stage-direction effects line (sits below the words
-	// inside the same bubble; collapsed by default).
+	// with the orange stage-direction effects line (sits below the words;
+	// collapsed by default).
+	//
+	// bAlignRight anchors the whole row to the right edge of the transcript
+	// column instead of the left — NPC lines stay left-aligned, the
+	// player's own lines are pushed right, so a turn's speaker is readable
+	// at a glance even with the boxes' near-full-width stagger.
 	class UWrapBox* AppendBubble(class UScrollBox* Box,
 	                             const FText& SpeakerCaption,
 	                             const FLinearColor& CaptionTint,
-	                             bool bAlignRight,
-	                             class UTextBlock** EffectsOut = nullptr);
+	                             class UTextBlock** EffectsOut = nullptr,
+	                             bool bAlignRight = false);
+
+	// Splits a body/choice string into "sentences" — runs of words up to
+	// and including one ending in . ! or ? (tolerating a trailing quote or
+	// paren after the mark, e.g. `crying."`). A trailing run with no
+	// terminal punctuation is still returned as its own group. Drives the
+	// per-sentence caption background box below (one box per sentence, not
+	// per word).
+	static TArray<TArray<FString>> SplitIntoSentences(const FString& Text);
+
+	// One closed-caption "sentence box": a black rounded background that
+	// spans however many lines its words wrap to, plus the inner UWrapBox
+	// the caller populates with that sentence's bare (unboxed) word
+	// UTextBlocks.
+	struct FSentenceBox
+	{
+		class UBorder*  Box   = nullptr;
+		class UWrapBox* Inner = nullptr;
+	};
+
+	// Builds one FSentenceBox and appends it to Parent, reserving a full-row
+	// SizeBox "slot" (WidthOverride = WrapWidth) so the NEXT sentence is
+	// still forced onto a new line. The visible Border inside that slot
+	// stays pinned to the row's speaker-side edge (bAlignRight false = left,
+	// for NPC rows; true = right, for the player's rows) — no left/right
+	// swing — but every other sentence (SentenceIndex parity) gets a small
+	// ~1-2-letter nudge further in from that edge, just enough to read as a
+	// subtle stagger on an otherwise continuous block of text. bIsFirst/
+	// bIsLast square off the corners that touch the neighbouring box above/
+	// below (InnerSlotPadding between boxes is 0 — see AppendBubble) so
+	// consecutive boxes read as one joined strip; only the very first box
+	// keeps rounded top corners and the very last keeps rounded bottom
+	// corners. Box starts Collapsed; the caller reveals it (SetVisibility)
+	// the moment the sentence's first word becomes due, and it stays
+	// Visible (growing) as later words in the same sentence reveal.
+	FSentenceBox BeginSentenceBox(class UWrapBox* Parent, float WrapWidth,
+	                               int32 SentenceIndex, bool bIsFirst, bool bIsLast,
+	                               bool bAlignRight = false);
 
 	// Caches the choices passed to the most recent RebuildChoices so
 	// MakeChoice can grab the chosen line's text and stamp a player-side
@@ -238,17 +295,16 @@ private:
 	virtual void NativeOnFocusLost(const FFocusEvent& InFocusEvent) override;
 	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
 
-	// ── Word-by-word fade-in animation state ──
-	struct FDlgWord
-	{
-		TObjectPtr<UTextBlock> Block;
-		float SpawnDelay = 0.f;   // seconds from anim start
-	};
-
+	// ── Word-by-word reveal animation state ──
+	// AnimWordBlocks holds the REVEAL TARGET for each word — the whole
+	// black caption-chip UBorder for body words, or the bare UTextBlock for
+	// choice words (which aren't chipped, see AnimateChoiceText). Revealing
+	// a word is a single Visibility flip (Collapsed → Visible) at its
+	// scheduled delay — no per-frame colour or alpha interpolation, no
+	// fade. This is what's animated: WHEN each word/chip pops in, not HOW.
 	UPROPERTY()
-	TArray<TObjectPtr<UTextBlock>> AnimWordBlocks;   // for GC root
+	TArray<TObjectPtr<UWidget>> AnimWordBlocks;      // for GC root
 	TArray<float> AnimWordDelays;                    // parallel to AnimWordBlocks
-	TArray<FLinearColor> AnimWordTints;              // parallel — per-word target colour
 	TArray<bool>  AnimWordMumbleFired;               // parallel — guard for one-shot mumble per word
 
 	// Per-choice reveal timing: each button stays Collapsed until DialogueAnimTime
@@ -276,14 +332,6 @@ private:
 	// Total wall-clock seconds the body animation will take (used to delay
 	// the choice rows so they cascade in after the body completes).
 	float BodyAnimTotalTime = 0.f;
-
-	// Tunables — slower than the chat-typer default so the prose has weight.
-	// Designer can tweak these per-WBP without a recompile.
-	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Animation")
-	float WordSpawnInterval = 0.11f;   // ~9 words/sec — readable, not breathless
-
-	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Animation")
-	float WordFadeDuration  = 0.32f;   // each word fades over ~320ms
 
 	void StartBodyAnimation(const FString& BodyString);
 

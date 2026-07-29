@@ -16,8 +16,10 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "Components/ButtonSlot.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "NPC/EclipseNpcCharacter.h"
@@ -63,11 +65,10 @@ bool UEclipseDialogueWidget::Initialize()
 
 		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(Panel))
 		{
-			// 480 wide, full-height, anchored to right edge
-			CSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
-			CSlot->SetAlignment(FVector2D(1.f, 0.f));
-			CSlot->SetPosition(FVector2D(0.f, 0.f));
-			CSlot->SetSize(FVector2D(480.f, 0.f));
+			// Right third of the screen, full height (anchor-stretched so the
+			// box tracks viewport width instead of a fixed pixel size).
+			CSlot->SetAnchors(FAnchors(2.f / 3.f, 0.f, 1.f, 1.f));
+			CSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
 		}
 
 		// ── Vertical column inside panel: speaker, body, choices ───────────
@@ -78,15 +79,15 @@ bool UEclipseDialogueWidget::Initialize()
 		// Speaker name (BMSPA, cyan)
 		SpeakerNameText = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("SpeakerNameText"));
-		SpeakerNameText->SetFont(MakeBMSPA(/*Size=*/22, /*Letter=*/3.f));
-		SpeakerNameText->SetColorAndOpacity(FSlateColor(Cyan));
+		SpeakerNameText->SetFont(MakeBMSPA(/*Size=*/18, /*Letter=*/3.f));
+		SpeakerNameText->SetColorAndOpacity(FSlateColor(DialogueRed));
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SpeakerNameText))
 			S->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
 
 		// Body text (RodinPro, cream)
 		BodyText = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("BodyText"));
-		BodyText->SetFont(MakeRodin(/*Size=*/18));
+		BodyText->SetFont(MakeRodin(/*Size=*/14));
 		BodyText->SetColorAndOpacity(FSlateColor(Cream));
 		BodyText->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BodyText))
@@ -112,36 +113,8 @@ bool UEclipseDialogueWidget::Initialize()
 			UVerticalBox::StaticClass(), TEXT("ChoicesBox"));
 		Column->AddChildToVerticalBox(ChoicesBox);
 
-		// ── Close button (chalk circle ×, top-right) ────────────────────────
-		CloseButton = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("CloseButton"));
-		FButtonStyle CloseStyle;
-		CloseStyle.Normal   = RoundedBrush(FLinearColor(0.031f, 0.035f, 0.047f, 0.6f),
-		                                   FLinearColor(0.945f, 0.929f, 0.851f, 0.65f),
-		                                   1.f, 14.f);   // 14 = half of 28 → circle
-		CloseStyle.Hovered  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.08f),
-		                                   FLinearColor::White, 1.f, 14.f);
-		CloseStyle.Pressed  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f),
-		                                   FLinearColor::White, 1.f, 14.f);
-		CloseStyle.Disabled = CloseStyle.Normal;
-		CloseButton->SetStyle(CloseStyle);
-
-		UTextBlock* CloseLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("CloseLabel"));
-		CloseLabel->SetText(FText::FromString(TEXT("×"))); // ×
-		CloseLabel->SetFont(MakeBMSPA(16));
-		CloseLabel->SetColorAndOpacity(FSlateColor(CreamDim));
-		CloseLabel->SetJustification(ETextJustify::Center);
-		CloseButton->SetContent(CloseLabel);
-
-		if (UCanvasPanelSlot* CSlot = Root->AddChildToCanvas(CloseButton))
-		{
-			CSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
-			CSlot->SetAlignment(FVector2D(1.f, 0.f));
-			CSlot->SetPosition(FVector2D(-18.f, 14.f));
-			CSlot->SetSize(FVector2D(28.f, 28.f));
-			CSlot->SetZOrder(2);
-		}
+		// (No close button — dialogue exits only through dialogue options
+		// like [Leave] / [Goodbye].)
 	}
 
 	return Super::Initialize();
@@ -228,17 +201,18 @@ void UEclipseDialogueWidget::NativeConstruct()
 		{
 			UBorder* OuterBox = WidgetTree->ConstructWidget<UBorder>(
 				UBorder::StaticClass(), TEXT("DialogueOuterBox"));
+			// Fully transparent — no panel behind the transcript. Individual
+			// closed-caption sentence boxes (BeginSentenceBox) carry their
+			// own black background now, so the captions read as if printed
+			// straight over the game world, not inside a UI panel.
 			OuterBox->SetBrush(RoundedBrush(
-				FLinearColor(0.039f, 0.043f, 0.059f, 0.92f),
-				FLinearColor(0.945f, 0.929f, 0.851f, 0.40f),
-				1.5f, 8.f));
+				FLinearColor::Transparent, FLinearColor::Transparent, 0.f, 8.f));
 			OuterBox->SetPadding(FMargin(16.f, 14.f));
 			if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(OuterBox))
 			{
-				CS->SetAnchors(FAnchors(1.f, 0.05f, 1.f, 0.95f));
-				CS->SetAlignment(FVector2D(1.f, 0.f));
-				CS->SetPosition(FVector2D(-20.f, 0.f));
-				CS->SetSize(FVector2D(500.f, 0.f));
+				// Right third of the viewport (anchor-stretched), 90% height.
+				CS->SetAnchors(FAnchors(2.f / 3.f, 0.05f, 1.f, 0.95f));
+				CS->SetOffsets(FMargin(0.f, 0.f, 12.f, 0.f));
 				CS->SetZOrder(1);
 			}
 
@@ -274,7 +248,7 @@ void UEclipseDialogueWidget::NativeConstruct()
 			}
 
 			UE_LOG(LogEclipse, Log,
-				TEXT("Dlg: DialogueOuterBox injected (500w, 90%% height, right)"));
+				TEXT("Dlg: DialogueOuterBox injected (right third, 90%% height)"));
 		}
 	}
 
@@ -367,17 +341,104 @@ void UEclipseDialogueWidget::NativeConstruct()
 			{
 				UE_LOG(LogEclipse, Log, TEXT("Dlg: collapsed %d PanelFade_N layer(s)"), HiddenLayers);
 			}
+
+			// 1b. Re-anchor the box + legacy panel to the RIGHT THIRD of the
+			//     viewport, whether they came from the WBP bake (fixed 480/500px
+			//     right-anchored) or the runtime injection above. Idempotent —
+			//     anchor-stretched so the box tracks viewport width.
+			auto AnchorRightThird = [this](const TCHAR* Name, float Top, float Bottom, float RightMargin)
+			{
+				if (UWidget* W = WidgetTree->FindWidget(FName(Name)))
+				{
+					if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(W->Slot))
+					{
+						CS->SetAnchors(FAnchors(2.f / 3.f, Top, 1.f, Bottom));
+						CS->SetOffsets(FMargin(0.f, 0.f, RightMargin, 0.f));
+					}
+				}
+			};
+			AnchorRightThird(TEXT("DialogueOuterBox"), 0.05f, 0.95f, 12.f);
+			AnchorRightThird(TEXT("DialoguePanel"),    0.f,   1.f,   0.f);
+
+			// 1c. Portrait moved to the TOP-LEFT of the screen (was flush
+			//     against the transcript box's left edge) — a compact HUD
+			//     corner avatar next to the speaker's name, matching a
+			//     classic VN name-tag layout. Outline stays red.
+			constexpr float PortraitW = 100.f, PortraitH = 140.f, CornerMargin = 24.f;
+			if (UWidget* P = WidgetTree->FindWidget(TEXT("SpeakerPortraitSize")))
+			{
+				if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(P->Slot))
+				{
+					CS->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+					CS->SetAlignment(FVector2D(0.f, 0.f));
+					CS->SetPosition(FVector2D(CornerMargin, CornerMargin));
+					CS->SetSize(FVector2D(PortraitW, PortraitH));
+					CS->SetZOrder(4);
+				}
+			}
+			if (USizeBox* PSize = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("SpeakerPortraitSize"))))
+			{
+				PSize->SetWidthOverride(PortraitW);
+				PSize->SetHeightOverride(PortraitH);
+			}
+			if (SpeakerPortrait)
+			{
+				// Rebuild the baked brush with a red outline. Mirrors the
+				// populator's navy-fill RoundedBox; SetBrushFromTexture later
+				// only swaps the resource, so the outline survives.
+				FSlateBrush PB;
+				PB.DrawAs    = ESlateBrushDrawType::RoundedBox;
+				PB.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
+				PB.OutlineSettings.CornerRadii  = FVector4(6, 6, 6, 6);
+				PB.OutlineSettings.Color        = FSlateColor(DialogueRed);
+				PB.OutlineSettings.Width        = 2.f;
+				PB.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+				PB.ImageSize = FVector2D(PortraitW, PortraitH);
+				SpeakerPortrait->SetBrush(PB);
+			}
+
+			// 1d. Speaker name tag — reparented out of the (now transparent,
+			//     right-third-anchored) DialogueColumn onto the root canvas
+			//     directly, so it can sit next to the portrait in the
+			//     top-left corner instead of inside the transcript box.
+			//     Idempotent: re-parenting an already-reparented widget into
+			//     the same panel is a harmless no-op.
+			UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+			if (SpeakerNameText && RootCanvas)
+			{
+				if (UPanelWidget* OldParent = SpeakerNameText->GetParent())
+				{
+					if (OldParent != RootCanvas)
+					{
+						OldParent->RemoveChild(SpeakerNameText);
+					}
+				}
+				if (SpeakerNameText->GetParent() != RootCanvas)
+				{
+					RootCanvas->AddChildToCanvas(SpeakerNameText);
+				}
+				if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(SpeakerNameText->Slot))
+				{
+					CS->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+					CS->SetAlignment(FVector2D(0.f, 0.f));
+					CS->SetPosition(FVector2D(CornerMargin + PortraitW + 14.f, CornerMargin + PortraitH * 0.5f - 14.f));
+					CS->SetZOrder(4);
+				}
+				SpeakerNameText->SetFont(MakeBMSPA(/*Size=*/20, /*Letter=*/2.5f));
+				SpeakerNameText->SetColorAndOpacity(FSlateColor(DialogueRed));
+			}
 		}
 
-		// 2. Collapse the in-column speaker / body / effects widgets.
+		// 2. Collapse the in-column body / effects widgets.
 		//    Each new dialogue line is now a self-contained bubble appended
-		//    to LeftHistoryScroll / RightHistoryScroll — the original
-		//    column-stacked instances render nothing and just take up space.
-		//    BodyWords is REPOINTED in HandleNodeChanged (not collapsed
-		//    here) because StartBodyAnimation drives it; collapsing the
-		//    in-column WrapBox is fine because we redirect the pointer
-		//    before the first node arrives.
-		if (SpeakerNameText) SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
+		//    to LeftHistoryScroll / RightHistoryScroll — these in-column
+		//    instances render nothing and just take up space. SpeakerNameText
+		//    is NOT collapsed here — it's the top-left name tag now (see 1d),
+		//    with its own turn-based visibility (HandleNodeChanged shows it,
+		//    MakeChoice hides it). BodyWords is REPOINTED in HandleNodeChanged
+		//    (not collapsed here) because StartBodyAnimation drives it;
+		//    collapsing the in-column WrapBox is fine because we redirect the
+		//    pointer before the first node arrives.
 		if (BodyText)        BodyText->SetVisibility(ESlateVisibility::Collapsed);
 		if (EffectsLineText) EffectsLineText->SetVisibility(ESlateVisibility::Collapsed);
 		if (BodyWords)       BodyWords->SetVisibility(ESlateVisibility::Collapsed);
@@ -414,39 +475,27 @@ void UEclipseDialogueWidget::NativeConstruct()
 			Div->SetVisibility(ESlateVisibility::Collapsed);
 		}
 
-		// 5. Reparent ChoicesBox into the DialogueOuterColumn (below the
-		//    bubble scroll + divider). Both populator paths (C++ fallback +
-		//    EclipseUiBuilder) park ChoiceBtn_N inside ChoicesBox, so
-		//    reparenting ChoicesBox carries all buttons with it. The outer
-		//    column already has the history scroll filling its top portion
-		//    and a 1-px divider below it — ChoicesBox becomes the third
-		//    (auto-sized) child below the divider, giving the DE-style
-		//    "transcript on top, choices below" layout inside a single
-		//    box.
-		if (ChoicesBox && WidgetTree)
-		{
-			UVerticalBox* OuterCol = Cast<UVerticalBox>(
-				WidgetTree->FindWidget(TEXT("DialogueOuterColumn")));
-			const bool bAlreadyInOuter = OuterCol &&
-				(ChoicesBox->GetParent() == OuterCol);
-			if (OuterCol && !bAlreadyInOuter)
-			{
-				ChoicesBox->RemoveFromParent();
-				OuterCol->AddChildToVerticalBox(ChoicesBox);
-				UE_LOG(LogEclipse, Log,
-					TEXT("Dlg: ChoicesBox reparented into DialogueOuterColumn (below divider)"));
-			}
-		}
+		// 5. ChoicesBox no longer gets parked once below the transcript —
+		//    HandleNodeChanged now re-parents it into RightHistoryScroll
+		//    itself, as the last child right after the newest NPC row, every
+		//    turn. That keeps the options directly under whatever's most
+		//    recently printed instead of pinned to a fixed screen position,
+		//    and lets the player's next line + the following NPC line just
+		//    continue the same scrolling column once a choice is made
+		//    (MakeChoice collapses ChoicesBox rather than removing it, so
+		//    the player's row lands exactly where the options were).
 	}
 	#endif // bubble runtime override
 
 	// Hidden until a dialogue opens
 	SetVisibility(ESlateVisibility::Collapsed);
 
+	// Close-X retired: dialogue exits only through dialogue options
+	// ([Leave] / [Goodbye] — every leaf node auto-offers one). Collapse
+	// any CloseButton still baked into an older WBP.
 	if (CloseButton)
 	{
-		CloseButton->SetClickMethod(EButtonClickMethod::MouseDown);
-		CloseButton->OnClicked.AddDynamic(this, &UEclipseDialogueWidget::OnCloseClicked);
+		CloseButton->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (UEclipseDialogueSubsystem* DS = GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
@@ -480,69 +529,183 @@ void UEclipseDialogueWidget::NativeDestruct()
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Speech-bubble construction
+//  Closed-caption row construction
 //
-//  AppendBubble builds one black semi-transparent "cloud" (a UBorder with
-//  a UVerticalBox of speaker caption + UWrapBox of words + optional effects
-//  line) and appends it to the supplied UScrollBox. The wrap box is
-//  returned so the caller can hook the existing word-by-word fade-in
-//  (HandleNodeChanged repoints `BodyWords` here so StartBodyAnimation
-//  lands on the new bubble's container).
+//  AppendBubble builds one caption row — a UVerticalBox of speaker-caption
+//  label + UWrapBox of per-SENTENCE black caption boxes (BeginSentenceBox)
+//  + optional effects line — and appends it to the supplied UScrollBox. No
+//  chat-bubble container, no per-row background, no tail: each SENTENCE
+//  carries its own black box (grouping its words, not one box per word),
+//  the row itself is bare. The wrap box is returned so the caller can hook
+//  the word reveal (HandleNodeChanged repoints `BodyWords` here so
+//  StartBodyAnimation lands in the new row).
 //
-//  bAlignRight controls which screen edge the bubble hugs inside its
-//  scroll box — NPC lines go right, the player's chosen lines go left.
-//  WrapSize is set explicitly on the inner WrapBox so long lines wrap
-//  within the bubble instead of pushing it off the visible scroll area.
+//  WrapSize is set explicitly so long lines wrap within the transcript
+//  column instead of pushing boxes off the visible scroll area.
 // ─────────────────────────────────────────────────────────────
+
+TArray<TArray<FString>> UEclipseDialogueWidget::SplitIntoSentences(const FString& Text)
+{
+	TArray<FString> Words;
+	Text.ParseIntoArrayWS(Words);
+
+	auto EndsSentence = [](const FString& Word) -> bool
+	{
+		FString W = Word;
+		// Tolerate a trailing quote/paren after the mark, e.g. `crying."`.
+		while (W.Len() > 0)
+		{
+			const TCHAR C = W[W.Len() - 1];
+			if (C == TEXT('"') || C == TEXT('\'') || C == TEXT(')') || C == TEXT(']'))
+			{
+				W.LeftChopInline(1);
+				continue;
+			}
+			break;
+		}
+		if (W.IsEmpty()) return false;
+		const TCHAR Last = W[W.Len() - 1];
+		return Last == TEXT('.') || Last == TEXT('!') || Last == TEXT('?');
+	};
+
+	TArray<TArray<FString>> Sentences;
+	TArray<FString> Current;
+	for (const FString& Word : Words)
+	{
+		Current.Add(Word);
+		if (EndsSentence(Word))
+		{
+			Sentences.Add(MoveTemp(Current));
+			Current.Reset();
+		}
+	}
+	if (Current.Num() > 0)
+	{
+		Sentences.Add(MoveTemp(Current));
+	}
+	return Sentences;
+}
+
+UEclipseDialogueWidget::FSentenceBox UEclipseDialogueWidget::BeginSentenceBox(UWrapBox* Parent, float WrapWidth,
+	int32 SentenceIndex, bool bIsFirst, bool bIsLast, bool bAlignRight)
+{
+	using namespace EclipseUI;
+	FSentenceBox Result;
+	if (!WidgetTree || !Parent) return Result;
+
+	// The visible box is only trimmed by enough to leave room for the small
+	// per-line nudge below — it should read as a continuous block of text,
+	// not distinct floating boxes.
+	const float VisibleCap = FMath::Max(120.f, WrapWidth - 24.f);
+
+	UWrapBox* Inner = WidgetTree->ConstructWidget<UWrapBox>(
+		UWrapBox::StaticClass(), NAME_None);
+	Inner->SetInnerSlotPadding(FVector2D(0.f, 0.f));
+	Inner->SetExplicitWrapSize(true);
+	// Subtract the box's own horizontal padding so wrapped text doesn't
+	// press against — or overflow past — the black background.
+	Inner->SetWrapSize(FMath::Max(80.f, VisibleCap - 32.f));
+
+	UBorder* Box = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(), NAME_None);
+
+	// Square off whichever corners touch a neighbouring box (InnerSlotPadding
+	// between sentence boxes is 0 — see AppendBubble) so the stack reads as
+	// one continuous joined strip; only the outermost edges stay rounded.
+	FSlateBrush Brush;
+	Brush.DrawAs    = ESlateBrushDrawType::RoundedBox;
+	Brush.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.80f));
+	Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
+	Brush.OutlineSettings.Width = 0.f;
+	const float TopR    = bIsFirst ? 8.f : 0.f;
+	const float BottomR = bIsLast  ? 8.f : 0.f;
+	Brush.OutlineSettings.CornerRadii  = FVector4(TopR, TopR, BottomR, BottomR); // TL,TR,BR,BL
+	Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+	Box->SetBrush(Brush);
+
+	Box->SetPadding(FMargin(16.f, 10.f));
+	Box->SetContent(Inner);
+	Box->SetVisibility(ESlateVisibility::Collapsed);   // revealed by the caller
+
+	// Reserve a full-row SizeBox so the next sentence is still forced onto a
+	// new line. The visible Box stays pinned to the row's speaker-side edge
+	// (left for NPC, right for the player) — no left/right swing — but every
+	// other sentence gets a small nudge (~1-2 letters) further in from that
+	// edge, just enough to read as a subtle stagger on a continuous block.
+	const float Nudge = (SentenceIndex % 2 == 1) ? 14.f : 0.f;
+	USizeBox* Slot = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), NAME_None);
+	Slot->SetWidthOverride(WrapWidth);
+	Slot->SetContent(Box);
+	if (USizeBoxSlot* SBS = Cast<USizeBoxSlot>(Box->Slot))
+	{
+		SBS->SetHorizontalAlignment(bAlignRight ? HAlign_Right : HAlign_Left);
+		SBS->SetVerticalAlignment(VAlign_Top);
+		SBS->SetPadding(bAlignRight ? FMargin(0.f, 0.f, Nudge, 0.f) : FMargin(Nudge, 0.f, 0.f, 0.f));
+	}
+
+	if (UWrapBoxSlot* WS = Parent->AddChildToWrapBox(Slot))
+	{
+		WS->SetHorizontalAlignment(HAlign_Fill);
+	}
+
+	Result.Box   = Box;
+	Result.Inner = Inner;
+	return Result;
+}
 
 UWrapBox* UEclipseDialogueWidget::AppendBubble(UScrollBox* Box,
 	const FText& SpeakerCaption, const FLinearColor& CaptionTint,
-	bool bAlignRight, UTextBlock** EffectsOut)
+	UTextBlock** EffectsOut, bool bAlignRight)
 {
 	using namespace EclipseUI;
 	if (!Box || !WidgetTree) return nullptr;
 
-	UBorder* Bubble = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), NAME_None);
-	Bubble->SetBrush(RoundedBrush(
-		FLinearColor(0.f, 0.f, 0.f, 0.70f),                       // black 70%
-		FLinearColor(0.945f, 0.929f, 0.851f, 0.18f),              // soft chalk outline
-		1.f, 12.f));
-	Bubble->SetPadding(FMargin(14.f, 10.f));
-	Bubble->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-
 	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(
 		UVerticalBox::StaticClass(), NAME_None);
-	Bubble->SetContent(Col);
+	Col->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
-	// Speaker caption — small BMSPA tint matching the side (cyan for NPC,
-	// cream for player by convention; caller passes the colour).
+	// Speaker caption — BMSPA label above the caption boxes (red for NPC,
+	// cream "YOU" for the player; caller passes the colour). This is the
+	// only per-speaker visual distinction now — caption boxes render the
+	// same black-on-white for both sides, matching real closed captions.
 	UTextBlock* Caption = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), NAME_None);
-	Caption->SetFont(MakeBMSPA(/*Size=*/14, /*Letter=*/2.f));
+	Caption->SetFont(MakeBMSPA(/*Size=*/16, /*Letter=*/2.f));
 	Caption->SetColorAndOpacity(FSlateColor(CaptionTint));
 	Caption->SetText(SpeakerCaption);
 	Caption->SetJustification(bAlignRight ? ETextJustify::Right : ETextJustify::Left);
 	if (UVerticalBoxSlot* S = Col->AddChildToVerticalBox(Caption))
-		S->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
 
-	// Inner WrapBox for per-word fade-in. Explicit wrap so long lines
-	// stack rows instead of stretching the bubble off the scroll edge.
+	// WrapBox of per-SENTENCE caption boxes (BeginSentenceBox). Explicit
+	// wrap so long lines stack rows within the transcript column. Zero gap
+	// so consecutive sentence boxes touch — bottom of one flush against the
+	// top of the next, joining the stack into one strip (see the squared-off
+	// touching corners + left/right stagger in BeginSentenceBox).
 	UWrapBox* Words = WidgetTree->ConstructWidget<UWrapBox>(
 		UWrapBox::StaticClass(), NAME_None);
 	Words->SetInnerSlotPadding(FVector2D(0.f, 0.f));
 	Words->SetExplicitWrapSize(true);
-	Words->SetWrapSize(320.f);
+	// Wrap relative to the (anchor-stretched) transcript column so rows use
+	// the right-third box's width. Cached geometry is zero on the very
+	// first frames after opening — fall back to a safe fixed wrap there.
+	float WrapW = 400.f;
+	{
+		const float LocalW = Box->GetCachedGeometry().GetLocalSize().X;
+		if (LocalW > 120.f) WrapW = LocalW - 24.f;
+	}
+	Words->SetWrapSize(WrapW);
 	Col->AddChildToVerticalBox(Words);
 
-	// Optional effects line under the body words. Collapsed by default —
-	// the caller sets text + flips visibility if the node has any stage
+	// Optional effects line under the words. Collapsed by default — the
+	// caller sets text + flips visibility if the node has any stage
 	// directives.
 	if (EffectsOut)
 	{
 		UTextBlock* EffectsBlk = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), NAME_None);
-		EffectsBlk->SetFont(MakeRodin(14));
+		EffectsBlk->SetFont(MakeRodin(16));
 		EffectsBlk->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.65f, 0.25f, 0.95f)));
 		EffectsBlk->SetAutoWrapText(true);
 		EffectsBlk->SetVisibility(ESlateVisibility::Collapsed);
@@ -551,15 +714,17 @@ UWrapBox* UEclipseDialogueWidget::AppendBubble(UScrollBox* Box,
 		*EffectsOut = EffectsBlk;
 	}
 
-	// Slot the bubble into the scroll box with edge-aligned HAlign so the
-	// bubble sizes to content and hugs the appropriate side.
-	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(Box->AddChild(Bubble)))
+	// NPC lines hug the left edge of the transcript; the player's own lines
+	// are pushed to the right edge (bAlignRight) — a clear at-a-glance cue
+	// for who's speaking that survives even with the near-full-width box
+	// stagger.
+	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(Box->AddChild(Col)))
 	{
 		SS->SetHorizontalAlignment(bAlignRight ? HAlign_Right : HAlign_Left);
-		SS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		SS->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
 	}
 
-	// Auto-scroll so the newest bubble is always visible.
+	// Auto-scroll so the newest row is always visible.
 	Box->ScrollToEnd();
 
 	return Words;
@@ -610,10 +775,14 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 		bSpeakerIsAngel ? TEXT("YES") : TEXT("no"),
 		DialogueMumbleSound ? TEXT("set") : TEXT("none"));
 
-	// Swap in the speaker portrait if one is assigned on the NPC.
+	// Swap in the speaker portrait if one is assigned on the NPC. Turn-based
+	// show/hide (HandleNodeChanged / MakeChoice) only re-shows it when
+	// bSpeakerHasPortrait is true, so an NPC with no portrait never flashes
+	// an empty frame on their turn.
+	bSpeakerHasPortrait = (Npc && Npc->PortraitTexture != nullptr);
 	if (SpeakerPortrait)
 	{
-		if (Npc && Npc->PortraitTexture)
+		if (bSpeakerHasPortrait)
 		{
 			SpeakerPortrait->SetBrushFromTexture(Npc->PortraitTexture, /*bMatchSize=*/false);
 			SpeakerPortrait->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -658,24 +827,31 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 	// off-centre hover/click registration on the buttons inside.
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
-	// Keep the legacy in-column speaker label up-to-date (it's collapsed in
-	// NativeConstruct so nothing renders, but the assignment is harmless and
-	// keeps a fallback if the bubble path fails to spawn for any reason).
+	// This fires on every NPC line — i.e. the start of the NPC's "turn".
+	// Re-show the top-left name tag + portrait (hidden by MakeChoice during
+	// the player's turn); the portrait only re-appears if this NPC actually
+	// has one (bSpeakerHasPortrait, set in HandleDialogueOpened).
 	if (SpeakerNameText)
+	{
 		SpeakerNameText->SetText(FText::FromName(Node.SpeakerName));
+		SpeakerNameText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	if (SpeakerPortrait && bSpeakerHasPortrait)
+	{
+		SpeakerPortrait->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
 
-	// Append a new NPC-side bubble and redirect the per-word animation +
-	// effects-line pointers so the existing machinery lands in the new
-	// bubble. The old WrapBox stays where it is in the prior bubble (in the
-	// scroll box) with its words intact — the history accumulates.
+	// Append a new NPC caption row and redirect the per-word animation +
+	// effects-line pointers so the existing machinery lands in the new row.
+	// The old WrapBox stays where it is in the prior row (in the scroll
+	// box) with its chips intact — the history accumulates.
 	if (RightHistoryScroll)
 	{
 		UTextBlock* BubbleEffects = nullptr;
 		UWrapBox* BubbleWords = AppendBubble(
 			RightHistoryScroll,
 			FText::FromName(Node.SpeakerName),
-			Cyan,                          // NPC caption tint
-			/*bAlignRight=*/true,
+			DialogueRed,                   // NPC caption tint (red accent)
 			&BubbleEffects);
 
 		if (BubbleWords)
@@ -700,6 +876,23 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 		BodyText->SetText(Node.Body);
 	}
 
+	// Move ChoicesBox to the very end of the transcript scroll, right after
+	// the NPC row just appended above — so the options always sit directly
+	// under the last line printed, not pinned to a fixed spot on screen.
+	// Same UVerticalBox instance every turn (never destroyed), just
+	// detached and re-added at the new end; RebuildChoices (below) then
+	// fills it with this node's rows.
+	if (RightHistoryScroll && ChoicesBox)
+	{
+		ChoicesBox->RemoveFromParent();
+		if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(ChoicesBox)))
+		{
+			SS->SetHorizontalAlignment(HAlign_Fill);
+			SS->SetPadding(FMargin(0.f, 4.f, 0.f, 12.f));
+		}
+		ChoicesBox->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+
 	// Runtime-inject + render the orange effects line below the body if the
 	// fragment has any. Empty Text → keep widget collapsed so it doesn't
 	// occupy space.
@@ -720,7 +913,7 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 		{
 			EffectsLineText = WidgetTree->ConstructWidget<UTextBlock>(
 				UTextBlock::StaticClass(), TEXT("EffectsLineText_Runtime"));
-			EffectsLineText->SetFont(EclipseUI::MakeRodin(14));
+			EffectsLineText->SetFont(EclipseUI::MakeRodin(16));
 			// Orange tint, slightly muted so it doesn't fight the cream body.
 			EffectsLineText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.65f, 0.25f, 0.95f)));
 			EffectsLineText->SetAutoWrapText(true);
@@ -781,7 +974,8 @@ void UEclipseDialogueWidget::HandleStatXPGranted(FName StatKey, int32 Amount, in
 	Line->SetColorAndOpacity(FSlateColor(XPGreen));
 	Line->SetText(FText::FromString(Msg));
 
-	// Naked line (no bubble), left-aligned under the player's chosen line.
+	// Naked line (no chip), left-aligned under the player's chosen line.
+	// Appears immediately — no fade.
 	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(Line)))
 	{
 		SS->SetHorizontalAlignment(HAlign_Left);
@@ -793,9 +987,14 @@ void UEclipseDialogueWidget::HandleStatXPGranted(FName StatKey, int32 Amount, in
 void UEclipseDialogueWidget::HandleDialogueClosed()
 {
 	SetVisibility(ESlateVisibility::Collapsed);
-	if (SpeakerNameText) SpeakerNameText->SetText(FText::GetEmpty());
+	if (SpeakerNameText)
+	{
+		SpeakerNameText->SetText(FText::GetEmpty());
+		SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	if (BodyText)        BodyText->SetText(FText::GetEmpty());
 	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+	bSpeakerHasPortrait = false;
 
 	// Clear the bubble transcript so the next conversation starts fresh —
 	// otherwise the previous NPC's lines would still be stacked when the
@@ -804,6 +1003,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (LeftHistoryScroll)  LeftHistoryScroll->ClearChildren();
 	if (RightHistoryScroll) RightHistoryScroll->ClearChildren();
 	CurrentChoices.Reset();
+	ChoiceBaseTints.Reset();
 
 	// Tear down the per-word animation state so we don't keep ticking dead
 	// references on the next NativeTick.
@@ -812,7 +1012,6 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (BodyWords) BodyWords->ClearChildren();
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
-	AnimWordTints.Reset();
 	AnimWordMumbleFired.Reset();
 	ChoiceRevealButtons.Reset();
 	ChoiceRevealDelays.Reset();
@@ -870,17 +1069,44 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Choice buttons — circle-numbered + text, mirrors HTML .dialogue-choice
+//  Choice buttons — plain text rows, mirrors HTML .dialogue-choice
 // ─────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Display text for a choice with the authored "[STAT:N]" prefix stripped
+	// from skill checks. The player never sees explicit requirements — the
+	// check reads through the stat colour coding and which options are
+	// available at all. The tag stays in the AUTHORED text (it documents the
+	// check for writers); only the rendered string loses it.
+	FString DisplayChoiceText(const FEclipseDialogueChoice& Choice)
+	{
+		FString S = Choice.Text.ToString();
+		if (Choice.bIsSkillCheck && S.StartsWith(TEXT("[")))
+		{
+			int32 CloseIdx = INDEX_NONE;
+			if (S.FindChar(TEXT(']'), CloseIdx))
+			{
+				S.RemoveAt(0, CloseIdx + 1);
+				S.TrimStartInline();
+			}
+		}
+		return S;
+	}
+}
 
 FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Choice) const
 {
 	using namespace EclipseUI;
 
+	// Resting text colour for options — white; hover/selection paints it
+	// red (NativeTick hover pass), skill checks blend toward their hue.
+	const FLinearColor ChoiceWhite(1.f, 1.f, 1.f, 1.f);
+
 	if (!Choice.bIsSkillCheck)
 	{
 		return Choice.bAvailable
-			? Cream
+			? ChoiceWhite
 			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red hint for blocked picks
 	}
 
@@ -893,7 +1119,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	else if (S == TEXT("zen"))          Hue = FLinearColor(0.45f, 0.75f, 1.00f);   // sky blue
 	else if (S == TEXT("psychedelics")) Hue = FLinearColor(0.72f, 0.45f, 1.00f);   // violet
 
-	// The colour EARNS its way in: levels 1-2 render plain cream like any
+	// The colour EARNS its way in: levels 1-2 render plain white like any
 	// other option; from level 3 the text blends toward the stat hue,
 	// reaching full saturation around level 9. Levelling a stat visibly
 	// colours-in every dialogue option keyed to it.
@@ -906,7 +1132,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 		}
 	}
 	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
-	return FMath::Lerp(Cream, Hue, Blend);
+	return FMath::Lerp(ChoiceWhite, Hue, Blend);
 }
 
 void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices)
@@ -927,6 +1153,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	if (PreBtns[0] != nullptr)
 	{
 		ChoiceButtons.Reset();
+		ChoiceBaseTints.Reset();
 		ChoiceRevealButtons.Reset();
 		ChoiceRevealDelays.Reset();
 		for (int32 i = 0; i < MaxSlots; ++i)
@@ -940,6 +1167,45 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			// FInputModeUIOnly first-click consumes focus and the second click
 			// finally registers as the press.
 			Btn->SetClickMethod(EButtonClickMethod::MouseDown);
+
+			// Ghost styling: the row is TEXT ONLY — no background at all in
+			// any state. The affordance is purely the text colour (white,
+			// turning red on hover/selection — NativeTick hover pass).
+			{
+				FButtonStyle Ghost;
+				Ghost.Normal   = RoundedBrush(FLinearColor::Transparent, FLinearColor::Transparent, 0.f, 0.f);
+				Ghost.Hovered  = Ghost.Normal;
+				Ghost.Pressed  = Ghost.Normal;
+				Ghost.Disabled = Ghost.Normal;
+				const FMargin RowPadding(10.f, 6.f);
+				Ghost.NormalPadding   = RowPadding;
+				Ghost.PressedPadding  = RowPadding;
+				Btn->SetStyle(Ghost);
+			}
+			// Row stretches to the full width of the dialogue box — both the
+			// button in its column AND the content row inside the button.
+			// UButtonSlot defaults to HAlign_Center, which shrink-wraps the
+			// text once the button chrome is invisible; force Fill.
+			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(Btn->Slot))
+			{
+				VS->SetHorizontalAlignment(HAlign_Fill);
+			}
+			if (UWidget* RowW = WidgetTree
+				? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceRow_%d"), i)))
+				: nullptr)
+			{
+				if (UButtonSlot* BS = Cast<UButtonSlot>(RowW->Slot))
+				{
+					BS->SetHorizontalAlignment(HAlign_Fill);
+				}
+			}
+			// Drop the circle-number chrome — plain text rows only.
+			if (UWidget* Circle = WidgetTree
+				? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceCircleSize_%d"), i)))
+				: nullptr)
+			{
+				Circle->SetVisibility(ESlateVisibility::Collapsed);
+			}
 
 			// Always (re)hook the callback. AddDynamic stringifies the function
 			// name at the macro callsite, so we need an explicit literal per slot
@@ -965,17 +1231,18 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				const bool bHasGateHint = !Choice.GateHint.IsEmpty();
 				Btn->SetIsEnabled(!bHasGateHint);
 
-				FString S = Choice.Text.ToString();
-				if (Choice.bIsSkillCheck && !Choice.bAvailable)
-				{
-					S += FString::Printf(TEXT("  [-%d STIMULATION]"), Choice.StimulationDamageOnFail);
-				}
+				// Stripped display text — no "[STAT:N]" tag, no failure-cost
+				// hint. Risky checks look like any other line; the outcome
+				// teaches the player. Gate hints (blocked actions) stay.
+				FString S = DisplayChoiceText(Choice);
 				if (bHasGateHint)
 				{
 					S += TEXT("  ") + Choice.GateHint.ToString();
 				}
-				// Per-stat colour coding + level-scaled opacity (see ChoiceTint).
+				// Per-stat colour coding (see ChoiceTint); grey base, white
+				// on hover — NativeTick's hover pass reads ChoiceBaseTints.
 				const FLinearColor Tint = ChoiceTint(Choice);
+				ChoiceBaseTints.Add(Tint);
 
 				// Each choice row stays Collapsed until the body has finished
 				// cascading; then they ripple in one-by-one. NativeTick flips
@@ -1024,6 +1291,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	if (!ChoicesBox) return;
 	ChoicesBox->ClearChildren();
 	ChoiceButtons.Reset();
+	ChoiceBaseTints.Reset();
 
 	for (int32 i = 0; i < Choices.Num() && i < MaxSlots; ++i)
 	{
@@ -1034,13 +1302,17 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			UButton::StaticClass(),
 			FName(*FString::Printf(TEXT("ChoiceBtn_%d"), i)));
 
+		// Ghost styling — the row is TEXT ONLY, no background in any state.
+		// The affordance is purely the text colour (white, turning red on
+		// hover/selection — NativeTick hover pass).
 		FButtonStyle BtnStyle;
-		// Subtle visible Normal state so the rows are clearly clickable
-		// (was fully transparent before — caused buttons to "disappear").
-		BtnStyle.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.04f));
-		BtnStyle.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.10f));
-		BtnStyle.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.16f));
-		BtnStyle.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.02f));
+		BtnStyle.Normal   = RoundedBrush(FLinearColor::Transparent, FLinearColor::Transparent, 0.f, 0.f);
+		BtnStyle.Hovered  = BtnStyle.Normal;
+		BtnStyle.Pressed  = BtnStyle.Normal;
+		BtnStyle.Disabled = BtnStyle.Normal;
+		const FMargin RowPadding(10.f, 6.f);
+		BtnStyle.NormalPadding  = RowPadding;
+		BtnStyle.PressedPadding = RowPadding;
 		Btn->SetStyle(BtnStyle);
 		// Failed skill-check choices stay CLICKABLE — see MakeChoice for the
 		// Energy-cost handling. But stage-directive gates ([STAT: N] /
@@ -1079,6 +1351,9 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		CircleSize->SetWidthOverride(24.f);
 		CircleSize->SetHeightOverride(24.f);
 		CircleSize->AddChild(CircleBg);
+		// Plain-text rows: number-circle chrome retired (kept in the tree
+		// for WBP-name compatibility, but never shown).
+		CircleSize->SetVisibility(ESlateVisibility::Collapsed);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(CircleSize))
 		{
@@ -1090,19 +1365,19 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
-		FString LabelStr = Choice.Text.ToString();
-		if (Choice.bIsSkillCheck && !Choice.bAvailable)
-		{
-			LabelStr += FString::Printf(TEXT("  [-%d STIMULATION]"), Choice.StimulationDamageOnFail);
-		}
+		// Stripped display text — see DisplayChoiceText. Gate hints stay.
+		FString LabelStr = DisplayChoiceText(Choice);
 		if (!Choice.GateHint.IsEmpty())
 		{
 			LabelStr += TEXT("  ") + Choice.GateHint.ToString();
 		}
 		Label->SetText(FText::FromString(LabelStr));
-		Label->SetFont(MakeRodin(15));
-		// Per-stat colour coding + level-scaled opacity (see ChoiceTint).
-		Label->SetColorAndOpacity(FSlateColor(ChoiceTint(Choice)));
+		Label->SetFont(MakeRodin(26));
+		// Per-stat colour coding (see ChoiceTint); grey base, white on
+		// hover — NativeTick's hover pass reads ChoiceBaseTints.
+		const FLinearColor Tint = ChoiceTint(Choice);
+		ChoiceBaseTints.Add(Tint);
+		Label->SetColorAndOpacity(FSlateColor(Tint));
 		Label->SetAutoWrapText(true);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
@@ -1112,6 +1387,12 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		}
 
 		Btn->SetContent(Row);
+		// UButtonSlot defaults to HAlign_Center — force Fill so the text
+		// row spans the ghost button's full width.
+		if (UButtonSlot* BS = Cast<UButtonSlot>(Row->Slot))
+		{
+			BS->SetHorizontalAlignment(HAlign_Fill);
+		}
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 		switch (i)
 		{
@@ -1141,18 +1422,10 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 
 void UEclipseDialogueWidget::HighlightChoice(int32 Index)
 {
-	using namespace EclipseUI;
-	for (int32 i = 0; i < ChoiceButtons.Num(); ++i)
-	{
-		UButton* Btn = ChoiceButtons[i];
-		if (!Btn) continue;
-		const bool bSel = (i == Index);
-		FButtonStyle S = Btn->GetStyle();
-		S.Normal = SolidBrush(bSel
-			? FLinearColor(0.945f, 0.929f, 0.851f, 0.18f)   // selected — bright cream
-			: FLinearColor(0.945f, 0.929f, 0.851f, 0.04f)); // unselected
-		Btn->SetStyle(S);
-	}
+	// Ghost-button restyle: selection is shown by the TEXT going white
+	// (NativeTick hover/selection pass reads SelectedIndex), never by a
+	// background brush. Just record the selection.
+	SelectedIndex = Index;
 }
 
 void UEclipseDialogueWidget::NavigateChoice(int32 Delta)
@@ -1215,14 +1488,27 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 		Audio->PlayUI(DialogueChoiceSound);
 	}
 
-	// Stamp a player-side bubble with the chosen line BEFORE dispatching to
-	// the subsystem — once MakeChoice returns the dialogue has already
+	// The player's turn starts now — hide the NPC's top-left name tag +
+	// portrait. HandleNodeChanged re-shows them the moment the NPC speaks
+	// again (or they stay hidden if this choice closes the dialogue).
+	if (SpeakerNameText) SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
+	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+
+	// Collapse (not remove) the just-clicked options — ChoicesBox stays
+	// exactly where it is in RightHistoryScroll (right after the NPC's last
+	// line), just zero-height now, so the player's row appended below lands
+	// in that same spot and the transcript reads as one continuous flow.
+	// HandleNodeChanged re-parents + re-shows ChoicesBox at the new end of
+	// the scroll once the next node's choices are ready.
+	if (ChoicesBox) ChoicesBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	// Stamp a player-side caption row with the chosen line BEFORE dispatching
+	// to the subsystem — once MakeChoice returns the dialogue has already
 	// advanced and CurrentChoices points at the next node's options. Player
-	// bubbles share the same RightHistoryScroll as the NPC's, just with
-	// bAlignRight=false so they hug the left edge of the column (DE-style
-	// "YOU" indent). The line is fully resolved instantly — no per-word
-	// fade — so it reads as something the player just committed to,
-	// distinct from the cascading NPC reply.
+	// rows share the same RightHistoryScroll as the NPC's, same per-sentence
+	// black-box grouping — but every sentence box (and every word inside it)
+	// pops in AT ONCE, no stagger: the player already committed to this
+	// line, so it reads as something just said, not something being spoken.
 	if (RightHistoryScroll && CurrentChoices.IsValidIndex(Index))
 	{
 		const FEclipseDialogueChoice& Picked = CurrentChoices[Index];
@@ -1230,18 +1516,40 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 			RightHistoryScroll,
 			NSLOCTEXT("Eclipse", "PlayerSpeakerCaption", "YOU"),
 			Cream,                          // player caption tint
-			/*bAlignRight=*/false,
-			/*EffectsOut=*/nullptr);
+			/*EffectsOut=*/nullptr,
+			/*bAlignRight=*/true);
 		if (Words && WidgetTree)
 		{
-			// Single static UTextBlock — no per-word stagger; instant.
-			UTextBlock* Line = WidgetTree->ConstructWidget<UTextBlock>(
-				UTextBlock::StaticClass(), NAME_None);
-			Line->SetFont(MakeRodin(/*Size=*/16));
-			Line->SetColorAndOpacity(FSlateColor(Cream));
-			Line->SetAutoWrapText(true);
-			Line->SetText(Picked.Text);
-			Words->AddChildToWrapBox(Line);
+			// Same stripped text the choice row showed (no "[STAT:N]" tag),
+			// grouped into sentence boxes the same way the NPC's body is.
+			TArray<TArray<FString>> Sentences = SplitIntoSentences(DisplayChoiceText(Picked));
+			const FSlateFontInfo LineFont = MakeRodin(/*Size=*/26);
+
+			float WrapW = 400.f;
+			{
+				const float LocalW = Words->GetCachedGeometry().GetLocalSize().X;
+				if (LocalW > 120.f) WrapW = LocalW - 24.f;
+			}
+
+			int32 SentenceIndex = 0;
+			for (const TArray<FString>& Sentence : Sentences)
+			{
+				FSentenceBox SBox = BeginSentenceBox(Words, WrapW, SentenceIndex,
+					SentenceIndex == 0, SentenceIndex == Sentences.Num() - 1, /*bAlignRight=*/true);
+				++SentenceIndex;
+				if (!SBox.Box || !SBox.Inner) continue;
+				SBox.Box->SetVisibility(ESlateVisibility::SelfHitTestInvisible);   // no stagger — all at once
+
+				for (const FString& W : Sentence)
+				{
+					UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(
+						UTextBlock::StaticClass(), NAME_None);
+					Text->SetFont(LineFont);
+					Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+					Text->SetText(FText::FromString(W + TEXT(" ")));
+					SBox.Inner->AddChildToWrapBox(Text);
+				}
+			}
 		}
 	}
 
@@ -1263,13 +1571,47 @@ void UEclipseDialogueWidget::OnChoice3() { MakeChoice(3); }
 void UEclipseDialogueWidget::OnChoice4() { MakeChoice(4); }
 
 // ─────────────────────────────────────────────────────────────
-//  Word-by-word fade-in body animation
+//  Word-by-word caption reveal
 //
-//  Splits the body string on whitespace and constructs one UTextBlock per
-//  word inside BodyWords (a UWrapBox). Each block starts at alpha 0 and
-//  fades to 1 over WordFadeDuration, with each successive word delayed by
-//  WordSpawnInterval so the line cascades in left-to-right.
+//  Splits the body string on whitespace and constructs one black caption
+//  chip per word (BuildWordChip) inside BodyWords (a UWrapBox). Each chip
+//  starts Collapsed and pops straight to Visible — no fade — when its
+//  scheduled delay is reached. Words are staggered by WordHoldDuration
+//  below — a closed-caption cadence, not a metronomic text-message tick:
+//  the pause before each word scales with the word that came before it, so
+//  the cascade breathes instead of ticking at a constant rate.
 // ─────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Closed-caption-style pacing. The hold time returned here is how long
+	// THIS word "occupies the mic" before the next one is allowed to
+	// appear — long words hold the beat longer, short words snap by
+	// quickly, and a trailing clause mark (. , ! ? ; :) adds a small extra
+	// beat for the pause a reader naturally takes there. Clamped so one
+	// very long word can't stall the whole line.
+	float WordHoldDuration(const FString& Word)
+	{
+		constexpr float BaseHold   = 0.075f;  // floor — short words ("a", "is")
+		constexpr float PerChar    = 0.014f;  // extra seconds per character
+		constexpr float MaxHold    = 0.30f;   // ceiling before clause bonus
+		constexpr float PunctBonus = 0.10f;   // clause-boundary pause
+
+		float Hold = BaseHold + PerChar * static_cast<float>(Word.Len());
+		Hold = FMath::Min(Hold, MaxHold);
+
+		if (Word.Len() > 0)
+		{
+			const TCHAR Last = Word[Word.Len() - 1];
+			if (Last == TEXT('.') || Last == TEXT(',') || Last == TEXT('!') ||
+				Last == TEXT('?') || Last == TEXT(';') || Last == TEXT(':'))
+			{
+				Hold += PunctBonus;
+			}
+		}
+		return Hold;
+	}
+}
 
 void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 {
@@ -1281,7 +1623,6 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	BodyWords->ClearChildren();
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
-	AnimWordTints.Reset();
 	AnimWordMumbleFired.Reset();
 
 	// Cut any in-flight mumble slices from the previous node (user may have
@@ -1295,47 +1636,79 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	}
 	ActiveMumbleSlices.Reset();
 
-	// ParseIntoArrayWS splits on any whitespace and discards empty entries.
-	TArray<FString> Words;
-	BodyString.ParseIntoArrayWS(Words);
+	// Group into sentences — one closed-caption black box per sentence,
+	// not per word (BeginSentenceBox / SplitIntoSentences).
+	TArray<TArray<FString>> Sentences = SplitIntoSentences(BodyString);
 
-	// Pick up the designer's font from the WBP-bound BodyText so per-word
-	// blocks inherit whatever the designer set (e.g. Pantasia) rather than
-	// being hard-locked to the C++ default. Falls back to MakeRodin(18) only
-	// if BodyText isn't available — i.e. on the C++ fallback layout.
-	const FSlateFontInfo BodyFont = BodyText
+	// Pick up the designer's font FAMILY from the WBP-bound BodyText so
+	// word blocks inherit whatever typeface the designer set (e.g.
+	// Pantasia) — but force the SIZE to the shared dialogue text size,
+	// bumped up so captions read like subtitles printed on screen.
+	FSlateFontInfo BodyFont = BodyText
 		? BodyText->GetFont()
-		: MakeRodin(/*Size=*/18);
+		: MakeRodin(/*Size=*/26);
+	BodyFont.Size = 26;
 
-	for (int32 i = 0; i < Words.Num(); ++i)
+	// Wrap width for each sentence box's inner text — matches the width
+	// AppendBubble gave the outer WrapBox (BodyWords). Cached geometry can
+	// still be zero on the very first frame after opening; fall back safe.
+	float WrapW = 400.f;
 	{
-		UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			FName(*FString::Printf(TEXT("DlgWord_%d"), i)));
-
-		// Trailing space is part of the word so the wrap-box can break naturally.
-		Block->SetText(FText::FromString(Words[i] + TEXT(" ")));
-		Block->SetFont(BodyFont);
-
-		// Start fully transparent — NativeTick will lerp this up.
-		FLinearColor Start = Cream; Start.A = 0.f;
-		Block->SetColorAndOpacity(FSlateColor(Start));
-
-		if (UWrapBoxSlot* WS = BodyWords->AddChildToWrapBox(Block))
-		{
-			// Tiny vertical breathing so descenders don't kiss the next line.
-			WS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
-		}
-
-		AnimWordBlocks.Add(Block);
-		AnimWordDelays.Add(static_cast<float>(i) * WordSpawnInterval);
-		AnimWordTints.Add(Cream);
-		AnimWordMumbleFired.Add(false);
+		const float LocalW = BodyWords->GetCachedGeometry().GetLocalSize().X;
+		if (LocalW > 120.f) WrapW = LocalW - 24.f;
 	}
 
-	// Total time the body takes to fully resolve = last_word_delay + fade_duration.
-	BodyAnimTotalTime = (Words.Num() > 0)
-		? (static_cast<float>(Words.Num() - 1) * WordSpawnInterval + WordFadeDuration)
+	// Cumulative closed-caption pacing — see WordHoldDuration. RunningDelay
+	// tracks when the NEXT word is allowed to start; each word's own delay
+	// is recorded before its hold time is added to the running total. The
+	// sentence's box shares the FIRST word's delay (Collapsed until then),
+	// so it pops in exactly as its first word does and grows in place as
+	// the rest of the sentence reveals.
+	float RunningDelay = 0.f;
+	int32 SentenceIndex = 0;
+	for (const TArray<FString>& Sentence : Sentences)
+	{
+		FSentenceBox SBox = BeginSentenceBox(BodyWords, WrapW, SentenceIndex,
+			SentenceIndex == 0, SentenceIndex == Sentences.Num() - 1);
+		++SentenceIndex;
+		if (!SBox.Box || !SBox.Inner) continue;
+
+		bool bFirstWordInSentence = true;
+		for (const FString& Word : Sentence)
+		{
+			if (bFirstWordInSentence)
+			{
+				// The box itself is a reveal target too — same delay as its
+				// first word. Marked "already fired" so it never triggers
+				// its own mumble slice (only real words do).
+				AnimWordBlocks.Add(SBox.Box);
+				AnimWordDelays.Add(RunningDelay);
+				AnimWordMumbleFired.Add(true);
+				bFirstWordInSentence = false;
+			}
+
+			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), NAME_None);
+			Text->SetFont(BodyFont);
+			Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			// Trailing space separates words sharing the same box.
+			Text->SetText(FText::FromString(Word + TEXT(" ")));
+			Text->SetVisibility(ESlateVisibility::Collapsed);
+			SBox.Inner->AddChildToWrapBox(Text);
+
+			AnimWordBlocks.Add(Text);
+			AnimWordDelays.Add(RunningDelay);
+			AnimWordMumbleFired.Add(false);
+
+			RunningDelay += WordHoldDuration(Word);
+		}
+	}
+
+	// Total time the body takes to fully resolve = last word's reveal time
+	// + a short breathing pause before the choice rows start cascading in.
+	constexpr float PostBodyPause = 0.15f;
+	BodyAnimTotalTime = (AnimWordDelays.Num() > 0)
+		? (AnimWordDelays.Last() + PostBodyPause)
 		: 0.f;
 
 	DialogueAnimTime  = 0.f;
@@ -1383,13 +1756,19 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	TArray<FString> Words;
 	Text.ParseIntoArrayWS(Words);
 
-	// Per-word blocks inherit the designer's font from the WBP-bound choice
-	// label (e.g. ChoiceText_0..4) so styling stays where the designer sees
-	// it. Falls back to MakeRodin(15) only if Label has no font set.
-	const FSlateFontInfo ChoiceFont = Label
+	// Per-word blocks inherit the designer's font FAMILY from the WBP-bound
+	// choice label (e.g. ChoiceText_0..4), but the SIZE is forced to match
+	// the (now much bigger, caption-style) body text.
+	FSlateFontInfo ChoiceFont = Label
 		? Label->GetFont()
-		: MakeRodin(/*Size=*/15);
+		: MakeRodin(/*Size=*/26);
+	ChoiceFont.Size = 26;
 
+	// Same closed-caption cadence as the body cascade (see WordHoldDuration),
+	// offset by StartDelay so the row still waits its turn in the stagger.
+	// No chip/box here — choice rows stay plain text (see ChoiceTint) —
+	// just a Collapsed→Visible pop at the scheduled delay, no fade.
+	float RunningDelay = StartDelay;
 	for (int32 wi = 0; wi < Words.Num(); ++wi)
 	{
 		UTextBlock* W = WidgetTree->ConstructWidget<UTextBlock>(
@@ -1397,15 +1776,15 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
 		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
 		W->SetFont(ChoiceFont);
-
-		FLinearColor Start = TargetTint; Start.A = 0.f;
-		W->SetColorAndOpacity(FSlateColor(Start));
+		W->SetColorAndOpacity(FSlateColor(TargetTint));
+		W->SetVisibility(ESlateVisibility::Collapsed);
 		WB->AddChildToWrapBox(W);
 
 		AnimWordBlocks.Add(W);
-		AnimWordDelays.Add(StartDelay + static_cast<float>(wi) * WordSpawnInterval);
-		AnimWordTints.Add(TargetTint);
+		AnimWordDelays.Add(RunningDelay);
 		AnimWordMumbleFired.Add(false);
+
+		RunningDelay += WordHoldDuration(Words[wi]);
 	}
 
 	bDialogueAnimating = true;
@@ -1414,6 +1793,43 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
+
+	// ── Choice hover/selection recolour ──────────────────────────────────
+	// Rows are plain text, no background. Hovered or keyboard-selected rows
+	// paint red (DialogueRed); everything else rests at its base tint
+	// (white / stat hue). Skipped while the reveal animation owns the word
+	// colours.
+	if (!bDialogueAnimating && WidgetTree)
+	{
+		for (int32 i = 0; i < ChoiceButtons.Num(); ++i)
+		{
+			UButton* B = ChoiceButtons[i];
+			if (!B) continue;
+			const FLinearColor Base = ChoiceBaseTints.IsValidIndex(i)
+				? ChoiceBaseTints[i] : EclipseUI::Cream;
+			const bool bHot = B->IsHovered() || (i == SelectedIndex);
+			const FLinearColor C = bHot ? EclipseUI::DialogueRed : Base;
+
+			// Static label path (Path B / no-animation Path A).
+			const FName LabelName(*FString::Printf(TEXT("ChoiceText_%d"), i));
+			if (UTextBlock* L = Cast<UTextBlock>(WidgetTree->FindWidget(LabelName)))
+			{
+				L->SetColorAndOpacity(FSlateColor(C));
+			}
+			// Word-cascade path — recolour every word block in the row.
+			const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), i));
+			if (UWrapBox* WB = Cast<UWrapBox>(WidgetTree->FindWidget(WBName)))
+			{
+				for (UWidget* Child : WB->GetAllChildren())
+				{
+					if (UTextBlock* T = Cast<UTextBlock>(Child))
+					{
+						T->SetColorAndOpacity(FSlateColor(C));
+					}
+				}
+			}
+		}
+	}
 
 	if (!bDialogueAnimating) return;
 
@@ -1433,6 +1849,10 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		if (B->GetVisibility() == ESlateVisibility::Collapsed && DialogueAnimTime >= RevealAt)
 		{
 			B->SetVisibility(ESlateVisibility::Visible);
+			// ChoicesBox now lives inside RightHistoryScroll (see
+			// HandleNodeChanged) — each row popping in grows the scrollable
+			// content, so keep the view pinned to the newest row.
+			if (RightHistoryScroll) RightHistoryScroll->ScrollToEnd();
 		}
 		// Keep the animation flag alive while there are still hidden rows
 		// pending — even if every word block is currently transparent and
@@ -1441,52 +1861,45 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		if (DialogueAnimTime < RevealAt) bAllDone = false;
 	}
 
-	// ── Per-word fade + slide-up ──────────────────────────────────────────
-	// Each word fades from alpha 0 → 1 AND rises ~6 px to its resting
-	// position. Both curves use cubic ease-out so the motion settles softly
-	// instead of stopping abruptly — much smoother read than the previous
-	// linear ramp + zero-translation.
+	// ── Per-word reveal ────────────────────────────────────────────────────
+	// No fade, no motion: each word/chip is Collapsed until DialogueAnimTime
+	// reaches its scheduled delay, then pops straight to Visible — closed-
+	// caption cadence comes entirely from WHEN each word appears (see
+	// WordHoldDuration), not from an animated transition.
 	const int32 N = AnimWordBlocks.Num();
-	const float SlideUpPx = 6.f;
 	for (int32 i = 0; i < N; ++i)
 	{
-		UTextBlock* Block = AnimWordBlocks[i];
+		UWidget* Block = AnimWordBlocks[i];
 		if (!Block) continue;
 
-		const float Delay  = (AnimWordDelays.IsValidIndex(i) ? AnimWordDelays[i] : 0.f);
-		const FLinearColor Tint = (AnimWordTints.IsValidIndex(i) ? AnimWordTints[i] : EclipseUI::Cream);
-		const float tRaw = (DialogueAnimTime - Delay) / FMath::Max(0.0001f, WordFadeDuration);
-		const float tLin = FMath::Clamp(tRaw, 0.f, 1.f);
+		const float Delay = (AnimWordDelays.IsValidIndex(i) ? AnimWordDelays[i] : 0.f);
+		const bool bDue = DialogueAnimTime >= Delay;
 
-		// Cubic ease-out: 1 - (1-t)^3. Eye-pleasing for short fades.
-		const float Eased = 1.f - FMath::Pow(1.f - tLin, 3.f);
-
-		// Multiply (not overwrite) the fade progress into the tint's own
-		// alpha — skill-check tints carry level-scaled opacity that must
-		// survive the animation's final frame.
-		FLinearColor C = Tint; C.A = Eased * Tint.A;
-		Block->SetColorAndOpacity(FSlateColor(C));
-
-		// Slide-up: start `SlideUpPx` below resting (positive Y in Slate
-		// is downward), translate toward 0 as alpha fills in.
-		const float YOffset = SlideUpPx * (1.f - Eased);
-		Block->SetRenderTranslation(FVector2D(0.f, YOffset));
-
-		// Leading edge: the moment a word's delay is crossed, splice off a
-		// random mumble slice — but only every Nth word so the mumble feels
-		// like phrases rather than chatter. AnimWordMumbleFired keeps it
-		// strictly one-shot per word so we don't retrigger across frames.
-		if (tRaw > 0.f && AnimWordMumbleFired.IsValidIndex(i) && !AnimWordMumbleFired[i])
+		if (bDue)
 		{
-			AnimWordMumbleFired[i] = true;
-			const int32 Stride = FMath::Max(1, MumbleWordsPerSlice);
-			if (i % Stride == 0)
+			if (Block->GetVisibility() == ESlateVisibility::Collapsed)
 			{
-				PlayMumbleSlice();
+				Block->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+				// Leading edge: the moment a word is revealed, splice off a
+				// random mumble slice — but only every Nth word so the mumble
+				// feels like phrases rather than chatter. AnimWordMumbleFired
+				// keeps it strictly one-shot per word.
+				if (AnimWordMumbleFired.IsValidIndex(i) && !AnimWordMumbleFired[i])
+				{
+					AnimWordMumbleFired[i] = true;
+					const int32 Stride = FMath::Max(1, MumbleWordsPerSlice);
+					if (i % Stride == 0)
+					{
+						PlayMumbleSlice();
+					}
+				}
 			}
 		}
-
-		if (Eased < 1.f) bAllDone = false;
+		else
+		{
+			bAllDone = false;
+		}
 	}
 
 	if (bAllDone)
