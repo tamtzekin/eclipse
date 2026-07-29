@@ -33,6 +33,10 @@ namespace EclipseUI
 	inline const FLinearColor HeatHigh    = Cyan;
 	inline const FLinearColor LabelHeat   = FLinearColor(0.427f, 0.604f, 0.780f, 1.f); // #6d9ac7
 	inline const FLinearColor LabelThirst = Cyan;
+	// Dialogue accent — the game's stall-door red (#e62a2a, materials sheet).
+	// Replaced the cyan accents on the dialogue UI (speaker captions,
+	// portrait outline) per design direction.
+	inline const FLinearColor DialogueRed = FLinearColor(0.902f, 0.165f, 0.165f, 1.f); // #e62a2a
 
 	// ── Fonts ────────────────────────────────────────────────────────────────
 	// Loaded from /Game/Justin/UI/Fonts. UE 5.6's AssetImportTask creates the
