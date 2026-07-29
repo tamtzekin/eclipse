@@ -125,7 +125,7 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
-		// ── Dialogue panel — right-anchored 480px wide ──
+		// ── Dialogue panel — right third of the viewport ──
 		// To fake a radial fade-from-edges (Slate has no native gradient brush)
 		// we stack multiple inset rounded-black layers in a UOverlay. Each
 		// successive layer is inset further and uses a higher alpha, so the
@@ -134,10 +134,10 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 		UOverlay* Panel = New<UOverlay>(Tree, TEXT("DialoguePanel"));
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 		{
-			S->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
-			S->SetAlignment(FVector2D(1.f, 0.f));
-			S->SetPosition(FVector2D(0.f, 0.f));
-			S->SetSize(FVector2D(480.f, 0.f));
+			// Anchor-stretched to the right third so the panel tracks
+			// viewport width instead of a fixed pixel size.
+			S->SetAnchors(FAnchors(2.f / 3.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
 		}
 
 		// Layer fade definition — { padding-from-edge, alpha, corner-radius }
@@ -174,21 +174,18 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 			OS->SetVerticalAlignment(VAlign_Fill);
 		}
 
-		// ── Speaker portrait — sticks off the LEFT edge of the panel, ──
-		// ── slightly overlapping. Texture is set per-conversation by the C++ ──
-		// ── handler reading the active NPC's PortraitTexture. ──
-		// Portrait photo aspect (~5:7 → 220×308). Anchored to right edge of
-		// viewport, at vertical center. Position from right edge:
-		//   panel_left = -480
-		//   overlap = 30 (portrait right edge sits 30px inside panel left)
-		//   portrait_right = panel_left + overlap = -450
-		//   portrait_left  = portrait_right - 220 = -670
+		// ── Speaker portrait — flush against the panel's LEFT edge. ──
+		// ── Texture is set per-conversation by the C++ handler reading ──
+		// ── the active NPC's PortraitTexture. ──
+		// Portrait photo aspect (~5:7 → 220×308). Right edge of the portrait
+		// sits exactly on the 2/3-viewport anchor line (= panel left edge),
+		// vertically centred.
 		UImage* SpeakerPortrait = New<UImage>(Tree, TEXT("SpeakerPortrait"));
 		FSlateBrush PortraitBrush;
 		PortraitBrush.DrawAs    = ESlateBrushDrawType::RoundedBox;
 		PortraitBrush.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
 		PortraitBrush.OutlineSettings.CornerRadii  = FVector4(6, 6, 6, 6);
-		PortraitBrush.OutlineSettings.Color        = FSlateColor(Cyan);
+		PortraitBrush.OutlineSettings.Color        = FSlateColor(DialogueRed);
 		PortraitBrush.OutlineSettings.Width        = 2.f;
 		PortraitBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
 		PortraitBrush.ImageSize = FVector2D(220.f, 308.f);
@@ -201,17 +198,17 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(PortraitSize))
 		{
-			S->SetAnchors(FAnchors(1.f, 0.5f, 1.f, 0.5f));   // right edge, vertical center
-			S->SetAlignment(FVector2D(0.f, 0.5f));            // left-middle of portrait at anchor
-			S->SetPosition(FVector2D(-670.f, 0.f));
+			S->SetAnchors(FAnchors(2.f / 3.f, 0.5f, 2.f / 3.f, 0.5f)); // panel left edge, vertical center
+			S->SetAlignment(FVector2D(1.f, 0.5f));            // right-middle of portrait at anchor
+			S->SetPosition(FVector2D(0.f, 0.f));
 			S->SetSize(FVector2D(220.f, 308.f));
 			S->SetZOrder(3);                                  // above the panel fade stack
 		}
 
-		// Speaker name (BMSPA, cyan)
+		// Speaker name (BMSPA, red accent)
 		UTextBlock* SpeakerNameText = New<UTextBlock>(Tree, TEXT("SpeakerNameText"));
-		SpeakerNameText->SetFont(MakeBMSPA(22, 3.f));
-		SpeakerNameText->SetColorAndOpacity(FSlateColor(Cyan));
+		SpeakerNameText->SetFont(MakeBMSPA(18, 3.f));
+		SpeakerNameText->SetColorAndOpacity(FSlateColor(DialogueRed));
 		SpeakerNameText->SetText(FText::FromString(TEXT("SPEAKER")));
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SpeakerNameText))
 			S->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
@@ -228,7 +225,7 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 
 		// Hidden fallback — never rendered when BodyWords is bound.
 		UTextBlock* BodyText = New<UTextBlock>(Tree, TEXT("BodyText"));
-		BodyText->SetFont(MakeRodin(18));
+		BodyText->SetFont(MakeRodin(14));
 		BodyText->SetColorAndOpacity(FSlateColor(Cream));
 		BodyText->SetAutoWrapText(true);
 		BodyText->SetVisibility(ESlateVisibility::Collapsed);
@@ -305,7 +302,7 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 				FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
 			ChoiceLabel->SetText(FText::FromString(FString::Printf(
 				TEXT("Choice %d (placeholder — runtime sets actual text)"), i + 1)));
-			ChoiceLabel->SetFont(MakeRodin(15));
+			ChoiceLabel->SetFont(MakeRodin(14));
 			ChoiceLabel->SetColorAndOpacity(FSlateColor(Cream));
 			ChoiceLabel->SetAutoWrapText(true);
 			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(ChoiceLabel))
@@ -321,34 +318,9 @@ bool UEclipseUiBuilder::PopulateDialogueWBP(const FString& WBPAssetPath)
 			}
 		}
 
-		// Close button (chalk circle ×)
-		UButton* CloseButton = New<UButton>(Tree, TEXT("CloseButton"));
-		FButtonStyle CloseStyle;
-		CloseStyle.Normal   = RoundedBrush(FLinearColor(0.031f, 0.035f, 0.047f, 0.6f),
-		                                   FLinearColor(0.945f, 0.929f, 0.851f, 0.65f),
-		                                   1.f, 14.f);
-		CloseStyle.Hovered  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.08f),
-		                                   FLinearColor::White, 1.f, 14.f);
-		CloseStyle.Pressed  = RoundedBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f),
-		                                   FLinearColor::White, 1.f, 14.f);
-		CloseStyle.Disabled = CloseStyle.Normal;
-		CloseButton->SetStyle(CloseStyle);
-
-		UTextBlock* CloseLabel = New<UTextBlock>(Tree, TEXT("CloseLabel"));
-		CloseLabel->SetText(FText::FromString(TEXT("×")));
-		CloseLabel->SetFont(MakeBMSPA(16));
-		CloseLabel->SetColorAndOpacity(FSlateColor(CreamDim));
-		CloseLabel->SetJustification(ETextJustify::Center);
-		CloseButton->SetContent(CloseLabel);
-
-		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(CloseButton))
-		{
-			S->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
-			S->SetAlignment(FVector2D(1.f, 0.f));
-			S->SetPosition(FVector2D(-18.f, 14.f));
-			S->SetSize(FVector2D(28.f, 28.f));
-			S->SetZOrder(2);
-		}
+		// (Close button retired — dialogue exits only through dialogue
+		// options like [Leave] / [Goodbye]. The C++ widget also collapses
+		// any CloseButton still present in an older bake.)
 	});
 #else
 	(void)WBPAssetPath; return false;
@@ -380,10 +352,10 @@ bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
 		UOverlay* Panel = New<UOverlay>(Tree, TEXT("DialoguePanel"));
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 		{
-			S->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
-			S->SetAlignment(FVector2D(1.f, 0.f));
-			S->SetPosition(FVector2D(0.f, 0.f));
-			S->SetSize(FVector2D(480.f, 0.f));
+			// Anchor-stretched to the right third so the panel tracks
+			// viewport width instead of a fixed pixel size.
+			S->SetAnchors(FAnchors(2.f / 3.f, 0.f, 1.f, 1.f));
+			S->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
 		}
 
 		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("DialogueColumn"));
@@ -401,7 +373,7 @@ bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
 		PortraitBrush.DrawAs    = ESlateBrushDrawType::RoundedBox;
 		PortraitBrush.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
 		PortraitBrush.OutlineSettings.CornerRadii  = FVector4(6, 6, 6, 6);
-		PortraitBrush.OutlineSettings.Color        = FSlateColor(Cyan);
+		PortraitBrush.OutlineSettings.Color        = FSlateColor(DialogueRed);
 		PortraitBrush.OutlineSettings.Width        = 2.f;
 		PortraitBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
 		PortraitBrush.ImageSize = FVector2D(220.f, 308.f);
@@ -414,17 +386,18 @@ bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
 
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(PortraitSize))
 		{
-			S->SetAnchors(FAnchors(1.f, 0.5f, 1.f, 0.5f));
-			S->SetAlignment(FVector2D(0.f, 0.5f));
-			S->SetPosition(FVector2D(-670.f, 0.f));
+			// Flush against the panel's left edge (2/3-viewport anchor line).
+			S->SetAnchors(FAnchors(2.f / 3.f, 0.5f, 2.f / 3.f, 0.5f));
+			S->SetAlignment(FVector2D(1.f, 0.5f));
+			S->SetPosition(FVector2D(0.f, 0.f));
 			S->SetSize(FVector2D(220.f, 308.f));
 			S->SetZOrder(3);
 		}
 
-		// ── Speaker name (BMSPA, cyan) — plain text on transparent background.
+		// ── Speaker name (BMSPA, red accent) — plain text on transparent background.
 		UTextBlock* SpeakerNameText = New<UTextBlock>(Tree, TEXT("SpeakerNameText"));
-		SpeakerNameText->SetFont(MakeBMSPA(22, 3.f));
-		SpeakerNameText->SetColorAndOpacity(FSlateColor(Cyan));
+		SpeakerNameText->SetFont(MakeBMSPA(18, 3.f));
+		SpeakerNameText->SetColorAndOpacity(FSlateColor(DialogueRed));
 		SpeakerNameText->SetText(FText::FromString(TEXT("SPEAKER")));
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SpeakerNameText))
 			S->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
@@ -446,7 +419,7 @@ bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
 
 		// Hidden BodyText fallback (kept for back-compat with the C++ widget).
 		UTextBlock* BodyText = New<UTextBlock>(Tree, TEXT("BodyText"));
-		BodyText->SetFont(MakeRodin(18));
+		BodyText->SetFont(MakeRodin(14));
 		BodyText->SetColorAndOpacity(FSlateColor(Cream));
 		BodyText->SetAutoWrapText(true);
 		BodyText->SetVisibility(ESlateVisibility::Collapsed);
@@ -527,7 +500,7 @@ bool UEclipseUiBuilder::PopulateDialogueBubblesWBP(const FString& WBPAssetPath)
 				FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
 			ChoiceLabel->SetText(FText::FromString(FString::Printf(
 				TEXT("Choice %d (placeholder — runtime sets actual text)"), i + 1)));
-			ChoiceLabel->SetFont(MakeRodin(15));
+			ChoiceLabel->SetFont(MakeRodin(14));
 			ChoiceLabel->SetColorAndOpacity(FSlateColor(Cream));
 			ChoiceLabel->SetAutoWrapText(true);
 			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(ChoiceLabel))
