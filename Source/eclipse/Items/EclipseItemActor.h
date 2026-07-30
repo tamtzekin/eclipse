@@ -32,6 +32,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
 	FText DisplayName;
 
+	/** Ink knot name (see Content/Justin/Dialogue/InkSource/Items/Items.ink).
+	 *  When set, interacting with this item opens a dialogue panel instead
+	 *  of picking it up immediately — see
+	 *  UEclipseDialogueSubsystem::OpenItemDialogue and
+	 *  EclipseInteractSubsystem::TryInteract. Leave NAME_None for items that
+	 *  should keep the old instant-pickup behavior. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
+	FName DialogueId = NAME_None;
+
 	/** Optional quest flag set on pickup (e.g. "hasHair", "hasEye"). The
 	 *  Pickup_Implementation translates known values into Quest.* booleans
 	 *  on the game state. Leave NAME_None for items that don't progress a

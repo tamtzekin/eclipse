@@ -44,6 +44,12 @@
 *.h     text eol=lf
 *.ini   text eol=lf
 
+# Inkpot plugin's bundled inklecate compiler binaries (Mac/Linux/Windows) —
+# 60MB+ each on Mac/Linux, extensionless on Mac/Linux so not caught by an
+# extension-based rule above; LFS-track the whole ThirdParty tree so any
+# future binary drops here are covered too.
+Plugins/Inkpot/ThirdParty/** filter=lfs diff=lfs merge=lfs -text
+
 # Mark ArticyXImporter-regenerated outputs as "generated" so GitHub
 # collapses them in PR review (they're noisy on schema changes). These
 # files ARE committed (so teammates don't have to reimport after every

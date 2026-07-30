@@ -7,10 +7,12 @@
 #include "EclipseDialogueSubsystem.generated.h"
 
 class AEclipseNpcCharacter;
+class AEclipseItemActor;
+class UInkpotStory;
 
-// ── Stage directives (Articy "Stage directions" field) ──────────────────────
-// Parsed from a comma-separated string of tokens authored on each Articy
-// DialogueFragment. Four kinds:
+// ── Stage directives (authored as Ink tags) ──────────────────────────────────
+// Parsed from a comma-separated string of tokens built by joining the Ink
+// tags on a line/choice (see InkSource/*.ink). Four kinds:
 //   [STAT_NAME: N]   StatGate     — gates choice availability (greys it out
 //                                   with a "(need STAT N)" hint when the
 //                                   player's stat is below N).
@@ -116,9 +118,9 @@ struct FEclipseDialogueChoice
 	// EnergyDamageOnFail — Energy meter was absorbed into Stimulation.)
 	UPROPERTY(BlueprintReadOnly) int32 StimulationDamageOnFail = 2;
 
-	// All stage directives parsed from this choice's Articy StageDirections
-	// string. Gates are evaluated when the choice is built (sets bAvailable +
-	// GateHint); effects fire in MakeChoice when the player clicks.
+	// All stage directives parsed from this choice's Ink tags. Gates are
+	// evaluated when the choice is built (sets bAvailable + GateHint);
+	// effects fire in MakeChoice when the player clicks.
 	UPROPERTY(BlueprintReadOnly) TArray<FEclipseStageDirective> StageDirectives;
 
 	// Human-readable hint about WHY this choice is unavailable, generated
@@ -148,20 +150,32 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueNodeChanged, FEclips
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseDialogueClosed);
 
 /**
- * Articy runtime wrapper. Mirrors the JS articyDB + getEntryNode +
- * renderArticyNode flow (index.html ~lines 2500–2900 + 3700+).
+ * Inkpot (Ink) runtime wrapper. Drives a single compiled story asset
+ * (/Game/Justin/Dialogue/DA_MainStory, compiled from Content/Justin/Dialogue/
+ * InkSource/Main.ink) shared by every NPC and interactable item.
  *
  * Responsibilities:
- *   - Load the imported UArticyDatabase (see ArticyImporter plugin) on Init
- *   - Map dialogueId → entry node, drive a single active conversation
- *   - Evaluate skill check choice texts ("[WORD:10] ...") against
- *     UEclipseGameStateSubsystem
- *   - Fire menuAction handlers: enterStall / giveTabs / startGame
- *
- * Slice-scope dialogue IDs:
- *   - 0x0100000000000F00  Dlg_AngelSeeker (synthetic, runtime-injected for now)
- *   - 0x0100000000000B00  Dlg_StallVoice  (also synthetic)
- *   - 0x0100000000000C00  Dlg_StallVoice2
+ *   - Load the one UInkpotStoryAsset on Init and keep a single live
+ *     UInkpotStory for the whole session.
+ *   - AEclipseNpcCharacter::DialogueId / AEclipseItemActor::DialogueId hold
+ *     an Ink knot name (e.g. "angel_seeker", "red_wristband") — OpenDialogue
+ *     / OpenItemDialogue jump there via Story->ChoosePath and pull a node
+ *     view from wherever the story ends up (BuildNodeFromStory).
+ *   - Gate/effect directives ("+1 RHYTHM", "HEAT > 8", ...) are authored as
+ *     Ink tags on the relevant line/choice — same grammar as before, see
+ *     ParseStageDirections below, just sourced from
+ *     UInkpotStory::GetCurrentTags() / UInkpotChoice::GetTags() instead of
+ *     an Articy field. Bracket-form directives (StatGate "[ZEN: 1]",
+ *     ItemGate "[EMPTY_BOTTLE]") are written WITHOUT brackets in .ink
+ *     source as "GATE:ZEN: 1" / "GATE:EMPTY_BOTTLE" — Ink's own
+ *     choice-bracket syntax scans the whole raw line, including tags, so a
+ *     literal "[...]" anywhere on a choice line corrupts it. Brackets are
+ *     re-wrapped in memory in BuildNodeFromStory, never in authored content.
+ *   - Skill-check choices carry a "SKILLCHECK:WORD:10" tag (same
+ *     bracket-free reasoning — wrapped back into "[WORD:10]" in memory
+ *     before reaching ParseSkillCheck).
+ *   - menuAction handlers (enterStall / giveTabs / startGame / takeItem) are
+ *     tagged "MENU:actionName" on the choice that should fire them.
  */
 UCLASS()
 class ECLIPSE_API UEclipseDialogueSubsystem : public UGameInstanceSubsystem
@@ -174,6 +188,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool OpenDialogue(AEclipseNpcCharacter* Npc);
+
+	// Item-interaction dialogue — same node-view/choice flow as OpenDialogue,
+	// no NPC involved. Broadcasts the same OnDialogueOpened delegate with
+	// Npc=nullptr (EclipseDialogueWidget::HandleDialogueOpened already
+	// null-guards every Npc dereference, so no widget changes needed).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
+	bool OpenItemDialogue(AEclipseItemActor* Item);
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
@@ -203,31 +224,40 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueClosed       OnDialogueClosed;
 
-	/**
-	 * Synthetic dialogue injection. The JS prototype injects three trees at runtime
-	 * (Intro / AngelSeeker / Angel) that aren't yet authored in Articy. This subsystem
-	 * provides the same fallback so the slice doesn't depend on Articy authoring
-	 * being complete.
-	 *
-	 * TODO(post-slice): author these in Articy directly and remove the runtime
-	 * injection. See PORT_PLAN.md §5.
-	 */
-	void InjectSyntheticDialogues();
-
 private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> ActiveNpc;
+	UPROPERTY() TObjectPtr<AEclipseItemActor> ActiveItem;
+	UPROPERTY() TObjectPtr<UInkpotStory> Story;
 	UPROPERTY() FEclipseDialogueNodeView CurrentNode;
 	bool bDialogueOpen = false;
 	FName CurrentDialogueId = NAME_None;
-	FName CurrentNodeId = NAME_None;
 
-	// Skill-check parser: pulls "[WORD:10]" from choice text, returns stat + threshold.
+	// Parallel to CurrentNode.Choices — maps each *displayed* choice index
+	// back to the real Ink choice index (hidden-gate-failed choices are
+	// filtered out of what's shown, so the two can diverge). -1 marks the
+	// synthetic "[Goodbye]" close-sentinel used when Ink has no more
+	// content (dead end / -> END with nothing left to choose).
+	TArray<int32> CurrentChoiceInkIndex;
+
+	// Parallel to CurrentNode.Choices — the "MENU: actionName" tag captured
+	// off each displayed choice at build time (NAME_None if the choice
+	// carries none). Read in MakeChoice and dispatched via
+	// DispatchMenuAction before the story advances past the click.
+	TArray<FName> CurrentChoiceMenuAction;
+
+	// Skill-check parser: pulls "[WORD:10]" out of a raw string, returns
+	// stat + threshold. Fed the choice's "SKILLCHECK:WORD:10" tag content,
+	// re-wrapped in brackets ("[WORD:10]") in BuildNodeFromStory before
+	// being passed here — see the class doc comment above for why the
+	// brackets can't live in the .ink source itself.
 	bool ParseSkillCheck(const FText& ChoiceText, FName& OutStat, int32& OutValue) const;
 
-	// Articy "Stage directions" parser. Accepts a comma-separated list of
-	// tokens like "[ZEN: 1], [BAGGIE], +1 RHYTHM, -2 ENERGY" and emits a
-	// directive array. Tokens that don't match any kind are skipped silently
-	// (with a Log warning so authors notice typos).
+	// Stage-directions parser. Accepts a comma-separated list of tokens like
+	// "[ZEN: 1], [BAGGIE], +1 RHYTHM, -2 ENERGY" and emits a directive
+	// array. Tokens that don't match any kind are skipped silently (with a
+	// Log warning so authors notice typos). Fed the current line's/choice's
+	// Ink tags (joined with commas) — same grammar as when this read from
+	// an Articy stage-directions field.
 	static TArray<FEclipseStageDirective> ParseStageDirections(const FString& Raw);
 
 	// Apply a single effect-kind directive to the player's state. StatEffect
@@ -247,33 +277,16 @@ private:
 	// node's effect directives. Returns empty text when none apply.
 	static FText BuildEffectsLineText(const TArray<FEclipseStageDirective>& Directives);
 
-	// ── Articy runtime fallback (reads from UArticyDatabase) ────────────────
-	//
-	// When the synthetic node store doesn't have a NodeId, fall through to
-	// the Articy database that's populated by ArticyImporter.Reimport. Reads
-	// Description / MenuText / StageDirections / OutputPins via the generic
-	// IArticy* interfaces — no project-specific generated types referenced
-	// here, so this code compiles whether or not the importer has run.
-	//
-	// Returns true if NodeId resolved against the Articy db and OutNode +
-	// OutNextChoiceIds were filled. Returns false when db is empty or NodeId
-	// isn't a known Articy object — caller continues to its existing logic.
-	bool ResolveArticyNode(FName NodeId,
-		FEclipseDialogueNodeView& OutNode,
-		TArray<FName>& OutNextChoiceIds) const;
-
-	// Given an Articy dialogue object (e.g. "Dlg_97F8ED64"), follow its
-	// first output-pin connection to the first DialogueFragment that owns a
-	// MenuText/Text — that's the "entry" the player sees on conversation open.
-	// Returns NAME_None on miss.
-	FName ResolveArticyDialogueEntry(FName DialogueId) const;
-
-	// menuAction dispatcher (enterStall / giveTabs / startGame / etc.)
+	// menuAction dispatcher (enterStall / giveTabs / startGame / takeItem)
 	void DispatchMenuAction(FName ActionName);
 
-	// Populate CurrentNode from a synthetic node ID, advancing through any
-	// player-choice fragments to the next NPC speech fragment.
-	void AdvanceToNode(FName NodeId);
+	// Populate CurrentNode (+ CurrentChoiceInkIndex) from wherever the Ink
+	// story currently sits — pulls the full body via ContinueMaximally(),
+	// tags via GetCurrentTags() (→ EffectsLine, display only, same as
+	// before), and choices via GetCurrentChoices() (gate-evaluated, hidden
+	// failures dropped, synthetic "[Goodbye]" fallback if none survive or
+	// Ink has hit a dead end). Broadcasts OnNodeChanged.
+	void BuildNodeFromStory();
 
 	// "enterStall" implementation — closes the AngelSeeker dialogue and tells
 	// her to step aside, clearing the doorway. The Angel itself is a normal

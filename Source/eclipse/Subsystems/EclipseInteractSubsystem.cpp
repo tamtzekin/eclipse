@@ -123,6 +123,17 @@ bool UEclipseInteractSubsystem::TryInteract()
 	}
 	if (AEclipseItemActor* Item = Cast<AEclipseItemActor>(NearItem))
 	{
+		// Items with an authored Ink knot show a dialogue panel first (see
+		// Items.ink — the "Take it" choice is what actually calls Pickup(),
+		// via DispatchMenuAction("takeItem")). Items with no DialogueId keep
+		// the old instant-pickup behavior.
+		if (Item->DialogueId != NAME_None)
+		{
+			if (UEclipseDialogueSubsystem* Dlg = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
+			{
+				return Dlg->OpenItemDialogue(Item);
+			}
+		}
 		Item->Pickup();
 		return true;
 	}

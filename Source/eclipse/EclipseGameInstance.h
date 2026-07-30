@@ -9,7 +9,7 @@
 /**
  * GameInstance — single instance per game session. Subsystems live here:
  *  - UEclipseGameStateSubsystem (heat / thirst / inventory / quest / chapter)
- *  - UEclipseDialogueSubsystem  (Articy runtime wrapper)
+ *  - UEclipseDialogueSubsystem  (Inkpot/Ink runtime wrapper)
  *  - UEclipseInteractSubsystem  (lives on World, but referenced via this)
  *
  * On `Init` we boot subsystems and load any existing SaveGame slot.

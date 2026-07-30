@@ -9,7 +9,7 @@
 /**
  * Canonical lowercase identity tags. Gender / Race on a character row are
  * open FName fields (any value works), but content authors, the Select
- * Screen dropdowns, and Articy IdentityGate comparisons should all draw
+ * Screen dropdowns, and dialogue IdentityGate comparisons should all draw
  * from these exact spellings so a "RACE == brown" gate actually lines up
  * with the character's tag. Extend the arrays here as the cast grows —
  * adding a value is data, not a schema change.
@@ -47,7 +47,7 @@ namespace EclipseIdentity
 /**
  * A playable character the player picks from the (not-yet-built) Select
  * Screen. Carries the hidden social identity that shapes how NPCs talk to
- * the player and which Articy branches open:
+ * the player and which dialogue branches open:
  *
  *   Gender / Race      — identity tags (lowercase FName, open-ended:
  *                        "female"/"male"/"nonbinary", "brown"/"white"/…).

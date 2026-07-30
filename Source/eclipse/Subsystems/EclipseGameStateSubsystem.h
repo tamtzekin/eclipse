@@ -147,8 +147,8 @@ public:
 	//
 	// NOT shown on the HUD. They shape how NPCs talk to the player and
 	// which dialogue branches open. Set at character creation (Gender /
-	// Race) or moved by dialogue (Annoyance); read by the Articy
-	// Scene-Direction gate evaluator. Foundation only — content authoring
+	// Race) or moved by dialogue (Annoyance); read by the dialogue subsystem's
+	// stage-directive gate evaluator. Foundation only — content authoring
 	// + character-creation UI come later.
 	//
 	//   Gender / Race  — identity tags (open-ended FName, lowercase:
@@ -246,7 +246,7 @@ public:
 	// (toward dry). Both extremes are bad but only Stimulation == 0
 	// kills the player (see OnPlayerDeath in ChangeMeter).
 	//
-	// Articy gameplay gates these via stage directives like
+	// Dialogue content gates these via stage directives like
 	//   "HEAT > 8"        — choice available only when overheating
 	//   "STIMULATION < 3" — choice available only when fatigued
 	// and apply changes via the same syntax as stat changes:
@@ -283,7 +283,7 @@ public:
 	void ChangeStimulation(int32 Delta);
 
 	// Read a meter by name (lowercase "heat" / "thirst" / "stimulation").
-	// Returns 0 for unknown keys. Used by the Articy comparison-gate
+	// Returns 0 for unknown keys. Used by the dialogue subsystem's comparison-gate
 	// evaluator so "HEAT > 8" reads through this single accessor.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	int32 GetMeterValue(FName MeterKey) const;
