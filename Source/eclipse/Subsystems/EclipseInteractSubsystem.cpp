@@ -61,6 +61,10 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 			const FVector NpcChest = Npc->GetActorLocation() + FVector(0.f, 0.f, 60.f);
 			FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseInteractLOS), false, Pawn);
 			Params.AddIgnoredActor(Npc);   // don't self-block on the NPC's own collision
+			if (AActor* VisualProxy = Npc->VisualProxyActor.Get())
+			{
+				Params.AddIgnoredActor(VisualProxy);   // don't block on the NPC's own visual double
+			}
 			FHitResult Hit;
 			const bool bBlocked = World->LineTraceSingleByChannel(
 				Hit, PlayerEye, NpcChest, ECC_Visibility, Params);

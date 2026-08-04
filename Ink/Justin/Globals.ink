@@ -1,4 +1,4 @@
-// Globals.ink — shared Ink variables.
+-B// Globals.ink — shared Ink variables.
 //
 // Synced one-directionally from UEclipseGameStateSubsystem into the story
 // right before each ChoosePath (see EclipseDialogueSubsystem::OpenDialogue).

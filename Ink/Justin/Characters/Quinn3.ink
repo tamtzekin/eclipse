@@ -1,7 +1,7 @@
 // Quinn3.ink — L_Outside placeholder NPC (SKM_Quinn_Simple3).
 // Demonstrates a HiddenStatEffect ("+1 ANNOYANCE").
 
-=== test ===
+=== quinn_3 ===
 She won't take her eyes off her flip phones.
 
 * Do you know how I can get in? — # +1 ANNOYANCE

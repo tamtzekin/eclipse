@@ -32,11 +32,10 @@ INCLUDE Characters/Daesung.ink
 INCLUDE Characters/Quinn1.ink
 INCLUDE Characters/Quinn2.ink
 INCLUDE Characters/Quinn3.ink
-INCLUDE Characters/Figure2.ink
+INCLUDE Characters/Bouncer_Outside.ink
 INCLUDE Characters/Figure3.ink
 INCLUDE Characters/Figure4.ink
 INCLUDE Characters/Figure5.ink
-INCLUDE Characters/GlamorousDealer.ink
 
 INCLUDE Items/Items.ink
 
@@ -50,14 +49,13 @@ DEBUG MENU — pick who to talk to.
 + [Stall Voice, erratic (stall_voice_erratic)] -> stall_voice_erratic
 + [Enlightened Raver (enlightened_raver)] -> enlightened_raver
 + [Daesung (daesung)] -> daesung
-+ [Quinn 1 (quinn_1)] -> quinn_1
++ [Quinn 1 / Glamorous Dealer (quinn_1)] -> quinn_1
 + [Quinn 2 (quinn_2)] -> quinn_2
-+ [Quinn 3 (test)] -> test
-+ [Figure 2 (figure_2)] -> figure_2
++ [Quinn 3 (quinn_3)] -> quinn_3
++ [Bouncer Outside (bouncer_outside)] -> bouncer_outside
 + [Figure 3 (figure_3)] -> figure_3
 + [Figure 4 (figure_4)] -> figure_4
 + [Figure 5 (figure_5)] -> figure_5
-+ [Glamorous Dealer / Figure 6 (glamorous_dealer)] -> glamorous_dealer
 + [Red Wristband (red_wristband)] -> red_wristband
 + [quit] -> END
 

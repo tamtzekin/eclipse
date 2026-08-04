@@ -38,6 +38,7 @@ void AEclipseNpcCharacter::BeginPlay()
 	// in this project — each room sits at its own elevation). Capsule
 	// half-height puts the actor's pivot at the capsule centre, so the floor-z
 	// offset has to add it back.
+	if (!bSkipFloorSnap)
 	{
 		const FVector Origin = GetActorLocation();
 		const FVector Start  = Origin + FVector(0.f, 0.f, 500.f);

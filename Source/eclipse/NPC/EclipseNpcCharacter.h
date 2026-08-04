@@ -60,12 +60,30 @@ public:
 	                          // Bump per-instance for KEY NPCs that need
 	                          // friendlier reach (bartender etc.).
 
+	// When true, skip the BeginPlay floor-snap line-trace entirely and keep
+	// the actor exactly where it was placed. Use when the actor sits above
+	// an isolated/disconnected piece of collision (e.g. a small set-dressing
+	// pedestal) that the trace would otherwise snap onto instead of the
+	// intended floor.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
+	bool bSkipFloorSnap = false;
+
 	// When true, the talkable check skips the line-of-sight raytrace — i.e.
 	// this NPC can be talked to *through* walls / partitions. Use for the
 	// audio-only stall voices (`STALL_VOICE_*`) where the player is meant
 	// to converse with someone they can't see. Default false: walls block.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	bool bIgnoreLineOfSight = false;
+
+	// Optional: a separate set-dressing actor (e.g. a level-artist-placed
+	// mesh) that this NPC's invisible interact proxy stands in for. The
+	// interact subsystem's LOS trace ignores this actor too, so the NPC's
+	// own visual double doesn't block its own line-of-sight check when the
+	// proxy is positioned exactly where that mesh stands. Soft reference —
+	// this actor is often in a different (sub-)level, and a hard TObjectPtr
+	// there is an illegal cross-map reference at save time.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
+	TSoftObjectPtr<AActor> VisualProxyActor;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	EEclipseBubbleType BubbleType = EEclipseBubbleType::Question;
