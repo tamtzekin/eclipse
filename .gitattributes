@@ -50,6 +50,11 @@
 # future binary drops here are covered too.
 Plugins/Inkpot/ThirdParty/** filter=lfs diff=lfs merge=lfs -text
 
+# FMOD's vendored engine libraries (Mac .dylib + Windows .dll/.lib) — these
+# are proprietary binaries shipped by FMOD, not something UBT compiles, so
+# every platform's copy has to be committed for teammates on other OSes.
+Plugins/FMODStudio/Libs/** filter=lfs diff=lfs merge=lfs -text
+
 # Mark ArticyXImporter-regenerated outputs as "generated" so GitHub
 # collapses them in PR review (they're noisy on schema changes). These
 # files ARE committed (so teammates don't have to reimport after every
