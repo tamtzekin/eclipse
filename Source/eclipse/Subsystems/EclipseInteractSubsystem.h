@@ -63,4 +63,11 @@ private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> NearTalkable;
 	UPROPERTY() TObjectPtr<AActor> NearItem;
 	bool bHighlightActive = false;
+
+	// TalkableLockOn — once an NPC has been the nearest talkable for
+	// FaceDelaySeconds, it turns to face the player (StartFacePlayer),
+	// as if it just noticed them. Reset/released the instant NearTalkable
+	// changes to someone else or to nobody.
+	float NearTalkableTimer = 0.f;
+	TWeakObjectPtr<AEclipseNpcCharacter> FacingNpc;
 };

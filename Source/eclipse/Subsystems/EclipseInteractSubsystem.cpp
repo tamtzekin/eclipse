@@ -9,6 +9,7 @@
 #include "Items/EclipseItemActor.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Player/EclipsePlayerCharacter.h"
 
 void UEclipseInteractSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -40,6 +41,15 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	// ── Nearest talkable ──
 	AEclipseNpcCharacter* Best = nullptr;
 	float BestDistSq = FLT_MAX;
+
+	// Wider, LOS-ignorant candidate for the continuous camera pre-approach
+	// (UpdateApproachProximity) — Best only ever gets set once ALREADY
+	// inside TalkRadius, so it can't drive a "ramps in as you approach"
+	// effect on its own; this tracks the closest talkable NPC full stop,
+	// regardless of radius/LOS, purely for that gradual camera swing.
+	AEclipseNpcCharacter* ClosestAny = nullptr;
+	float ClosestAnyDistSq = FLT_MAX;
+
 	for (TActorIterator<AEclipseNpcCharacter> It(World); It; ++It)
 	{
 		AEclipseNpcCharacter* Npc = *It;
@@ -47,6 +57,12 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		if (Npc->bIsHidden) continue;
 
 		const float DistSq = FVector::DistSquared(Npc->GetActorLocation(), PlayerPos);
+		if (DistSq < ClosestAnyDistSq)
+		{
+			ClosestAny = Npc;
+			ClosestAnyDistSq = DistSq;
+		}
+
 		const float Radius = Npc->TalkRadius;
 		if (DistSq >= Radius * Radius || DistSq >= BestDistSq) continue;
 
@@ -84,6 +100,80 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	{
 		NearTalkable = Best;
 		OnNearTalkableChanged.Broadcast(NearTalkable);
+		NearTalkableTimer = 0.f;
+	}
+
+	// ── TalkableLockOn ──
+	// After a short "notice you're there" delay spent inside a tighter
+	// sub-radius of the full interact/TalkRadius, the current nearest
+	// talkable turns to face the player, and the player's own camera swings
+	// into its dialogue framing too — both trigger off approach, not just
+	// off actually pressing E. The sub-radius keeps the "notice" turn from
+	// firing the instant the E-prompt appears from across the room; it only
+	// engages once genuinely close. Doesn't fight dialogue's own
+	// StartFacePlayer/StopFaceTarget (EclipseDialogueSubsystem) — opening
+	// dialogue requires already being NearTalkable, so lock-on has usually
+	// already turned everything by the time E is pressed; closing dialogue
+	// only snaps back if the player has actually left talk range.
+	constexpr float FaceDelaySeconds = 0.25f;
+	constexpr float LockOnRadiusMultiplier = 0.6f;
+
+	bool bWithinLockOnRadius = false;
+	if (NearTalkable)
+	{
+		const float LockOnRadius = NearTalkable->TalkRadius * LockOnRadiusMultiplier;
+		bWithinLockOnRadius = FVector::DistSquared(NearTalkable->GetActorLocation(), PlayerPos) <= FMath::Square(LockOnRadius);
+	}
+
+	if (bWithinLockOnRadius)
+	{
+		NearTalkableTimer += DeltaTime;
+	}
+	else
+	{
+		NearTalkableTimer = 0.f;
+	}
+
+	// Release whoever was locked on the moment they stop being both the
+	// nearest talkable AND inside the tighter radius — covers stepping back
+	// out, and switching targets while still technically in range.
+	if (FacingNpc.IsValid() && (!bWithinLockOnRadius || FacingNpc.Get() != NearTalkable))
+	{
+		FacingNpc->StopFacePlayer();
+		FacingNpc = nullptr;
+		if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
+		{
+			PlayerChar->StopFaceTarget();
+		}
+	}
+
+	if (NearTalkable && bWithinLockOnRadius && !FacingNpc.IsValid() && NearTalkableTimer >= FaceDelaySeconds)
+	{
+		NearTalkable->StartFacePlayer(Pawn);
+		FacingNpc = NearTalkable;
+		if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
+		{
+			PlayerChar->StartFaceTarget(NearTalkable->GetActorLocation());
+		}
+	}
+
+	// Continuous pre-lock camera swing — ramps in well before TalkableLockOn's
+	// delay/radius gate fires, using whichever talkable NPC is nearest regardless
+	// of LOS/radius. Outer radius = 2.5x TalkRadius, chosen to start the swing a
+	// few steps out rather than right at the door.
+	if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
+	{
+		if (ClosestAny)
+		{
+			const float OuterRadius = ClosestAny->TalkRadius * 2.5f;
+			const float Dist = FMath::Sqrt(ClosestAnyDistSq);
+			const float Alpha = 1.f - FMath::Clamp((Dist - ClosestAny->TalkRadius) / (OuterRadius - ClosestAny->TalkRadius), 0.f, 1.f);
+			PlayerChar->UpdateApproachProximity(Alpha, ClosestAny->GetActorLocation());
+		}
+		else
+		{
+			PlayerChar->UpdateApproachProximity(0.f, FVector::ZeroVector);
+		}
 	}
 
 	// ── Nearest item ──

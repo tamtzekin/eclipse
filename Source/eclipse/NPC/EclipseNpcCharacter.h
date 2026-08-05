@@ -138,6 +138,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC|Quest")
 	void StepAside();
 
+	// ── Face-player: turns to face whoever's talking to them on dialogue
+	//    open, turns back to their original facing on close. Called by
+	//    EclipseDialogueSubsystem (mirrors the player's own StartFaceTarget).
+	//    Tracks the target actor live (not a one-time position snapshot) so
+	//    the NPC keeps facing them even if they walk/strafe afterward.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
+	void StartFacePlayer(AActor* PlayerActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
+	void StopFacePlayer();
+
 	// ── Speech bubble (?, !, …) — floats above the NPC head in 3D space ──
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|UI")
 	TObjectPtr<class UWidgetComponent> BubbleWidget;
@@ -162,4 +173,9 @@ private:
 	FVector OriginalLocation = FVector::ZeroVector;
 	bool    bSteppingAside   = false;
 	float   StepAsideAlpha   = 0.f;
+
+	// Face-player state — see StartFacePlayer/StopFacePlayer.
+	FRotator OriginalFacingRotation = FRotator::ZeroRotator;   // captured post floor-snap in BeginPlay
+	bool     bFacingPlayer          = false;
+	TWeakObjectPtr<AActor> FacePlayerTarget;
 };

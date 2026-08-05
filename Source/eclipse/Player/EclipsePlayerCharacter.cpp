@@ -211,6 +211,12 @@ void AEclipsePlayerCharacter::StopFaceTarget()
 	bFacingTarget = false;
 }
 
+void AEclipsePlayerCharacter::UpdateApproachProximity(float Alpha, const FVector& TargetLocation)
+{
+	ApproachAlpha = FMath::Clamp(Alpha, 0.f, 1.f);
+	ApproachLocation = TargetLocation;
+}
+
 void AEclipsePlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -233,29 +239,78 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 		}
 	}
 
-	if (bFacingTarget)
+	// DialogueCameraAlpha drives the camera's angle-offset and zoom-in.
+	// Target is continuous, not a binary switch: dialogue actually being
+	// open (bFacingTarget) always wins at full strength; otherwise it
+	// tracks ApproachAlpha, which EclipseInteractSubsystem feeds in every
+	// tick based on live distance to the nearest talkable NPC — so the
+	// camera starts gradually reacting as you approach, not just the
+	// instant you cross into official talk range. Ramp speed is
+	// deliberately asymmetric: slow while the target is INCREASING
+	// (approaching should read as gradual noticing), fast while DECREASING
+	// (walking away should let go promptly, not linger mid-swing).
+	const float TargetAlpha    = bFacingTarget ? 1.f : ApproachAlpha;
+	const FVector TargetLoc    = bFacingTarget ? FaceTargetLocation : ApproachLocation;
+	const float RampSpeed      = (TargetAlpha > DialogueCameraAlpha) ? 1.6f : 12.f;
+	DialogueCameraAlpha = FMath::FInterpTo(DialogueCameraAlpha, TargetAlpha, DeltaTime, RampSpeed);
+
+	if (DialogueCameraAlpha > 0.001f)
 	{
 		// OTS dialogue pivot — rotate the CONTROLLER (not just the actor) so
 		// the SpringArm (bUsePawnControlRotation=true) follows and the camera
 		// swings to look at the NPC. Mouse-look is already suppressed by the
-		// dialogue widget (SetIgnoreLookInput(true)), so the controller's
-		// scripted yaw won't fight player input.
+		// dialogue widget (SetIgnoreLookInput(true)) once dialogue is
+		// actually open, so the controller's scripted yaw won't fight player
+		// input; during the pre-dialogue approach ramp the player can still
+		// look around freely and this just adds the swing on top.
 		//
 		// Regression: the previous build only called SetActorRotation, which
 		// rotated the player mesh but left the camera frozen because
 		// SpringArm follows ControlRotation, not ActorRotation.
-		const FVector ToTarget = FaceTargetLocation - GetActorLocation();
+		const FVector ToTarget = TargetLoc - GetActorLocation();
 		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToTarget.Y, ToTarget.X)), 0.f);
+
+		// Body faces the NPC directly — camera sits off to one side of that
+		// same bearing instead of dead behind the player's back, so this
+		// reads as a two-shot (both characters in frame) rather than a
+		// face-on stare. Modest offset — a normal chase-cam angle, not an
+		// orbiting establishing shot. Ramps in with DialogueCameraAlpha so
+		// the swing-to-angle is part of the same ease as the zoom.
+		constexpr float DialogueCameraAngleOffsetDeg = 30.f;
+
+		// On the way out (fast/decreasing ramp), stop chasing the NPC's
+		// bearing and ease back toward wherever the player is actually
+		// facing instead — otherwise the camera stays pinned on the NPC's
+		// angle right up until alpha hits zero, then freezes there instead
+		// of resuming the normal behind-the-character follow.
+		const bool bRetreating = RampSpeed > 1.6f;
+		FRotator CamTargetRot = bRetreating ? GetActorRotation() : TargetRot;
+		if (!bRetreating)
+		{
+			CamTargetRot.Yaw -= DialogueCameraAngleOffsetDeg * DialogueCameraAlpha;
+		}
 
 		if (AController* Ctrl = GetController())
 		{
+			// Pull strength itself ramps with DialogueCameraAlpha — CamTargetRot
+			// jumps straight to the NPC's exact bearing the moment alpha ticks
+			// past 0, so without this the camera yanked toward it at full speed
+			// from the very first frame of contact instead of easing in with
+			// proximity. Floor of 0.3 keeps a faint pull alive at low alpha
+			// rather than a dead zone.
+			const float RotSpeed = FMath::Lerp(0.3f, 3.f, DialogueCameraAlpha);
 			const FRotator NewCtrlRot = FMath::RInterpTo(
-				Ctrl->GetControlRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
+				Ctrl->GetControlRotation(), CamTargetRot, DeltaTime, RotSpeed);
 			Ctrl->SetControlRotation(NewCtrlRot);
 		}
-		// Also keep the body facing the NPC so the player mesh isn't side-on.
-		const FRotator NewActorRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, /*Speed=*/6.f);
-		SetActorRotation(NewActorRot);
+		// Only actually turn the player's own body once dialogue is open —
+		// during the pre-dialogue approach ramp the player is still walking
+		// under their own control, so only the camera should swing.
+		if (bFacingTarget)
+		{
+			const FRotator NewActorRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, /*Speed=*/3.f);
+			SetActorRotation(NewActorRot);
+		}
 	}
 
 	// ── TAB-hold zoom-OUT + reverse-fisheye post-process ──
@@ -273,6 +328,16 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 		{
 			// Pull out to ~2x default arm length on full hold.
 			SpringArm->TargetArmLength = FMath::Lerp(DefaultArmLength, DefaultArmLength * 2.f, HighlightZoomAlpha);
+
+			// Dialogue zoom-in overrides the above — applied after so it
+			// isn't immediately stomped back to DefaultArmLength when TAB
+			// isn't held (HighlightZoomAlpha == 0).
+			if (DialogueCameraAlpha > 0.001f)
+			{
+				constexpr float DialogueArmLengthMultiplier = 0.5f;
+				SpringArm->TargetArmLength = FMath::Lerp(
+					SpringArm->TargetArmLength, DefaultArmLength * DialogueArmLengthMultiplier, DialogueCameraAlpha);
+			}
 		}
 		if (Camera)
 		{

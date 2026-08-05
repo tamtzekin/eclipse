@@ -110,6 +110,7 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 			if (AEclipsePlayerCharacter* Player = Cast<AEclipsePlayerCharacter>(PC->GetPawn()))
 			{
 				Player->StartFaceTarget(Npc->GetActorLocation());
+				Npc->StartFacePlayer(Player);
 			}
 		}
 	}
@@ -412,6 +413,7 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 {
 	if (!bDialogueOpen) return;
 	bDialogueOpen = false;
+	AEclipseNpcCharacter* NpcToRelease = ActiveNpc;   // ActiveNpc gets nulled below
 	ActiveNpc = nullptr;
 	ActiveItem = nullptr;
 	CurrentDialogueId = NAME_None;
@@ -436,6 +438,10 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 			if (AEclipsePlayerCharacter* Player = Cast<AEclipsePlayerCharacter>(PC->GetPawn()))
 			{
 				Player->StopFaceTarget();
+			}
+			if (NpcToRelease)
+			{
+				NpcToRelease->StopFacePlayer();
 			}
 		}
 	}

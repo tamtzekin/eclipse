@@ -74,11 +74,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Camera")
 	void StopFaceTarget();
 
+	// Continuous (not delayed/binary) proximity toward the nearest talkable
+	// NPC — called every tick by EclipseInteractSubsystem so the dialogue
+	// camera framing ramps in gradually as the player approaches, instead
+	// of snapping in only once officially "locked on". Alpha 0 = too far to
+	// react at all, 1 = fully within talk range. Has no effect while
+	// bFacingTarget is true (dialogue open / already locked on wins).
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Camera")
+	void UpdateApproachProximity(float Alpha, const FVector& TargetLocation);
+
 	virtual void Tick(float DeltaTime) override;
 
 private:
 	bool    bFacingTarget = false;
 	FVector FaceTargetLocation = FVector::ZeroVector;
+
+	// See UpdateApproachProximity.
+	float   ApproachAlpha = 0.f;
+	FVector ApproachLocation = FVector::ZeroVector;
+
+	// Dialogue camera framing — 0 = normal follow-cam, 1 = fully angled/zoomed
+	// two-shot. Blends toward 1 while bFacingTarget is true and back toward 0
+	// once it's false, so closing a conversation eases the camera back out
+	// instead of just releasing control mid-angle.
+	float DialogueCameraAlpha = 0.f;
 
 	// ── TAB-hold focus zoom ──
 	// Subscribed to UEclipseInteractSubsystem::OnHighlightToggled. While true,

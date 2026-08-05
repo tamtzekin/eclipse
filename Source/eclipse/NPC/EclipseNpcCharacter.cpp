@@ -61,6 +61,7 @@ void AEclipseNpcCharacter::BeginPlay()
 
 	// Cache the spawn pose so StepAside() lerps from the right (post-snap) start.
 	OriginalLocation = GetActorLocation();
+	OriginalFacingRotation = GetActorRotation();
 
 	if (bStationary)
 	{
@@ -138,6 +139,17 @@ void AEclipseNpcCharacter::StepAside()
 		*NpcName.ToString(), *StepAsideOffset.ToString());
 }
 
+void AEclipseNpcCharacter::StartFacePlayer(AActor* PlayerActor)
+{
+	bFacingPlayer = true;
+	FacePlayerTarget = PlayerActor;
+}
+
+void AEclipseNpcCharacter::StopFacePlayer()
+{
+	bFacingPlayer = false;
+}
+
 void AEclipseNpcCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -148,6 +160,42 @@ void AEclipseNpcCharacter::Tick(float DeltaTime)
 		const float T = FMath::SmoothStep(0.f, 1.f, StepAsideAlpha);
 		const FVector Target = OriginalLocation + StepAsideOffset;
 		SetActorLocation(FMath::Lerp(OriginalLocation, Target, T));
+	}
+
+	// Face-player: turn toward whoever's talking while bFacingPlayer, ease
+	// back to the original facing once it's false. Skips entirely once
+	// settled at rest so idle NPCs (the overwhelming common case) don't pay
+	// a RInterpTo + SetActorRotation every tick for nothing.
+	//
+	// This actor is usually invisible (mesh hidden) — VisualProxyActor is
+	// the mesh the player actually sees (e.g. Natalia's SKM_Quinn_Simple),
+	// so it has to be rotated in lockstep or the model on screen never
+	// visibly turns even though this actor's own rotation is correct.
+	const FRotator CurrentRot = GetActorRotation();
+	FRotator NewRot = CurrentRot;
+	bool bChanged = false;
+	if (bFacingPlayer && FacePlayerTarget.IsValid())
+	{
+		// Re-fetched live every tick — the player keeps moving, so a
+		// one-time snapshot would leave the NPC facing where they WERE.
+		const FVector ToPlayer = FacePlayerTarget->GetActorLocation() - GetActorLocation();
+		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToPlayer.Y, ToPlayer.X)), 0.f);
+		NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, /*Speed=*/3.5f);
+		bChanged = true;
+	}
+	else if (!CurrentRot.Equals(OriginalFacingRotation, 0.1f))
+	{
+		NewRot = FMath::RInterpTo(CurrentRot, OriginalFacingRotation, DeltaTime, /*Speed=*/3.5f);
+		bChanged = true;
+	}
+
+	if (bChanged)
+	{
+		SetActorRotation(NewRot);
+		if (AActor* Visual = VisualProxyActor.Get())
+		{
+			Visual->SetActorRotation(NewRot);
+		}
 	}
 }
 
