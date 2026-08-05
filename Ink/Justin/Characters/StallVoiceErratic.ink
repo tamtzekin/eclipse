@@ -6,11 +6,11 @@
 === stall_voice_erratic ===
 (muffled, fast) No no no it's fine, it's FINE, just — just gimme a sec —
 
-* Hey. Breathe. It's okay.
+* [Hey. Breathe. It's okay.]
     (a shaky exhale) ...okay. Okay. Sorry.
     -> END
-* Can you just hurry up in there? # ANNOYANCE >= 4
+* [Can you just hurry up in there?] # ANNOYANCE >= 4
     (silence, then a slammed stall wall)
     -> END
-* Take your time.
+* [Take your time.]
     -> END

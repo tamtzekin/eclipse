@@ -206,6 +206,15 @@ private:
 	// and restores this base tint otherwise.
 	TArray<FLinearColor> ChoiceBaseTints;
 
+	// Background card per choice row (parallel to ChoiceButtons) — white
+	// bg / black text at rest, flips to black bg / white text on hover or
+	// keyboard selection (matching the NPC caption boxes' own black card).
+	TArray<TObjectPtr<UBorder>> ChoiceRowBackgrounds;
+
+	// Phase driver for the subtle hover pulse (NativeTick's hover pass) —
+	// free-running seconds, not reset per node.
+	float ChoicePulseTime = 0.f;
+
 	// Resolves the display tint for a choice row. Skill-check choices are
 	// colour-coded by stat (pink=AESTHETICS, gold=RHYTHM, blue=ZEN,
 	// violet=PSYCHEDELICS) — plain cream at levels 1-2, blending toward
@@ -287,6 +296,13 @@ private:
 	// Currently-highlighted choice for keyboard navigation. -1 if none.
 	int32 SelectedIndex = 0;
 
+	// True once the player has actually navigated via keyboard (arrows/WASD/
+	// number keys) — gates the visual highlight so choice 0 doesn't appear
+	// pre-selected the instant a new set of choices appears. SelectedIndex
+	// still defaults to 0 underneath so Enter/E confirms the first choice
+	// even if the player never touches the keyboard nav.
+	bool bKeyboardSelectionActive = false;
+
 	void HighlightChoice(int32 Index);
 	void NavigateChoice(int32 Delta);   // +1 = next, -1 = prev
 
@@ -294,6 +310,16 @@ private:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeOnFocusLost(const FFocusEvent& InFocusEvent) override;
 	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
+
+	// Mouse wheel over ANY part of the dialogue panel scrolls the transcript
+	// — bubbles up from whatever child is under the cursor to this root
+	// widget, so it isn't limited to hovering the scrollbox's own narrow
+	// hit-test area. Eased toward a target offset in NativeTick rather than
+	// snapping instantly (see DialogueScrollTargetOffset).
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+	float DialogueScrollTargetOffset = 0.f;
+	bool  bDialogueScrollTargetActive = false;
 
 	// ── Word-by-word reveal animation state ──
 	// AnimWordBlocks holds the REVEAL TARGET for each word — the whole
@@ -317,6 +343,17 @@ private:
 
 	float DialogueAnimTime  = 0.f;
 	bool  bDialogueAnimating = false;
+
+	// Same word-reveal mechanism as AnimWordBlocks/AnimWordDelays above, but
+	// entirely separate state — the player's echoed "YOU" line has to keep
+	// animating independently of whatever the NPC's next line is doing,
+	// since MakeChoice appends the player's row and then immediately
+	// dispatches to the next node (which resets AnimWordBlocks for itself).
+	UPROPERTY()
+	TArray<TObjectPtr<UWidget>> PlayerAnimWordBlocks;
+	TArray<float> PlayerAnimWordDelays;
+	float PlayerAnimTime = 0.f;
+	bool  bPlayerLineAnimating = false;
 
 	// Cursor through the mumble source clip. Advances by each slice's duration
 	// so consecutive slices play sequential chunks of the file — preserves the

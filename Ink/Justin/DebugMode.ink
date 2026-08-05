@@ -29,7 +29,7 @@ INCLUDE Characters/StallVoiceCalm.ink
 INCLUDE Characters/StallVoiceErratic.ink
 INCLUDE Characters/EnlightenedRaver.ink
 INCLUDE Characters/Daesung.ink
-INCLUDE Characters/Quinn1.ink
+INCLUDE Characters/GlamorousDealer.ink
 INCLUDE Characters/Quinn2.ink
 INCLUDE Characters/Quinn3.ink
 INCLUDE Characters/Bouncer_Outside.ink
@@ -49,7 +49,7 @@ DEBUG MENU — pick who to talk to.
 + [Stall Voice, erratic (stall_voice_erratic)] -> stall_voice_erratic
 + [Enlightened Raver (enlightened_raver)] -> enlightened_raver
 + [Daesung (daesung)] -> daesung
-+ [Quinn 1 / Glamorous Dealer (quinn_1)] -> quinn_1
++ [Glamorous Dealer (glamorous_dealer)] -> glamorous_dealer
 + [Quinn 2 (quinn_2)] -> quinn_2
 + [Quinn 3 (quinn_3)] -> quinn_3
 + [Bouncer Outside (bouncer_outside)] -> bouncer_outside

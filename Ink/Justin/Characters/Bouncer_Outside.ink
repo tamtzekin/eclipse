@@ -3,15 +3,15 @@
 === bouncer_outside ===
 He sees you before you're even there.
 
-* Ticket.
-  * * Here.
+* [Ticket.]
+  * * [Here.]
     Go ahead.
     -> END
-  * * I don't have one.
+  * * [I don't have one.]
     Then leave.
     -> END
-* Can you just let me in?
+* [Can you just let me in?]
   Your name?
   Bag. Show me.
-  * * Never mind.
+  * * [Never mind.]
     -> END

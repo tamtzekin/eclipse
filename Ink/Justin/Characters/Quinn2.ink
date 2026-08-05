@@ -4,8 +4,8 @@
 === quinn_2 ===
 Hey. You're new around here, huh.
 
-* Yeah, first time. # GENDER == female
+* [Yeah, first time.] # GENDER == female
     Nice. Stick close, it gets weird after midnight.
     -> END
-* Something like that.
+* [Something like that.]
     -> END

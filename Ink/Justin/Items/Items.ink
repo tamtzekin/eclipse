@@ -9,7 +9,7 @@
 === red_wristband ===
 A red wristband, still warm. Someone must have dropped it recently.
 
-* Take it. # MENU: takeItem
+* [Take it.] # MENU: takeItem
     -> END
-* Leave it.
+* [Leave it.]
     -> END

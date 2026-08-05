@@ -3,9 +3,9 @@
 === figure_5 ===
 Cold out here, huh.
 
-* A little.
+* [A little.]
     Told you. Nobody ever believes me.
     -> END
-* I'm fine, actually.
+* [I'm fine, actually.]
     Suit yourself.
     -> END

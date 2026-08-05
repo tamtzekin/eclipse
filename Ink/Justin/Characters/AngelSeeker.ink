@@ -47,13 +47,13 @@ I've been waiting by this stall a long time. You feel it too, don't you? The Ang
 = choices
 ~ met_npc = true
 
-* Tell me about the Angel. # SKILLCHECK:ZEN:1
+* [Tell me about the Angel.] # SKILLCHECK:ZEN:1
     She only speaks to the ones who slow down enough to listen. # +1 ZEN
     -> angel_seeker
-* You seem so sure of that. # GATE:ZEN: 1
+* [You seem so sure of that.] # GATE:ZEN: 1
     You'd be sure too, if you'd seen what I've seen. # +1 RHYTHM
     -> angel_seeker
-* {has_hair && has_eye} I think I'm ready to go in. # MENU: enterStall
+* {has_hair && has_eye} [I think I'm ready to go in.] # MENU: enterStall
     -> END
-* I should go.
+* [I should go.]
     -> END

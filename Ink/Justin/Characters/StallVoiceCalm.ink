@@ -7,11 +7,11 @@
 === stall_voice_calm ===
 Someone's in here. Just — give me a minute, okay?
 
-* You alright in there?
+* [You alright in there?]
     Yeah. Just needed to sit down for a second.
     -> stall_voice_calm
-* You look wiped out. Want some water? # STIMULATION < 3 # +1 THIRST
+* [You look wiped out. Want some water?] # STIMULATION < 3 # +1 THIRST
     Actually... yeah. Thanks.
     -> END
-* I'll leave you to it.
+* [I'll leave you to it.]
     -> END

@@ -7,9 +7,9 @@
 === daesung ===
 (slumped against the wall, eyes half shut) ...hey. Hey, is that a bottle.
 
-* Here — fill it up if you need. # GATE:EMPTY_BOTTLE
+* [Here — fill it up if you need.] # GATE:EMPTY_BOTTLE
     ...you're an angel.
     -> END
-* Just resting?
+* [Just resting?]
     Somethin' like that.
     -> END
