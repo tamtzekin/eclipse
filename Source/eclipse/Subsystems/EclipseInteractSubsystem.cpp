@@ -101,53 +101,35 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		NearTalkable = Best;
 		OnNearTalkableChanged.Broadcast(NearTalkable);
 		NearTalkableTimer = 0.f;
+
+		// Whoever was locked on before isn't the nearest talkable anymore —
+		// release them immediately regardless of how the delay times out.
+		if (AEclipseNpcCharacter* Prev = FacingNpc.Get())
+		{
+			Prev->StopFacePlayer();
+			FacingNpc = nullptr;
+			if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
+			{
+				PlayerChar->StopFaceTarget();
+			}
+		}
 	}
-
-	// ── TalkableLockOn ──
-	// After a short "notice you're there" delay spent inside a tighter
-	// sub-radius of the full interact/TalkRadius, the current nearest
-	// talkable turns to face the player, and the player's own camera swings
-	// into its dialogue framing too — both trigger off approach, not just
-	// off actually pressing E. The sub-radius keeps the "notice" turn from
-	// firing the instant the E-prompt appears from across the room; it only
-	// engages once genuinely close. Doesn't fight dialogue's own
-	// StartFacePlayer/StopFaceTarget (EclipseDialogueSubsystem) — opening
-	// dialogue requires already being NearTalkable, so lock-on has usually
-	// already turned everything by the time E is pressed; closing dialogue
-	// only snaps back if the player has actually left talk range.
-	constexpr float FaceDelaySeconds = 0.25f;
-	constexpr float LockOnRadiusMultiplier = 0.6f;
-
-	bool bWithinLockOnRadius = false;
-	if (NearTalkable)
-	{
-		const float LockOnRadius = NearTalkable->TalkRadius * LockOnRadiusMultiplier;
-		bWithinLockOnRadius = FVector::DistSquared(NearTalkable->GetActorLocation(), PlayerPos) <= FMath::Square(LockOnRadius);
-	}
-
-	if (bWithinLockOnRadius)
+	else if (NearTalkable)
 	{
 		NearTalkableTimer += DeltaTime;
 	}
-	else
-	{
-		NearTalkableTimer = 0.f;
-	}
 
-	// Release whoever was locked on the moment they stop being both the
-	// nearest talkable AND inside the tighter radius — covers stepping back
-	// out, and switching targets while still technically in range.
-	if (FacingNpc.IsValid() && (!bWithinLockOnRadius || FacingNpc.Get() != NearTalkable))
-	{
-		FacingNpc->StopFacePlayer();
-		FacingNpc = nullptr;
-		if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
-		{
-			PlayerChar->StopFaceTarget();
-		}
-	}
-
-	if (NearTalkable && bWithinLockOnRadius && !FacingNpc.IsValid() && NearTalkableTimer >= FaceDelaySeconds)
+	// ── TalkableLockOn ──
+	// After a short "notice you're there" delay, the current nearest
+	// talkable turns to face the player — same range as the E-prompt
+	// (full TalkRadius, not some tighter sub-radius), so the turn kicks in
+	// at a normal approach distance rather than only once you're right on
+	// top of them. StartFacePlayer/Tick re-fetch the player's live position
+	// every frame, so once locked on, the NPC keeps tracking as the player
+	// circles around, not just a one-shot turn toward wherever they were
+	// when the lock first engaged.
+	constexpr float FaceDelaySeconds = 0.25f;
+	if (NearTalkable && !FacingNpc.IsValid() && NearTalkableTimer >= FaceDelaySeconds)
 	{
 		NearTalkable->StartFacePlayer(Pawn);
 		FacingNpc = NearTalkable;

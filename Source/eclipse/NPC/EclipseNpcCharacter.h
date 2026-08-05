@@ -85,6 +85,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	TSoftObjectPtr<AActor> VisualProxyActor;
 
+	// VisualProxyActor's own mesh usually doesn't face the same way as this
+	// (normally-invisible) actor's forward axis — added to this actor's yaw
+	// every tick before applying it to the visual proxy, so the two can be
+	// out of alignment by any amount and still be corrected. Tune live: with
+	// PIE running, select this NPC in the World Outliner and drag the value
+	// in the Details panel while approaching it as the player — no rebuild
+	// needed. Try 180 first (most common case), then nudge from there.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC", meta = (ClampMin = "-180.0", ClampMax = "180.0"))
+	float VisualProxyYawOffset = 0.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	EEclipseBubbleType BubbleType = EEclipseBubbleType::Question;
 

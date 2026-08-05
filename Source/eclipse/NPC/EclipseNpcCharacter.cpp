@@ -178,6 +178,11 @@ void AEclipseNpcCharacter::Tick(float DeltaTime)
 	{
 		// Re-fetched live every tick — the player keeps moving, so a
 		// one-time snapshot would leave the NPC facing where they WERE.
+		// Target is the true chest-to-chest bearing, full stop — any blend
+		// or clamp toward their original stance means they stop short of
+		// actually facing the player, which reads as just wrong rather than
+		// as a subtle glance. The turn still eases in via RInterpTo below,
+		// so it doesn't snap.
 		const FVector ToPlayer = FacePlayerTarget->GetActorLocation() - GetActorLocation();
 		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToPlayer.Y, ToPlayer.X)), 0.f);
 		NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, /*Speed=*/3.5f);
@@ -194,7 +199,10 @@ void AEclipseNpcCharacter::Tick(float DeltaTime)
 		SetActorRotation(NewRot);
 		if (AActor* Visual = VisualProxyActor.Get())
 		{
-			Visual->SetActorRotation(NewRot);
+			// VisualProxyYawOffset is a designer-set EditAnywhere value now
+			// (not auto-detected) — tune it live in the Details panel while
+			// this NPC is selected in PIE.
+			Visual->SetActorRotation(FRotator(NewRot.Pitch, NewRot.Yaw + VisualProxyYawOffset, NewRot.Roll));
 		}
 	}
 }
