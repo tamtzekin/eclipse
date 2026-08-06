@@ -159,6 +159,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
 	void StopFacePlayer();
 
+	// ── Approach turn: gradual pre-lock lean toward the player as they close
+	//    in from the wide outer radius, well before the tight lock-on radius
+	//    fires StartFacePlayer. Alpha 0 = original facing, 1 = fully facing
+	//    PlayerActor. Called every tick by EclipseInteractSubsystem with the
+	//    live proximity alpha; overridden by StartFacePlayer's full lock
+	//    whenever that's active.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
+	void UpdateApproachTurn(float Alpha, AActor* PlayerActor);
+
 	// ── Speech bubble (?, !, …) — floats above the NPC head in 3D space ──
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|UI")
 	TObjectPtr<class UWidgetComponent> BubbleWidget;
@@ -188,4 +197,8 @@ private:
 	FRotator OriginalFacingRotation = FRotator::ZeroRotator;   // captured post floor-snap in BeginPlay
 	bool     bFacingPlayer          = false;
 	TWeakObjectPtr<AActor> FacePlayerTarget;
+
+	// Approach-turn state — see UpdateApproachTurn. Ignored while bFacingPlayer.
+	float ApproachTurnAlpha = 0.f;
+	TWeakObjectPtr<AActor> ApproachTurnTarget;
 };

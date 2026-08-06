@@ -149,7 +149,23 @@ void AEclipsePlayerCharacter::OnMove(const FInputActionValue& Value)
 	// derive a flat-yaw rotator from the controller, build forward+right axes,
 	// add input.
 	if (!Controller) return;
-	const FRotator YawRot(0.f, Controller->GetControlRotation().Yaw, 0.f);
+
+	// While locked onto an NPC, base movement on the live geometric bearing to
+	// them instead of the camera's own rotation. The camera's rotation is
+	// itself being scripted every tick to chase that same bearing while
+	// locked — using it as the movement basis too closes a feedback loop
+	// (camera corrects toward the bearing from the player's new position →
+	// that's "forward" for movement → that moves the player → the bearing
+	// shifts → camera corrects again), which is what read as a shake when
+	// backing straight out with S. Computing forward directly from world
+	// positions instead guarantees backing away is always perfectly radial,
+	// so the bearing the camera is chasing never actually needs to move.
+	const float BasisYaw = bFacingTarget
+		? FMath::RadiansToDegrees(FMath::Atan2(
+			FaceTargetLocation.Y - GetActorLocation().Y,
+			FaceTargetLocation.X - GetActorLocation().X))
+		: Controller->GetControlRotation().Yaw;
+	const FRotator YawRot(0.f, BasisYaw, 0.f);
 	const FVector  Forward = FRotationMatrix(YawRot).GetUnitAxis(EAxis::X);
 	const FVector  Right   = FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y);
 
@@ -249,10 +265,28 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 	// deliberately asymmetric: slow while the target is INCREASING
 	// (approaching should read as gradual noticing), fast while DECREASING
 	// (walking away should let go promptly, not linger mid-swing).
-	const float TargetAlpha    = bFacingTarget ? 1.f : ApproachAlpha;
+	const float RawTargetAlpha = bFacingTarget ? 1.f : ApproachAlpha;
+	if (bFacingTarget)
+	{
+		bReleasing = false; // a deliberate re-lock always wins
+	}
+	else if (RawTargetAlpha <= DialogueCameraAlpha)
+	{
+		// Not increasing — releasing (or already fully decayed). Latch it:
+		// once we start letting go, commit to decaying all the way to 0
+		// rather than re-checking every tick, so a second nearby NPC's
+		// ApproachAlpha can't spike back up and pull the camera into chasing
+		// it mid-retreat.
+		bReleasing = true;
+	}
+	const float TargetAlpha    = bReleasing ? 0.f : RawTargetAlpha;
 	const FVector TargetLoc    = bFacingTarget ? FaceTargetLocation : ApproachLocation;
 	const float RampSpeed      = (TargetAlpha > DialogueCameraAlpha) ? 1.6f : 12.f;
 	DialogueCameraAlpha = FMath::FInterpTo(DialogueCameraAlpha, TargetAlpha, DeltaTime, RampSpeed);
+	if (bReleasing && DialogueCameraAlpha <= 0.001f)
+	{
+		bReleasing = false; // fully let go — ready for a fresh approach next time
+	}
 
 	if (DialogueCameraAlpha > 0.001f)
 	{
@@ -278,30 +312,33 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 		// the swing-to-angle is part of the same ease as the zoom.
 		constexpr float DialogueCameraAngleOffsetDeg = 30.f;
 
-		// On the way out (fast/decreasing ramp), stop chasing the NPC's
-		// bearing and ease back toward wherever the player is actually
-		// facing instead — otherwise the camera stays pinned on the NPC's
-		// angle right up until alpha hits zero, then freezes there instead
-		// of resuming the normal behind-the-character follow.
-		const bool bRetreating = RampSpeed > 1.6f;
-		FRotator CamTargetRot = bRetreating ? GetActorRotation() : TargetRot;
-		if (!bRetreating)
+		// bReleasing (latched above) always wins over a raw per-tick alpha
+		// comparison — once retreating, stop touching ControlRotation
+		// entirely and stay hands-off for the whole retreat, no matter what
+		// ApproachAlpha does in the meantime. Normal third-person camera
+		// behavior here is that the camera never follows the body at all,
+		// only the mouse, so backing out should just return the camera to
+		// normal — nothing chasing the NPC's bearing, nothing chasing the
+		// player's own body facing, and no re-engaging mid-retreat because a
+		// second nearby NPC's ApproachAlpha happened to spike.
+		if (!bReleasing)
 		{
+			FRotator CamTargetRot = TargetRot;
 			CamTargetRot.Yaw -= DialogueCameraAngleOffsetDeg * DialogueCameraAlpha;
-		}
 
-		if (AController* Ctrl = GetController())
-		{
-			// Pull strength itself ramps with DialogueCameraAlpha — CamTargetRot
-			// jumps straight to the NPC's exact bearing the moment alpha ticks
-			// past 0, so without this the camera yanked toward it at full speed
-			// from the very first frame of contact instead of easing in with
-			// proximity. Floor of 0.3 keeps a faint pull alive at low alpha
-			// rather than a dead zone.
-			const float RotSpeed = FMath::Lerp(0.3f, 3.f, DialogueCameraAlpha);
-			const FRotator NewCtrlRot = FMath::RInterpTo(
-				Ctrl->GetControlRotation(), CamTargetRot, DeltaTime, RotSpeed);
-			Ctrl->SetControlRotation(NewCtrlRot);
+			if (AController* Ctrl = GetController())
+			{
+				// Pull strength itself ramps with DialogueCameraAlpha — CamTargetRot
+				// jumps straight to the NPC's exact bearing the moment alpha ticks
+				// past 0, so without this the camera yanked toward it at full speed
+				// from the very first frame of contact instead of easing in with
+				// proximity. Floor of 0.3 keeps a faint pull alive at low alpha
+				// rather than a dead zone.
+				const float RotSpeed = FMath::Lerp(0.3f, 3.f, DialogueCameraAlpha);
+				const FRotator NewCtrlRot = FMath::RInterpTo(
+					Ctrl->GetControlRotation(), CamTargetRot, DeltaTime, RotSpeed);
+				Ctrl->SetControlRotation(NewCtrlRot);
+			}
 		}
 		// Only actually turn the player's own body once dialogue is open —
 		// during the pre-dialogue approach ramp the player is still walking

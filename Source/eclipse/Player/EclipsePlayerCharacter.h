@@ -99,6 +99,15 @@ private:
 	// instead of just releasing control mid-angle.
 	float DialogueCameraAlpha = 0.f;
 
+	// Latches true the instant we stop being locked/approaching (bFacingTarget
+	// goes false while DialogueCameraAlpha isn't increasing) and stays true
+	// until DialogueCameraAlpha fully decays to 0. While latched, TargetAlpha
+	// is forced to 0 regardless of ApproachAlpha — so passing near a SECOND
+	// nearby NPC while backing away from the first can't spike the target back
+	// up and yank the camera into chasing it mid-retreat. Cleared immediately
+	// on a deliberate re-lock (bFacingTarget true again).
+	bool bReleasing = false;
+
 	// ── TAB-hold focus zoom ──
 	// Subscribed to UEclipseInteractSubsystem::OnHighlightToggled. While true,
 	// Tick lerps SpringArm length, camera FOV, and a few PostProcess settings

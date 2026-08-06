@@ -150,6 +150,12 @@ void AEclipseNpcCharacter::StopFacePlayer()
 	bFacingPlayer = false;
 }
 
+void AEclipseNpcCharacter::UpdateApproachTurn(float Alpha, AActor* PlayerActor)
+{
+	ApproachTurnAlpha = FMath::Clamp(Alpha, 0.f, 1.f);
+	ApproachTurnTarget = PlayerActor;
+}
+
 void AEclipseNpcCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -186,6 +192,21 @@ void AEclipseNpcCharacter::Tick(float DeltaTime)
 		const FVector ToPlayer = FacePlayerTarget->GetActorLocation() - GetActorLocation();
 		const FRotator TargetRot(0.f, FMath::RadiansToDegrees(FMath::Atan2(ToPlayer.Y, ToPlayer.X)), 0.f);
 		NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, /*Speed=*/3.5f);
+		bChanged = true;
+	}
+	else if (ApproachTurnAlpha > 0.001f && ApproachTurnTarget.IsValid())
+	{
+		// Gradual pre-lock lean: blend between the original facing and the
+		// live bearing to the player by proximity alpha (0 far out on the
+		// wide radius, 1 at the tight lock radius) — so the turn itself
+		// reads as "noticing you approach", not a snap the moment the lock
+		// radius is crossed. FindDeltaAngleDegrees so the blend still takes
+		// the shortest path around the 180° wrap.
+		const FVector ToPlayer = ApproachTurnTarget->GetActorLocation() - GetActorLocation();
+		const float BearingYaw = FMath::RadiansToDegrees(FMath::Atan2(ToPlayer.Y, ToPlayer.X));
+		const float DeltaYaw   = FMath::FindDeltaAngleDegrees(OriginalFacingRotation.Yaw, BearingYaw);
+		const float TargetYaw  = OriginalFacingRotation.Yaw + DeltaYaw * ApproachTurnAlpha;
+		NewRot = FMath::RInterpTo(CurrentRot, FRotator(0.f, TargetYaw, 0.f), DeltaTime, /*Speed=*/3.5f);
 		bChanged = true;
 	}
 	else if (!CurrentRot.Equals(OriginalFacingRotation, 0.1f))

@@ -70,4 +70,9 @@ private:
 	// changes to someone else or to nobody.
 	float NearTalkableTimer = 0.f;
 	TWeakObjectPtr<AEclipseNpcCharacter> FacingNpc;
+
+	// Gradual pre-lock turn — whichever NPC last got a nonzero approach-turn
+	// alpha, so it can be explicitly zeroed out the instant a closer NPC
+	// takes over (otherwise it'd freeze mid-turn instead of easing back).
+	TWeakObjectPtr<AEclipseNpcCharacter> ApproachTurnNpc;
 };
