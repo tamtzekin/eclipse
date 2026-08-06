@@ -38,6 +38,19 @@ namespace EclipseUI
 	// portrait outline) per design direction.
 	inline const FLinearColor DialogueRed = FLinearColor(0.902f, 0.165f, 0.165f, 1.f); // #e62a2a
 
+	// Per-stat hue — shared by the dialogue widget's skill-check choice tints
+	// and its stat-altering body-text callouts (e.g. "Aesthetics Damaged: ...")
+	// so both use the exact same palette. Unset when Stat isn't one of the
+	// four known stats.
+	inline TOptional<FLinearColor> StatHue(FName Stat)
+	{
+		if (Stat == TEXT("aesthetics"))   return FLinearColor(1.00f, 0.42f, 0.72f);   // pink
+		if (Stat == TEXT("rhythm"))       return FLinearColor(1.00f, 0.80f, 0.30f);   // gold
+		if (Stat == TEXT("zen"))          return FLinearColor(0.45f, 0.75f, 1.00f);   // sky blue
+		if (Stat == TEXT("psychedelics")) return FLinearColor(0.72f, 0.45f, 1.00f);   // violet
+		return {};
+	}
+
 	// ── Fonts ────────────────────────────────────────────────────────────────
 	// Loaded from /Game/Justin/UI/Fonts. UE 5.6's AssetImportTask creates the
 	// UFontFace .uasset, but Slate text widgets want a UFont composite that

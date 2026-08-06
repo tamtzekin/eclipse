@@ -1125,12 +1125,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 
 	// Per-stat hue. Deliberately distinct from the transcript palette
 	// (cream player / cyan NPC / orange effects / mint XP).
-	FLinearColor Hue = Cream;
-	const FName S = Choice.SkillCheckStat;
-	if      (S == TEXT("aesthetics"))   Hue = FLinearColor(1.00f, 0.42f, 0.72f);   // pink
-	else if (S == TEXT("rhythm"))       Hue = FLinearColor(1.00f, 0.80f, 0.30f);   // gold
-	else if (S == TEXT("zen"))          Hue = FLinearColor(0.45f, 0.75f, 1.00f);   // sky blue
-	else if (S == TEXT("psychedelics")) Hue = FLinearColor(0.72f, 0.45f, 1.00f);   // violet
+	const FLinearColor Hue = StatHue(Choice.SkillCheckStat).Get(Cream);
 
 	// The colour EARNS its way in: levels 1-2 render plain white like any
 	// other option; from level 3 the text blends toward the stat hue,
@@ -1141,7 +1136,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	{
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			Level = GS->GetStatValue(S);
+			Level = GS->GetStatValue(Choice.SkillCheckStat);
 		}
 	}
 	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
@@ -1716,6 +1711,34 @@ namespace
 		}
 		return Hold;
 	}
+
+	// Colors "<Stat> Damaged"/"<Stat> Improved" bigrams — as authored in body
+	// text, e.g. "Aesthetics Damaged: Level 3" — with that stat's hue
+	// (EclipseUI::StatHue, same palette as the skill-check choice tints), so
+	// stat-altering narration reads distinctly from plain prose. Every other
+	// word stays white.
+	TArray<FLinearColor> ColorStatWords(const TArray<FString>& Sentence)
+	{
+		TArray<FLinearColor> Colors;
+		Colors.Init(FLinearColor::White, Sentence.Num());
+		for (int32 i = 0; i + 1 < Sentence.Num(); ++i)
+		{
+			FString Verb = Sentence[i + 1];
+			Verb.RemoveFromEnd(TEXT(":"));
+			if (!Verb.Equals(TEXT("Damaged"), ESearchCase::IgnoreCase) &&
+				!Verb.Equals(TEXT("Improved"), ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			FString Stat = Sentence[i];
+			Stat.RemoveFromEnd(TEXT(":"));
+			if (TOptional<FLinearColor> Hue = EclipseUI::StatHue(FName(*Stat)))
+			{
+				Colors[i] = Colors[i + 1] = *Hue;
+			}
+		}
+		return Colors;
+	}
 }
 
 void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
@@ -1778,9 +1801,11 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 		++SentenceIndex;
 		if (!SBox.Box || !SBox.Inner) continue;
 
+		const TArray<FLinearColor> WordColors = ColorStatWords(Sentence);
 		bool bFirstWordInSentence = true;
-		for (const FString& Word : Sentence)
+		for (int32 WordIdx = 0; WordIdx < Sentence.Num(); ++WordIdx)
 		{
+			const FString& Word = Sentence[WordIdx];
 			if (bFirstWordInSentence)
 			{
 				// The box itself is a reveal target too — same delay as its
@@ -1795,7 +1820,7 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(
 				UTextBlock::StaticClass(), NAME_None);
 			Text->SetFont(BodyFont);
-			Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			Text->SetColorAndOpacity(FSlateColor(WordColors[WordIdx]));
 			// Trailing space separates words sharing the same box.
 			Text->SetText(FText::FromString(Word + TEXT(" ")));
 			Text->SetVisibility(ESlateVisibility::Collapsed);
