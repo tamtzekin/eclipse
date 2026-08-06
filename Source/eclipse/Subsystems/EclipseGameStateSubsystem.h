@@ -591,7 +591,7 @@ public:
 	void ConsumePendingTeleport(class APawn* Pawn);
 
 	// Inventory cap (matches JS)
-	static constexpr int32 InventoryMax = 6;
+	static constexpr int32 InventoryMax = 20;
 
 private:
 	// Throttle accumulator for OnStateChanged broadcasts during meter drain.

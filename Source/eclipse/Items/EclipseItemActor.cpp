@@ -161,7 +161,6 @@ void AEclipseItemActor::Tick(float DeltaTime)
 void AEclipseItemActor::Pickup_Implementation()
 {
 	if (bPickedUp) return;
-	bPickedUp = true;
 
 	UWorld* World = GetWorld();
 	if (!World) return;
@@ -191,12 +190,21 @@ void AEclipseItemActor::Pickup_Implementation()
 			//
 			// AddItem itself special-cases the BASE id (e.g. "wristband") for
 			// quest-flag side effects (bHasWristband).
+			//
+			// AddItem fails when the inventory is full — bail out here without
+			// hiding/consuming the actor, so a full inventory just blocks the
+			// pickup instead of silently destroying the item.
 			else if (ItemId != NAME_None)
 			{
 				const FName RuntimeId = FName(*FString::Printf(
 					TEXT("%s__%s"), *ItemId.ToString(), *GetName()));
-				State->AddItem(RuntimeId);
+				if (!State->AddItem(RuntimeId))
+				{
+					return;
+				}
 			}
+
+			bPickedUp = true;
 
 			// Apply the configured QuestFlag onto the quest state. Names match
 			// the JS prototype's flag keys ("hasHair", "hasEye"); the dialogue
