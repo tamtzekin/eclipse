@@ -216,7 +216,7 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	}
 	if (ClosestAny)
 	{
-		constexpr float TurnOuterMultiplier = 3.5f;
+		constexpr float TurnOuterMultiplier = 2.8f;
 		const float TurnLockRadius = ClosestAny->TalkRadius * LockOnRadiusMultiplier;
 		const float TurnOuterRadius = ClosestAny->TalkRadius * TurnOuterMultiplier;
 		const float Dist = FMath::Sqrt(ClosestAnyDistSq);
