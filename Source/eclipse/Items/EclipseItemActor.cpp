@@ -147,11 +147,6 @@ void AEclipseItemActor::Tick(float DeltaTime)
 
 	LifetimeSeconds += DeltaTime;
 
-	if (bRotates)
-	{
-		AddActorWorldRotation(FRotator(0.f, RotationSpeedYaw * DeltaTime, 0.f));
-	}
-
 	// Hover pulse: bob ±4 cm at 2 Hz (mirrors JS wristband sin-float)
 	const float PulseZ = FMath::Sin(LifetimeSeconds * 2.0f) * 4.0f;
 	FVector Loc = GetActorLocation();

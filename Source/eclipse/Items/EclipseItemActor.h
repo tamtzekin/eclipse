@@ -75,13 +75,6 @@ public:
 	void Pickup();
 	virtual void Pickup_Implementation();
 
-	/** Slow rotation tick flag (mirrors wristband pulse in JS). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
-	bool bRotates = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
-	float RotationSpeedYaw = 60.f; // degrees/sec
-
 	// Sound played at the item's location on Pickup. Null-safe — no-op if unset.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
 	TObjectPtr<class USoundBase> PickupSound;
