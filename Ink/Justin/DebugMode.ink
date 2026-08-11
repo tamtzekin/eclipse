@@ -33,7 +33,7 @@ INCLUDE Characters/GlamorousDealer.ink
 INCLUDE Characters/Quinn2.ink
 INCLUDE Characters/Quinn3.ink
 INCLUDE Characters/Bouncer_Outside.ink
-INCLUDE Characters/Figure3.ink
+INCLUDE Characters/GuestlistGirl.ink
 INCLUDE Characters/Figure4.ink
 INCLUDE Characters/Figure5.ink
 
@@ -42,21 +42,25 @@ INCLUDE Items/Items.ink
 -> debug_menu
 
 === debug_menu ===
-DEBUG MENU — pick who to talk to.
+Pick a character to start their dialogue.
 
+// OUTSIDE THE CLUB
++ [Glamorous Dealer (glamorous_dealer)] -> glamorous_dealer
++ [Chainsmoker] -> chainsmoker
++ [Guestlist Girl] -> guestlist_girl
++ [Bouncer Outside (bouncer_outside)] -> bouncer_outside
+
+// BATHROOM
 + [Angel Seeker (angel_seeker)] -> angel_seeker_setup
 + [Stall Voice, calm (stall_voice_calm)] -> stall_voice_calm
 + [Stall Voice, erratic (stall_voice_erratic)] -> stall_voice_erratic
 + [Enlightened Raver (enlightened_raver)] -> enlightened_raver
 + [Daesung (daesung)] -> daesung
-+ [Glamorous Dealer (glamorous_dealer)] -> glamorous_dealer
 + [Quinn 2 (quinn_2)] -> quinn_2
-+ [Quinn 3 (quinn_3)] -> quinn_3
-+ [Bouncer Outside (bouncer_outside)] -> bouncer_outside
-+ [Figure 3 (figure_3)] -> figure_3
 + [Figure 4 (figure_4)] -> figure_4
 + [Figure 5 (figure_5)] -> figure_5
 + [Red Wristband (red_wristband)] -> red_wristband
+
 + [quit] -> END
 
 = angel_seeker_setup

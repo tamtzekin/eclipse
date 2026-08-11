@@ -23,7 +23,16 @@ VAR psychedelics = 1
 VAR euros = 15
 
 // Inventory system
-LIST Inventory = (none), phone, lighter, slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, bottle_vodka, cup_empty, cup_beer, thick_book
-
+LIST Inventory = (none), phone, lighter, slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, bottle_vodka, cup_empty, cup_beer, thick_book, ticket
 === function get(x)
     ~ Inventory += x
+
+// Connections system (when you 'know someone')
+LIST Connections = dj_crisis
+
+// Character switch tracking
+LIST CurrentPlayer = character_one, character_two, character_three
+
+// Patience of NPC you're talking too
+LIST Patience = annoyed, bored, (neutral), friendly, flirty
+
