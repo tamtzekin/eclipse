@@ -563,11 +563,15 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
-		// HUD container — top-left, navy panel.
-		UBorder* HudBg = New<UBorder>(Tree, TEXT("HudBg"));
-		HudBg->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
-		HudBg->SetPadding(FMargin(14.f, 12.f));
-		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(HudBg))
+		// No backdrop — bars sit directly on the canvas, top-left. Fixed-width
+		// SizeBox gives the Fill-aligned rows/bars below a concrete width.
+		const float ColumnWidth = 320.f;
+		const float BarHeight   = 14.f;
+		const int32 MeterMax    = 10;
+
+		USizeBox* ColumnSize = New<USizeBox>(Tree, TEXT("MeterColumnSize"));
+		ColumnSize->SetWidthOverride(ColumnWidth);
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(ColumnSize))
 		{
 			S->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 			S->SetAlignment(FVector2D(0.f, 0.f));
@@ -576,123 +580,71 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		}
 
 		UVerticalBox* MeterCol = New<UVerticalBox>(Tree, TEXT("MeterColumn"));
-		HudBg->SetContent(MeterCol);
-
-		const float SegW       = 22.f;
-		const float SegH       = 22.f;
-		const float DivW       = 2.f;
-		const float LabelW     = 110.f;
-		const float ValueW     = 28.f;
-		const FLinearColor TrackTint(0.08f, 0.10f, 0.14f, 0.85f);
-		const FLinearColor DividerTint(0.945f, 0.929f, 0.851f, 0.55f);
-		const int32 MeterMax = 10;
-		const int32 CritLow  = 2;
-		const int32 CritHigh = 8;
+		ColumnSize->AddChild(MeterCol);
 
 		auto BuildBar = [&](const TCHAR* Suffix, const FString& Label)
 		{
-			UHorizontalBox* Row = New<UHorizontalBox>(Tree,
+			UVerticalBox* Block = New<UVerticalBox>(Tree,
+				FName(*FString::Printf(TEXT("%sBlock"), Suffix)));
+
+			// ── Top line: [Label] .......... [Value/Max] ──
+			UHorizontalBox* TopRow = New<UHorizontalBox>(Tree,
 				FName(*FString::Printf(TEXT("%sRow"), Suffix)));
 
-			// Label (left).
 			UTextBlock* LabelTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sLabelText"), Suffix)));
 			LabelTxt->SetText(FText::FromString(Label));
-			LabelTxt->SetFont(MakeBMSPA(14, 3.f));
+			LabelTxt->SetFont(MakeBMSPA(18, 3.f));
 			LabelTxt->SetColorAndOpacity(FSlateColor(Cream));
-			USizeBox* LabelSize = New<USizeBox>(Tree,
-				FName(*FString::Printf(TEXT("%sLabelSize"), Suffix)));
-			LabelSize->SetWidthOverride(LabelW);
-			LabelSize->AddChild(LabelTxt);
-			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(LabelSize))
+			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(LabelTxt))
 			{
-				HS->SetVerticalAlignment(VAlign_Center);
-				HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+				HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				HS->SetVerticalAlignment(VAlign_Bottom);
 			}
 
-			// Segment row (middle, left→right).
-			UHorizontalBox* SegRow = New<UHorizontalBox>(Tree,
-				FName(*FString::Printf(TEXT("%sSegmentRow"), Suffix)));
-
-			for (int32 i = 0; i < MeterMax; ++i)
-			{
-				UBorder* Seg = New<UBorder>(Tree,
-					FName(*FString::Printf(TEXT("%sSeg_%d"), Suffix, i)));
-				Seg->SetBrush(SolidBrush(TrackTint));
-				Seg->SetPadding(FMargin(0.f));
-				USizeBox* SegSize = New<USizeBox>(Tree,
-					FName(*FString::Printf(TEXT("%sSegSize_%d"), Suffix, i)));
-				SegSize->SetWidthOverride(SegW);
-				SegSize->SetHeightOverride(SegH);
-				SegSize->AddChild(Seg);
-				SegRow->AddChildToHorizontalBox(SegSize);
-
-				// Dotted dividers AFTER seg 1 (critical-low boundary) and
-				// AFTER seg 7 (critical-high boundary).
-				const bool bDividerAfter = (i == CritLow - 1) || (i == CritHigh - 1);
-				if (bDividerAfter)
-				{
-					UBorder* Div = New<UBorder>(Tree,
-						FName(*FString::Printf(TEXT("%sDivider_%d"), Suffix, i)));
-					Div->SetBrush(SolidBrush(DividerTint));
-					USizeBox* DivSize = New<USizeBox>(Tree,
-						FName(*FString::Printf(TEXT("%sDivSize_%d"), Suffix, i)));
-					DivSize->SetWidthOverride(DivW);
-					DivSize->SetHeightOverride(SegH);
-					DivSize->AddChild(Div);
-					SegRow->AddChildToHorizontalBox(DivSize);
-				}
-			}
-
-			// Wrap the segment row in an outline frame — UEclipseHUDWidget's
-			// TintFrame brightens the outline during the per-meter pulse so
-			// the bar "glows" when a stat is being raised.
-			UBorder* BarFrame = New<UBorder>(Tree,
-				FName(*FString::Printf(TEXT("%sBarFrame"), Suffix)));
-			{
-				FSlateBrush B;
-				B.DrawAs    = ESlateBrushDrawType::RoundedBox;
-				B.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
-				B.OutlineSettings.Color        = FSlateColor(FLinearColor(0.945f, 0.929f, 0.851f, 0.35f));
-				B.OutlineSettings.Width        = 1.f;
-				B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
-				B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-				BarFrame->SetBrush(B);
-			}
-			BarFrame->SetPadding(FMargin(2.f));
-			BarFrame->SetContent(SegRow);
-
-			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(BarFrame))
-			{
-				HS->SetVerticalAlignment(VAlign_Center);
-				HS->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
-			}
-
-			// Value label (right).
 			UTextBlock* ValueTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
-			ValueTxt->SetText(FText::FromString(TEXT("0")));
-			ValueTxt->SetFont(MakeBMSPA(16, 2.f));
+			ValueTxt->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), MeterMax)));
+			ValueTxt->SetFont(MakeBMSPA(18, 2.f));
 			ValueTxt->SetColorAndOpacity(FSlateColor(Cream));
 			ValueTxt->SetJustification(ETextJustify::Right);
-			USizeBox* ValSize = New<USizeBox>(Tree,
-				FName(*FString::Printf(TEXT("%sValueSize"), Suffix)));
-			ValSize->SetWidthOverride(ValueW);
-			ValSize->AddChild(ValueTxt);
-			if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(ValSize))
+			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(ValueTxt))
 			{
-				HS->SetVerticalAlignment(VAlign_Center);
+				HS->SetVerticalAlignment(VAlign_Bottom);
 			}
 
-			if (UVerticalBoxSlot* VS = MeterCol->AddChildToVerticalBox(Row))
+			if (UVerticalBoxSlot* VS = Block->AddChildToVerticalBox(TopRow))
 			{
-				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
 			}
+
+			// ── Bottom line: full-width flat fill bar, no frame/track glow ──
+			UProgressBar* Bar = New<UProgressBar>(Tree,
+				FName(*FString::Printf(TEXT("%sBar"), Suffix)));
+			{
+				FProgressBarStyle Style;
+				Style.BackgroundImage = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.3f));
+				Style.FillImage       = SolidBrush(FLinearColor::White); // tinted per-frame via SetFillColorAndOpacity
+				Bar->SetWidgetStyle(Style);
+			}
+			Bar->SetPercent(0.f);
+
+			USizeBox* BarSize = New<USizeBox>(Tree,
+				FName(*FString::Printf(TEXT("%sBarSize"), Suffix)));
+			BarSize->SetHeightOverride(BarHeight);
+			BarSize->AddChild(Bar);
+			if (UVerticalBoxSlot* VS = Block->AddChildToVerticalBox(BarSize))
+			{
+				VS->SetHorizontalAlignment(HAlign_Fill);
+				VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+			}
+
+			MeterCol->AddChildToVerticalBox(Block);
 		};
 
 		BuildBar(TEXT("Heat"),        TEXT("HEAT"));
 		BuildBar(TEXT("Thirst"),      TEXT("THIRST"));
-		BuildBar(TEXT("Stimulation"), TEXT("STIMULATION"));
+		BuildBar(TEXT("Stimulation"), TEXT("STIM"));
 	});
 #else
 	(void)WBPAssetPath; return false;

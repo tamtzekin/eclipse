@@ -10,37 +10,31 @@ class UTextBlock;
 class UImage;
 class UBorder;
 class UHorizontalBox;
+class UProgressBar;
 
 /**
  * Top-left HUD cluster — three life-meters (Heat, Thirst, Stimulation)
- * stacked vertically as horizontal segmented bars. Binds to
- * EclipseGameStateSubsystem::OnStateChanged.
+ * stacked vertically as continuous fill bars. Binds to
+ * EclipseGameStateSubsystem::OnStateChanged. No backdrop panel — the
+ * bars float directly over the game view.
  *
- * Per-row layout: [LABEL]  [10 segments + 2 dotted dividers]  [VALUE]
+ * Per-meter layout (two lines):
+ *   [LABEL]                                      [VALUE/MAX]
+ *   [======================= bar =======================]
  *
- * Each meter is rendered as a horizontal row of 10 UBorder "segments"
- * (filling left→right) so the player can read the integer value at a
- * glance. The 0..10 sweet-spot model means BOTH extremes are bad —
- * segments at indices 0/1 (critical low, left edge) and 8/9 (critical
- * high, right edge) render red instead of the meter's base tint when
- * lit. A thin dotted-line divider sits between segments 1-2 and 7-8 to
- * mark the critical-zone boundaries.
+ * The 0..10 sweet-spot model means BOTH extremes are bad — the bar
+ * tints red instead of the meter's base color when the value is at or
+ * past the critical-low/critical-high threshold.
  *
  * Per-meter base tints:
  *   HEAT          red
  *   THIRST        cyan
  *   STIMULATION   yellow-white
  *
- * All three bars share identical dimensions — a key UX requirement
- * since the game revolves around balancing these meters via consumables
- * + dialogue effects, and side-by-side comparison must be instant.
- *
  * Blueprint child names (BindWidgetOptional — populator names match):
- *   UHorizontalBox  HeatSegmentRow        (parent of HeatSeg_0..9 + dividers)
- *   UHorizontalBox  ThirstSegmentRow      (likewise)
- *   UHorizontalBox  StimulationSegmentRow (likewise)
- *   UTextBlock      HeatValueText / ThirstValueText / StimulationValueText
- *   UTextBlock      HeatLabelText / ThirstLabelText / StimulationLabelText
+ *   UProgressBar  HeatBar / ThirstBar / StimulationBar
+ *   UTextBlock    HeatValueText / ThirstValueText / StimulationValueText
+ *   UTextBlock    HeatLabelText / ThirstLabelText / StimulationLabelText
  */
 UCLASS()
 class ECLIPSE_API UEclipseHUDWidget : public UUserWidget
@@ -53,32 +47,17 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& InGeometry, float DeltaSeconds) override;
 
-	// ── Life-meter segment containers ──────────────────────────────────
-	// The WBP populator fills each row with 10 child segments + 2 dotted
-	// dividers (named HeatSeg_0..HeatSeg_9 etc., left→right). At runtime
-	// UpdateBars walks the children + tints each one based on the meter
-	// value.
+	// ── Life-meter bars ─────────────────────────────────────────────────
+	// Continuous fill bars — UpdateBars sets Percent + FillColorAndOpacity
+	// each time the meter changes.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> HeatSegmentRow;
+	TObjectPtr<UProgressBar> HeatBar;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> ThirstSegmentRow;
+	TObjectPtr<UProgressBar> ThirstBar;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> StimulationSegmentRow;
-
-	// Outline frames wrapping each segment row. Pulse-on-change lights
-	// their outline (lerps toward white) for the duration of the pulse,
-	// giving an "outer glow" on the bar that just changed in addition to
-	// the per-segment flash.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UBorder> HeatBarFrame;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UBorder> ThirstBarFrame;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UBorder> StimulationBarFrame;
+	TObjectPtr<UProgressBar> StimulationBar;
 
 	// Stat-name labels on the left of each row ("HEAT", "THIRST", "STIMULATION").
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeatLabelText;
@@ -119,21 +98,15 @@ private:
 	// and the integer-value labels above each.
 	void UpdateBars();
 
-	// Tints a single bar's children. Used by UpdateBars; pulled out so
-	// each bar can share the segment-tinting math + the critical-zone
-	// override logic. SegmentRow is the UHorizontalBox; Value is 0..10;
-	// BaseTint is the meter's healthy-zone fill colour. Pulse is a 0..1
-	// "just changed" alpha — peaks at 1.0 immediately after a value
-	// change and decays back to 0 over PulseDuration seconds; lit
-	// segments lerp toward white by that amount so the change reads as
-	// a soft flash. Lit segments also gradient-fill from dim (left) to
-	// bright (right) so the bar reads as progressively filling up.
-	void TintBar(UHorizontalBox* SegmentRow, int32 Value, FLinearColor BaseTint, float Pulse) const;
-
-	// Tints a bar's outer frame outline based on the pulse — at Pulse=1
-	// the outline lerps toward white, decaying back to the resting
-	// cream-chalk tone as the pulse fades.
-	void TintFrame(UBorder* BarFrame, float Pulse) const;
+	// Sets a bar's Percent + FillColorAndOpacity. Used by UpdateBars; pulled
+	// out so each bar shares the critical-zone + pulse-flash math. Value is
+	// 0..MeterMax; BaseTint is the meter's healthy-zone fill colour — swapped
+	// for a red critical tint when Value is at/past the low or high
+	// threshold. Pulse is a 0..1 "just changed" alpha — peaks at 1.0
+	// immediately after a value change and decays to 0 over PulseDuration
+	// seconds; the fill colour lerps toward white by that amount so the
+	// change reads as a quick flash.
+	void ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse) const;
 
 	// ── Pulse-on-change animation state ────────────────────────────────
 	// Last seen meter values, so UpdateBars can detect "changed since last
