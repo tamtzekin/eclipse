@@ -286,7 +286,18 @@ private:
 	// before), and choices via GetCurrentChoices() (gate-evaluated, hidden
 	// failures dropped, synthetic "[Goodbye]" fallback if none survive or
 	// Ink has hit a dead end). Broadcasts OnNodeChanged.
-	void BuildNodeFromStory();
+	//
+	// EchoedChoiceText: when set (MakeChoice passes the just-picked choice's
+	// label), a leading line of the continued body that exactly matches it
+	// is stripped before it becomes CurrentNode.Body. Ink's own rule for a
+	// choice with no "[...]" is to print the choice text once more as the
+	// following line of story content — by design, so authors can write
+	// "* Do you know how I can get in?" without brackets and have it read
+	// naturally in the transcript. The dialogue widget already renders that
+	// same text as the player's "YOU" line the instant the choice is
+	// clicked, so without this strip it would print a second time here,
+	// attributed to the NPC (CurrentNode.SpeakerName is always the NPC).
+	void BuildNodeFromStory(const FText* EchoedChoiceText = nullptr);
 
 	// "enterStall" implementation — closes the AngelSeeker dialogue and tells
 	// her to step aside, clearing the doorway. The Angel itself is a normal

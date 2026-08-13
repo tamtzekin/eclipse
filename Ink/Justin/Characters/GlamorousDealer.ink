@@ -25,10 +25,10 @@ She won't take her eyes off her flip phones, both of them.
         Then this is the girl who I'm waiting for tonight. It's 9 o clock. She's supposed to be here. So if you can tell me where she is I'd like to know soon.
         ~ Patience++
         -> DONE
-        
+
         **** [CONTINUE]
         -> dark_hair
-        
+
         **** No. She was blonde.
         –Then we have the wrong person in mind.
         Smiles at you, but not like she cares.

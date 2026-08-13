@@ -271,9 +271,14 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 		return true;
 	}
 
+	// Copy before advancing — BuildNodeFromStory resets CurrentNode (which
+	// Chosen references into) as its first statement, so Chosen itself is
+	// dangling by the time the story has moved on.
+	const FText ChosenText = Chosen.Text;
+
 	BumpClockForContinue();
 	Story->ChooseChoiceIndex(InkIndex);
-	BuildNodeFromStory();
+	BuildNodeFromStory(&ChosenText);
 	return true;
 }
 
@@ -282,7 +287,7 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 // CurrentChoiceMenuAction) from wherever the Ink story currently sits.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void UEclipseDialogueSubsystem::BuildNodeFromStory()
+void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText)
 {
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
@@ -297,7 +302,28 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory()
 	CurrentNode.SpeakerName = ActiveNpc ? ActiveNpc->NpcName
 		: (ActiveItem ? ActiveItem->ItemId : FName(TEXT("NPC")));
 
-	const FString Body = Story->ContinueMaximally();
+	FString Body = Story->ContinueMaximally();
+
+	// An un-bracketed choice ("* Do you know how I can get in?", no
+	// "[...]") is, per Ink's own rule, printed once as the choice button
+	// and then AGAIN as the first line of the continued content once
+	// picked — that's how Ink lets authors skip brackets and still have
+	// the line read naturally in a transcript. The dialogue widget already
+	// renders that same text as the player's "YOU" line the instant the
+	// choice is clicked (EclipseDialogueWidget::MakeChoice), so left alone
+	// this second copy would print again here under the NPC's name. Strip
+	// just that leading echoed line — everything the NPC actually says
+	// after it is untouched.
+	if (EchoedChoiceText)
+	{
+		const FString ChoiceStr = EchoedChoiceText->ToString().TrimStartAndEnd();
+		FString TrimmedBody = Body.TrimStartAndEnd();
+		if (!ChoiceStr.IsEmpty() && TrimmedBody.StartsWith(ChoiceStr, ESearchCase::CaseSensitive))
+		{
+			Body = TrimmedBody.Mid(ChoiceStr.Len());
+		}
+	}
+
 	CurrentNode.Body = FText::FromString(Body.TrimStartAndEnd());
 
 	// Node-level tags → EffectsLine (display only — a preview, not
