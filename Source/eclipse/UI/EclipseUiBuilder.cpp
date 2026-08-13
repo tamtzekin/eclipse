@@ -565,12 +565,12 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 
 		// No backdrop — bars sit directly on the canvas, top-left. Fixed-width
 		// SizeBox gives the Fill-aligned rows/bars below a concrete width.
-		const float ColumnWidth = 320.f;
-		const float BarHeight   = 14.f;
+		const float HudColumnWidth = 320.f;
+		const float HudBarHeight   = 14.f;
 		const int32 MeterMax    = 10;
 
 		USizeBox* ColumnSize = New<USizeBox>(Tree, TEXT("MeterColumnSize"));
-		ColumnSize->SetWidthOverride(ColumnWidth);
+		ColumnSize->SetWidthOverride(HudColumnWidth);
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(ColumnSize))
 		{
 			S->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
@@ -631,7 +631,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 
 			USizeBox* BarSize = New<USizeBox>(Tree,
 				FName(*FString::Printf(TEXT("%sBarSize"), Suffix)));
-			BarSize->SetHeightOverride(BarHeight);
+			BarSize->SetHeightOverride(HudBarHeight);
 			BarSize->AddChild(Bar);
 			if (UVerticalBoxSlot* VS = Block->AddChildToVerticalBox(BarSize))
 			{

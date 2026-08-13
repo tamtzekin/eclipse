@@ -39,9 +39,19 @@ private:
 	UFUNCTION()
 	void HandleNearItemChanged(AActor* Item);
 
+	UFUNCTION()
+	void HandleDialogueOpened(AEclipseNpcCharacter* Npc);
+
+	UFUNCTION()
+	void HandleDialogueClosed();
+
 	// Track both so we can pick the right display (talkable wins)
 	TWeakObjectPtr<AEclipseNpcCharacter> CachedNpc;
 	TWeakObjectPtr<AActor>               CachedItem;
+
+	// Prompt stays hidden for the duration of an open dialogue, regardless
+	// of NearTalkable/NearItem changes underneath it.
+	bool bDialogueOpen = false;
 
 	void RefreshPrompt();
 };

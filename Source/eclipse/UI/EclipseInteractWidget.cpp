@@ -10,6 +10,7 @@
 #include "NPC/EclipseNpcCharacter.h"
 #include "Items/EclipseItemActor.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
+#include "Subsystems/EclipseDialogueSubsystem.h"
 
 // ─────────────────────────────────────────────────────────────
 //  Initialize — build tree before BindWidget pass
@@ -74,6 +75,13 @@ void UEclipseInteractWidget::NativeConstruct()
 	{
 		UE_LOG(LogEclipse, Warning, TEXT("InteractWidget: failed to find InteractSubsystem"));
 	}
+
+	if (UEclipseDialogueSubsystem* DS = GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr)
+	{
+		DS->OnDialogueOpened.AddDynamic(this, &UEclipseInteractWidget::HandleDialogueOpened);
+		DS->OnDialogueClosed.AddDynamic(this, &UEclipseInteractWidget::HandleDialogueClosed);
+		bDialogueOpen = DS->IsDialogueOpen();
+	}
 }
 
 void UEclipseInteractWidget::NativeDestruct()
@@ -82,6 +90,14 @@ void UEclipseInteractWidget::NativeDestruct()
 	{
 		IS->OnNearTalkableChanged.RemoveDynamic(this, &UEclipseInteractWidget::HandleNearTalkableChanged);
 		IS->OnNearItemChanged.RemoveDynamic(this, &UEclipseInteractWidget::HandleNearItemChanged);
+	}
+	if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			DS->OnDialogueOpened.RemoveDynamic(this, &UEclipseInteractWidget::HandleDialogueOpened);
+			DS->OnDialogueClosed.RemoveDynamic(this, &UEclipseInteractWidget::HandleDialogueClosed);
+		}
 	}
 	Super::NativeDestruct();
 }
@@ -100,9 +116,27 @@ void UEclipseInteractWidget::HandleNearItemChanged(AActor* Item)
 	RefreshPrompt();
 }
 
+void UEclipseInteractWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
+{
+	bDialogueOpen = true;
+	RefreshPrompt();
+}
+
+void UEclipseInteractWidget::HandleDialogueClosed()
+{
+	bDialogueOpen = false;
+	RefreshPrompt();
+}
+
 void UEclipseInteractWidget::RefreshPrompt()
 {
 	if (!PromptText) return;
+
+	if (bDialogueOpen)
+	{
+		SetVisibility(ESlateVisibility::Hidden);
+		return;
+	}
 
 	// Talkable NPC takes priority over item
 	if (CachedNpc.IsValid())
