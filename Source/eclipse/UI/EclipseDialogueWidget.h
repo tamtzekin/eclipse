@@ -180,6 +180,15 @@ private:
 	UFUNCTION()
 	void HandleNodeChanged(FEclipseDialogueNodeView Node);
 
+	// The actual work HandleNodeChanged used to do unconditionally. Split out
+	// so a node that arrives while the player's own "YOU" line is still
+	// mid-cascade (MakeChoice sets bPlayerLineAnimating before calling into
+	// the subsystem, so this always fires synchronously on the same click)
+	// can be held back — NativeTick applies it once bPlayerLineAnimating
+	// clears, so the NPC's name/portrait/line only start appearing after the
+	// player's line has finished, never at the same time.
+	void ApplyNodeChanged(const FEclipseDialogueNodeView& Node);
+
 	UFUNCTION()
 	void HandleDialogueClosed();
 
@@ -354,6 +363,10 @@ private:
 	TArray<float> PlayerAnimWordDelays;
 	float PlayerAnimTime = 0.f;
 	bool  bPlayerLineAnimating = false;
+
+	// Node held back by HandleNodeChanged while bPlayerLineAnimating is true —
+	// applied by NativeTick the moment the player's line finishes.
+	TOptional<FEclipseDialogueNodeView> PendingNode;
 
 	// Cursor through the mumble source clip. Advances by each slice's duration
 	// so consecutive slices play sequential chunks of the file — preserves the

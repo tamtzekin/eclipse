@@ -831,6 +831,21 @@ void UEclipseDialogueWidget::HandleDialogueOpened(AEclipseNpcCharacter* Npc)
 
 void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 {
+	// MakeChoice sets bPlayerLineAnimating and kicks off the "YOU" cascade
+	// BEFORE calling into the subsystem, and the subsystem advances +
+	// broadcasts this synchronously on the same call stack — so at this
+	// point the player's line is always still mid-reveal. Hold the NPC's
+	// turn back until NativeTick sees the player's line finish.
+	if (bPlayerLineAnimating)
+	{
+		PendingNode = Node;
+		return;
+	}
+	ApplyNodeChanged(Node);
+}
+
+void UEclipseDialogueWidget::ApplyNodeChanged(const FEclipseDialogueNodeView& Node)
+{
 	using namespace EclipseUI;
 
 	// SelfHitTestInvisible: the root canvas itself ignores hit-testing so only
@@ -1017,6 +1032,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (RightHistoryScroll) RightHistoryScroll->ClearChildren();
 	CurrentChoices.Reset();
 	ChoiceBaseTints.Reset();
+	PendingNode.Reset();
 
 	// Tear down the per-word animation state so we don't keep ticking dead
 	// references on the next NativeTick.
@@ -2038,7 +2054,19 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 				if (RightHistoryScroll) { RightHistoryScroll->ScrollToEnd(); bDialogueScrollTargetActive = false; }
 			}
 		}
-		if (bPlayerAllDone) bPlayerLineAnimating = false;
+		if (bPlayerAllDone)
+		{
+			bPlayerLineAnimating = false;
+
+			// The NPC's turn was held back in HandleNodeChanged while the
+			// player's line was still revealing — start it now.
+			if (PendingNode.IsSet())
+			{
+				FEclipseDialogueNodeView Node = PendingNode.GetValue();
+				PendingNode.Reset();
+				ApplyNodeChanged(Node);
+			}
+		}
 	}
 
 	if (!bDialogueAnimating) return;
