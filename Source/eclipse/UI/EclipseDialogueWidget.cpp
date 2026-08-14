@@ -398,49 +398,23 @@ void UEclipseDialogueWidget::NativeConstruct()
 				PB.ImageSize = FVector2D(PortraitW, PortraitH);
 				SpeakerPortrait->SetBrush(PB);
 			}
-
-			// 1d. Speaker name tag — reparented out of the (now transparent,
-			//     right-third-anchored) DialogueColumn onto the root canvas
-			//     directly, so it can sit next to the portrait in the
-			//     top-left corner instead of inside the transcript box.
-			//     Idempotent: re-parenting an already-reparented widget into
-			//     the same panel is a harmless no-op.
-			UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
-			if (SpeakerNameText && RootCanvas)
-			{
-				if (UPanelWidget* OldParent = SpeakerNameText->GetParent())
-				{
-					if (OldParent != RootCanvas)
-					{
-						OldParent->RemoveChild(SpeakerNameText);
-					}
-				}
-				if (SpeakerNameText->GetParent() != RootCanvas)
-				{
-					RootCanvas->AddChildToCanvas(SpeakerNameText);
-				}
-				if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(SpeakerNameText->Slot))
-				{
-					CS->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
-					CS->SetAlignment(FVector2D(0.f, 0.f));
-					CS->SetPosition(FVector2D(CornerMargin + PortraitW + 14.f, CornerMargin + PortraitH * 0.5f - 14.f));
-					CS->SetZOrder(4);
-				}
-				SpeakerNameText->SetFont(MakeBMSPA(/*Size=*/16, /*Letter=*/2.5f));
-				SpeakerNameText->SetColorAndOpacity(FSlateColor(DialogueRed));
-			}
 		}
 
 		// 2. Collapse the in-column body / effects widgets.
 		//    Each new dialogue line is now a self-contained bubble appended
 		//    to LeftHistoryScroll / RightHistoryScroll — these in-column
 		//    instances render nothing and just take up space. SpeakerNameText
-		//    is NOT collapsed here — it's the top-left name tag now (see 1d),
-		//    with its own turn-based visibility (HandleNodeChanged shows it,
-		//    MakeChoice hides it). BodyWords is REPOINTED in HandleNodeChanged
-		//    (not collapsed here) because StartBodyAnimation drives it;
-		//    collapsing the in-column WrapBox is fine because we redirect the
-		//    pointer before the first node arrives.
+		//    is collapsed too — the per-bubble caption (AppendBubble) already
+		//    shows the speaker's name inline above each row, so a second,
+		//    separately-positioned name tag was pure duplication (and, once
+		//    reparented onto the root canvas at a fixed corner position,
+		//    would linger on screen behind other full-screen menus like the
+		//    Stats UI instead of closing/hiding with the rest of the panel).
+		//    BodyWords is REPOINTED in HandleNodeChanged (not collapsed here)
+		//    because StartBodyAnimation drives it; collapsing the in-column
+		//    WrapBox is fine because we redirect the pointer before the
+		//    first node arrives.
+		if (SpeakerNameText)  SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
 		if (BodyText)        BodyText->SetVisibility(ESlateVisibility::Collapsed);
 		if (EffectsLineText) EffectsLineText->SetVisibility(ESlateVisibility::Collapsed);
 		if (BodyWords)       BodyWords->SetVisibility(ESlateVisibility::Collapsed);
@@ -849,14 +823,10 @@ void UEclipseDialogueWidget::ApplyNodeChanged(const FEclipseDialogueNodeView& No
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	// This fires on every NPC line — i.e. the start of the NPC's "turn".
-	// Re-show the top-left name tag + portrait (hidden by MakeChoice during
-	// the player's turn); the portrait only re-appears if this NPC actually
-	// has one (bSpeakerHasPortrait, set in HandleDialogueOpened).
-	if (SpeakerNameText)
-	{
-		SpeakerNameText->SetText(FText::FromName(Node.SpeakerName));
-		SpeakerNameText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	// Re-show the portrait (hidden by MakeChoice during the player's turn);
+	// it only re-appears if this NPC actually has one (bSpeakerHasPortrait,
+	// set in HandleDialogueOpened). SpeakerNameText itself stays permanently
+	// collapsed — the per-bubble caption already shows the speaker's name.
 	if (SpeakerPortrait && bSpeakerHasPortrait)
 	{
 		SpeakerPortrait->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -2119,6 +2089,13 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			if (Block->GetVisibility() == ESlateVisibility::Collapsed)
 			{
 				Block->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+				// Keep the view pinned to the newest word — mirrors the
+				// player-line and choice-reveal loops above. Without this the
+				// NPC's own body cascade never re-scrolls as it grows, so a
+				// snippet taller than the box reveals words below the fold
+				// that the player can't see until they scroll manually.
+				if (RightHistoryScroll) { RightHistoryScroll->ScrollToEnd(); bDialogueScrollTargetActive = false; }
 
 				// Leading edge: the moment a word is revealed, splice off a
 				// random mumble slice — but only every Nth word so the mumble
