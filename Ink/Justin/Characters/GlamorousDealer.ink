@@ -4,8 +4,8 @@
 
 === glamorous_dealer ===
 // Check how annoyed they are first, then send player to dialogue path
-{Patience <= neutral: -> second_chat}
 {Patience >= neutral: -> first_chat}
+{Patience < neutral: -> second_chat}
 
 
 == first_chat

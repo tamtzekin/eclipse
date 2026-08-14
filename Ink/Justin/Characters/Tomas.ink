@@ -1,11 +1,11 @@
 // Quinn2.ink — L_Outside placeholder NPC (SKM_Quinn_Simple2).
 // Demonstrates an IdentityGate ("GENDER == female") — hidden, no hint.
 
-=== quinn_2 ===
-Hey. You're new around here, huh.
+=== tomas ===
+...this is it?
 
-* [Yeah, first time.] # GENDER == female
-    Nice. Stick close, it gets weird after midnight.
+* You don't sound like you want to be here.
+    I do, it's just that.
     ** Thanks.
     -> END
 * [Something like that.]

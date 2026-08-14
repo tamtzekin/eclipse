@@ -10,31 +10,50 @@ plus a small StatEffect tag.
 * Is there a problem?
 BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there is no individual that goes by your name. You are one of many, and in this moment, you were not meant to be here.
     ** Is everything alright?
-    'This fucking peasant is not letting me in.' She spits at his feet. 'We should've killed all of you off.'
+    'This fucking peasant is not letting me past. I am on the list. Do you understand what that means?' She spits at his feet. 'We should've killed all of you off.'
     
      She makes a sign to him, a symbol that carries the weight of centuries, the spilling over of grief into a different kind of violence, more subtle, symbolic and slow.
-        *** {rhythm > 3} [(Force)] What did you just say?
+        *** {rhythm > 3} What did you say?
             ~ Patience--
-            It's your imagination that's racist, not me. 
+            'It's your imagination that's racist, not me.' She pouts, pokes out her tongue.
             -> DONE
+            
+        *** {rhythm > 2} He can't help being a wage slave.
+        BOUNCER_OUTSIDE: 'Every world has its system that must be obeyed, or the world frays and we collapse with it.'
+        GUESTLIST_GIRL: 'I don't fucking have time for philosophy!!'
+            -> guestlist_girl
+        
+        *** {zen > 3} Let me help you. I'm trying to get in too.
+            'I'm going to miss his set. Oh my god, if I miss this set I'm going to ... I don't know what I'll do, listen, babe, can you just talk to this peasant standing in the way? Tell him I'm with DJ Crisis.'
+            
+            **** 'That's a strange name for a DJ.'
+            'The fuck do you know?'
+             ~ Patience--
+            -> DONE
+            
+            **** 'I'll try.'
+            -> DONE
+
+    ** Could you just let us in?
+        BOUNCER_OUTSIDE: 'This is not about you, or her. It's about the List.'
+        
+        *** {zen > 4} I'd like to attune myself to the inner workings of the List.
+        'The List is the law of our reality. The List decides the collisions of forces that exist in this moment. We are here only because the List allows us to share this space.'
+        
+        *** Guess I'll find another way to get in (Leave).
+        -> DONE
 
     * {aesthetics > 3} You're trying to get in too?
     She looks you up and down, then in the eyes, the back to your body. 'They'll let you in.' Her hand brushes your ear, she's too close, you feel the hair of her cheek.
     
-    Tell them you're on DJ Crisis' list. Tell them he approached you, of his own will. He wants to meet you.' 
+    Tell them you're on DJ Crisis' list. Tell them you're one of his boys.' 
         ~ Connections += dj_crisis
-        **** [(Accept)] Thanks for the tip. I'll let you know if I get in.
-        She winks. 'And don't forget who got you in.'
+        ** Got it[.], I'll come find you when I'm in.
+        She winks. 'And don't forget who got you there.'
         -> DONE
         
-        *** {rhythm > 2} [(Reason)] He can't help being a wage slave.
-        -> DONE
-        *** {zen > 3} [(Patience)] Let me help you. I'm trying to get in too.
-            I don't have time for this.
-            ~ Patience--
-        -> DONE
 
-* [Leave]
+* [I'm going to find another way...(Leave)]
 -> END
 
 // == got_inside ==

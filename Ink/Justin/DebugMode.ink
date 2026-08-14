@@ -25,13 +25,14 @@
 INCLUDE Globals.ink
 
 INCLUDE Characters/AngelSeeker.ink
+INCLUDE Characters/Chainsmoker.ink
 INCLUDE Characters/StallVoiceCalm.ink
 INCLUDE Characters/StallVoiceErratic.ink
 INCLUDE Characters/EnlightenedRaver.ink
 INCLUDE Characters/Daesung.ink
 INCLUDE Characters/GlamorousDealer.ink
-INCLUDE Characters/Quinn2.ink
-INCLUDE Characters/Quinn3.ink
+INCLUDE Characters/Alina.ink
+INCLUDE Characters/Tomas.ink
 INCLUDE Characters/Bouncer_Outside.ink
 INCLUDE Characters/GuestlistGirl.ink
 INCLUDE Characters/Figure4.ink
@@ -45,7 +46,10 @@ INCLUDE Items/Items.ink
 Pick a character to start their dialogue.
 
 // OUTSIDE THE CLUB
-+ [Glamorous Dealer (glamorous_dealer)] -> glamorous_dealer
++ [Alina] -> quinn_2
++ [Tomas] -> tomas
+
++ [Glamorous Dealer] -> glamorous_dealer
 + [Chainsmoker] -> chainsmoker
 + [Guestlist Girl] -> guestlist_girl
 + [Bouncer Outside (bouncer_outside)] -> bouncer_outside
@@ -56,7 +60,6 @@ Pick a character to start their dialogue.
 + [Stall Voice, erratic (stall_voice_erratic)] -> stall_voice_erratic
 + [Enlightened Raver (enlightened_raver)] -> enlightened_raver
 + [Daesung (daesung)] -> daesung
-+ [Quinn 2 (quinn_2)] -> quinn_2
 + [Figure 4 (figure_4)] -> figure_4
 + [Figure 5 (figure_5)] -> figure_5
 + [Red Wristband (red_wristband)] -> red_wristband
