@@ -27,6 +27,15 @@ LIST Inventory = (none), phone, lighter, slim_cigarette, pack_cigarettes, bottle
 === function get(x)
     ~ Inventory += x
 
+=== function lose(x)
+    ~ Inventory -= x 
+    
+=== function have(x)
+    {Inventory ? x}
+    
+=== function dont_have(x) 
+    {Inventory ?! x}
+    
 // Connections system (when you 'know someone')
 LIST Connections = dj_crisis
 
