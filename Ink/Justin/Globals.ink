@@ -23,7 +23,7 @@ VAR psychedelics = 10
 VAR euros = 15
 
 // Inventory system
-LIST Inventory = (none), phone, lighter, slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, bottle_vodka, cup_empty, cup_beer, thick_book, ticket
+LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, bottle_vodka, cup_empty, cup_beer, thick_book, ticket
 === function get(x)
     ~ Inventory += x
 
@@ -31,10 +31,10 @@ LIST Inventory = (none), phone, lighter, slim_cigarette, pack_cigarettes, bottle
     ~ Inventory -= x 
     
 === function have(x)
-    {Inventory ? x}
-    
-=== function dont_have(x) 
-    {Inventory ?! x}
+    ~ return Inventory ? x
+
+=== function dont_have(x)
+    ~ return Inventory ?! x
     
 // Connections system (when you 'know someone')
 LIST Connections = dj_crisis
