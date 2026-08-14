@@ -266,14 +266,19 @@ private:
 	// DispatchMenuAction before the story advances past the click.
 	TArray<FName> CurrentChoiceMenuAction;
 
-	// Body paragraphs still waiting to be shown — BuildNodeFromStory splits
-	// the whole pulled block on FULL (blank) line breaks, so a stretch of
-	// .ink with no choice in between (several gathers back to back) reveals
-	// one paragraph at a time behind a synthetic [CONTINUE] instead of
-	// printing all at once. Lines with no blank line between them stay in
-	// the same paragraph. Emptied as AdvancePendingParagraph pulls from the
-	// front; whatever real choices Ink had waiting only get built once this
-	// drains (see BuildChoicesFromStory).
+	// Body lines still waiting to be shown — BuildNodeFromStory splits the
+	// whole pulled block on printed lines, so a stretch of .ink with no
+	// choice in between (several gathers back to back) reveals one line at a
+	// time behind a synthetic [CONTINUE] instead of printing all at once.
+	// Emptied as AdvancePendingParagraph pulls from the front.
+	//
+	// KNOWN ISSUE (not yet root-caused): the choice BUTTON TEXT can go stale
+	// across one of these [CONTINUE] beats even though the underlying choice
+	// data and click behaviour are correct (confirmed via logging — see chat
+	// history). Several widget-side fixes were tried (NAME_None word/box
+	// construction, a directly-tracked ChoiceWordBoxes array instead of
+	// WidgetTree->FindWidget by name) without fully resolving it. Revisit
+	// before relying on this for real content.
 	TArray<FString> PendingParagraphs;
 
 	// Pops the next paragraph off PendingParagraphs into CurrentNode.Body —
@@ -288,9 +293,9 @@ private:
 
 	// Builds CurrentNode.Choices from Story->GetCurrentChoices() (gate-
 	// evaluated, hidden failures dropped, synthetic "[Goodbye]" fallback if
-	// none survive) and broadcasts OnNodeChanged. Split out of
-	// BuildNodeFromStory so AdvancePendingParagraph can call it once
-	// PendingParagraphs drains without re-pulling from Ink.
+	// none survive) and broadcasts OnNodeChanged. Called once PendingParagraphs
+	// is empty — either immediately (no [CONTINUE] beats at all) or once
+	// AdvancePendingParagraph drains the queue.
 	void BuildChoicesFromStory();
 
 	// Skill-check parser: pulls "[WORD:10]" out of a raw string, returns

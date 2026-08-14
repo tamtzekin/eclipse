@@ -235,6 +235,16 @@ private:
 	// hue permanently instead of flashing to the hover/base colour.
 	TArray<int32> ChoiceLabelWordCounts;
 
+	// Per-slot word-wrap box for the animated choice text (parallel to
+	// ChoiceButtons), indexed directly instead of re-found each call via
+	// WidgetTree->FindWidget("ChoiceWords_%d") — a persistent, name-based
+	// lookup that could resolve to a stale widget across RebuildChoices
+	// calls (observed as choice button text lagging behind the real,
+	// already-correct choice data by however many turns since that slot was
+	// last active). Reset+repopulated by RebuildChoices; used by
+	// AnimateChoiceText.
+	TArray<TObjectPtr<class UWrapBox>> ChoiceWordBoxes;
+
 	// Background card per choice row (parallel to ChoiceButtons) — white
 	// bg / black text at rest, flips to black bg / white text on hover or
 	// keyboard selection (matching the NPC caption boxes' own black card).

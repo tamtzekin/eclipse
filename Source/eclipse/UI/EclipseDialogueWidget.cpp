@@ -997,6 +997,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	CurrentChoices.Reset();
 	ChoiceBaseTints.Reset();
 	ChoiceLabelWordCounts.Reset();
+	ChoiceWordBoxes.Reset();
 	PendingNode.Reset();
 
 	// Tear down the per-word animation state so we don't keep ticking dead
@@ -1157,6 +1158,13 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	// subsystem advances to the next node (after which Choices has changed).
 	CurrentChoices = Choices;
 
+	// TEMP DIAGNOSTIC — remove once the stale-choice-text bug is found.
+	for (int32 DbgI = 0; DbgI < Choices.Num(); ++DbgI)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("Dlg: RebuildChoices[%d] = '%s' (continuePrompt=%d)"),
+			DbgI, *Choices[DbgI].Text.ToString(), Choices[DbgI].bIsContinuePrompt ? 1 : 0);
+	}
+
 	constexpr int32 MaxSlots = 5;
 
 	// ── Path A: WBP has pre-built ChoiceBtn_0..4 (designer-styled) ──
@@ -1171,6 +1179,16 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		ChoiceRowBackgrounds.Reset();
 		ChoiceRevealButtons.Reset();
 		ChoiceRevealDelays.Reset();
+		// NOT reset — ChoiceWordBoxes deliberately persists across calls
+		// (Path A reuses the same WrapBox per slot, same as ChoiceButtons
+		// itself); only grow it if this is the first time we've seen this
+		// many slots. Clearing it here would orphan whatever WrapBox a slot
+		// already had — still attached to its row, still visible — while
+		// AnimateChoiceText constructs a brand new one alongside it.
+		if (ChoiceWordBoxes.Num() < MaxSlots)
+		{
+			ChoiceWordBoxes.SetNum(MaxSlots);
+		}
 		for (int32 i = 0; i < MaxSlots; ++i)
 		{
 			UButton*    Btn   = PreBtns[i];
@@ -1271,6 +1289,9 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				{
 					S += TEXT("  ") + Choice.GateHint.ToString();
 				}
+				// TEMP DIAGNOSTIC — remove once the stale-choice-text bug is found.
+				UE_LOG(LogEclipse, Warning, TEXT("Dlg: slot %d -> DisplayChoiceText='%s' BodyWords=%s"),
+					i, *S, BodyWords ? TEXT("valid") : TEXT("NULL"));
 				// Base text is plain black (card is white at rest) — NativeTick's
 				// hover pass swaps both the card and the text to the opposite
 				// scheme (black card / white text) on hover or keyboard select.
@@ -1326,10 +1347,9 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				Btn->SetVisibility(ESlateVisibility::Collapsed);
 				// Also collapse any leftover word-wrap from a previous node
 				// with more choices, so empty rows don't take vertical space.
-				const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), i));
-				if (UWidget* W = WidgetTree ? WidgetTree->FindWidget(WBName) : nullptr)
+				if (ChoiceWordBoxes.IsValidIndex(i) && ChoiceWordBoxes[i])
 				{
-					W->SetVisibility(ESlateVisibility::Collapsed);
+					ChoiceWordBoxes[i]->SetVisibility(ESlateVisibility::Collapsed);
 				}
 			}
 		}
@@ -1348,6 +1368,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoiceButtons.Reset();
 	ChoiceBaseTints.Reset();
 	ChoiceLabelWordCounts.Reset();
+	ChoiceWordBoxes.Reset();
 	ChoiceRowBackgrounds.Reset();
 
 	for (int32 i = 0; i < Choices.Num() && i < MaxSlots; ++i)
@@ -1913,11 +1934,20 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 
 	// Find/construct a wrap box parked next to the label. Re-using lets the
 	// WrapBox persist between dialogue nodes so we don't churn allocations.
-	const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), ChoiceIndex));
-	UWrapBox* WB = Cast<UWrapBox>(WidgetTree->FindWidget(WBName));
+	// Tracked directly via ChoiceWordBoxes[ChoiceIndex] rather than re-found
+	// each call by name (WidgetTree->FindWidget) — name-based lookup here
+	// was resolving to stale widgets across turns (a choice slot's text
+	// could lag behind the real, already-correct choice data by however
+	// many turns since that slot was last active).
+	if (!ChoiceWordBoxes.IsValidIndex(ChoiceIndex))
+	{
+		ChoiceWordBoxes.SetNum(ChoiceIndex + 1);
+	}
+	UWrapBox* WB = ChoiceWordBoxes[ChoiceIndex];
 	if (!WB)
 	{
-		WB = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), WBName);
+		WB = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), NAME_None);
+		ChoiceWordBoxes[ChoiceIndex] = WB;
 		Parent->AddChild(WB);
 		const int32 LabelIdx = Parent->GetChildIndex(Label);
 		Parent->ShiftChild(FMath::Max(0, LabelIdx), WB);
@@ -1954,9 +1984,16 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	float RunningDelay = StartDelay;
 	for (int32 wi = 0; wi < Words.Num(); ++wi)
 	{
+		// NAME_None (not an explicit "ChoiceWord_%d_%d") — matches the body
+		// words' construction (StartBodyAnimation). An explicit, reused name
+		// here meant that when a choice's word COUNT changed between calls
+		// (e.g. the 1-word "[CONTINUE]" prompt replaced by a 4-word real
+		// choice), reconstructing under the same name for index 0 could
+		// return/rename around the stale old widget instead of a clean new
+		// one, leaving old text visible. WB->ClearChildren() below still
+		// discards the actual old widgets from the tree either way.
 		UTextBlock* W = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
+			UTextBlock::StaticClass(), NAME_None);
 		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
 		W->SetFont(ChoiceFont);
 		const FLinearColor WordTint = (wi < LabelWordCount) ? LabelTint : TargetTint;
@@ -2043,8 +2080,7 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			// except the stat-check label prefix (if any), which keeps its
 			// own stat hue permanently rather than following hover/base.
 			const int32 LabelWordCount = ChoiceLabelWordCounts.IsValidIndex(i) ? ChoiceLabelWordCounts[i] : 0;
-			const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), i));
-			if (UWrapBox* WB = Cast<UWrapBox>(WidgetTree->FindWidget(WBName)))
+			if (UWrapBox* WB = ChoiceWordBoxes.IsValidIndex(i) ? ChoiceWordBoxes[i].Get() : nullptr)
 			{
 				int32 WordIdx = 0;
 				for (UWidget* Child : WB->GetAllChildren())

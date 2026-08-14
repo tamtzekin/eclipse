@@ -306,7 +306,6 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
 	CurrentChoiceMenuAction.Reset();
-	PendingParagraphs.Reset();
 
 	if (!Story)
 	{
@@ -339,36 +338,22 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		}
 	}
 
-	// One [CONTINUE] beat per FULL (blank) line break — a stretch of .ink
-	// with no choice in between (several gathers back to back) otherwise
-	// prints as one block. A blank line marks a paragraph boundary; lines
-	// with no blank between them are the same paragraph, joined with a
-	// space. Show the first paragraph now and queue the rest in
-	// PendingParagraphs for [CONTINUE] to pull forward one at a time (see
-	// AdvancePendingParagraph).
-	TArray<FString> Lines;
-	Body.ParseIntoArrayLines(Lines, /*bInCullEmpty=*/false);
-
+	// One [CONTINUE] beat per printed line — a stretch of .ink with no
+	// choice in between (several gathers back to back) otherwise prints as
+	// one block. KNOWN ISSUE (not yet root-caused): choice button TEXT can
+	// go stale across a few of these beats even though the underlying
+	// choice data/click behaviour is correct — see chat history around
+	// ChoiceWordBoxes. Revisit before relying on this for real content.
 	TArray<FString> Paragraphs;
-	FString CurrentParagraph;
-	for (FString& Line : Lines)
+	Body.ParseIntoArrayLines(Paragraphs);
+	for (FString& Line : Paragraphs)
 	{
 		Line.TrimStartAndEndInline();
-		if (Line.IsEmpty())
-		{
-			if (!CurrentParagraph.IsEmpty())
-			{
-				Paragraphs.Add(MoveTemp(CurrentParagraph));
-				CurrentParagraph.Reset();
-			}
-			continue;
-		}
-		if (!CurrentParagraph.IsEmpty()) CurrentParagraph += TEXT(" ");
-		CurrentParagraph += Line;
 	}
-	if (!CurrentParagraph.IsEmpty()) Paragraphs.Add(MoveTemp(CurrentParagraph));
+	Paragraphs.RemoveAll([](const FString& Line) { return Line.IsEmpty(); });
 
 	CurrentNode.Body = FText::FromString(Paragraphs.IsEmpty() ? FString() : Paragraphs[0]);
+	PendingParagraphs.Reset();
 	if (!Paragraphs.IsEmpty())
 	{
 		PendingParagraphs.Append(Paragraphs.GetData() + 1, Paragraphs.Num() - 1);
