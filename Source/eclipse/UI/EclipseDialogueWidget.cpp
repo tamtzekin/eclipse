@@ -210,12 +210,12 @@ void UEclipseDialogueWidget::NativeConstruct()
 			OuterBox->SetPadding(FMargin(16.f, 14.f));
 			if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(OuterBox))
 			{
-				// Right third of the viewport (anchor-stretched). Top nudged
-				// down from the original 0.05 so the panel doesn't start
-				// flush against the very top; bottom pulled up to sit ~1/3
-				// of the screen height above the viewport's bottom edge.
-				CS->SetAnchors(FAnchors(2.f / 3.f, 0.20f, 1.f, 0.67f));
-				CS->SetOffsets(FMargin(0.f, 0.f, 12.f, 0.f));
+				// Right third of the viewport (anchor-stretched). Top/bottom
+				// anchors and right margin are Class-Defaults-editable (see
+				// BoxTopAnchor/BoxBottomAnchor/BoxRightMargin) so the box can
+				// be resized from the WBP without a C++ change.
+				CS->SetAnchors(FAnchors(2.f / 3.f, BoxTopAnchor, 1.f, BoxBottomAnchor));
+				CS->SetOffsets(FMargin(0.f, 0.f, BoxRightMargin, 0.f));
 				CS->SetZOrder(1);
 			}
 
@@ -233,27 +233,20 @@ void UEclipseDialogueWidget::NativeConstruct()
 			RightHistoryScroll->SetConsumeMouseWheel(EConsumeMouseWheel::Never);
 			RightHistoryScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
 			RightHistoryScroll->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			{
+				// Kill the built-in top/bottom "more content" shadow gradients —
+				// they read as a stray horizontal line at the box's edges once
+				// the transcript overflows and starts scrolling.
+				FScrollBoxStyle NoShadowStyle = RightHistoryScroll->GetWidgetStyle();
+				NoShadowStyle.TopShadowBrush    = FSlateNoResource();
+				NoShadowStyle.BottomShadowBrush = FSlateNoResource();
+				RightHistoryScroll->SetWidgetStyle(NoShadowStyle);
+			}
 			if (UVerticalBoxSlot* VS = OuterCol->AddChildToVerticalBox(RightHistoryScroll))
 			{
 				// Fill the available vertical space so the scroll grows with
 				// the panel; choices below get whatever height they need.
 				VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			}
-
-			// Divider between bubble transcript and choices.
-			{
-				UBorder* Div = WidgetTree->ConstructWidget<UBorder>(
-					UBorder::StaticClass(), TEXT("OuterDividerLine"));
-				Div->SetBrush(SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.28f)));
-				Div->SetPadding(FMargin(0.f));
-				USizeBox* DivSize = WidgetTree->ConstructWidget<USizeBox>(
-					USizeBox::StaticClass(), TEXT("OuterDividerSize"));
-				DivSize->SetHeightOverride(1.f);
-				DivSize->AddChild(Div);
-				if (UVerticalBoxSlot* VS = OuterCol->AddChildToVerticalBox(DivSize))
-				{
-					VS->SetPadding(FMargin(0.f, 8.f, 0.f, 8.f));
-				}
 			}
 
 			UE_LOG(LogEclipse, Log,
@@ -366,7 +359,7 @@ void UEclipseDialogueWidget::NativeConstruct()
 					}
 				}
 			};
-			AnchorRightThird(TEXT("DialogueOuterBox"), 0.20f, 0.67f, 12.f);
+			AnchorRightThird(TEXT("DialogueOuterBox"), BoxTopAnchor, BoxBottomAnchor, BoxRightMargin);
 			AnchorRightThird(TEXT("DialoguePanel"),    0.f,   1.f,   0.f);
 
 			// 1c. Portrait moved to the TOP-LEFT of the screen (was flush
@@ -839,6 +832,7 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 	if (bPlayerLineAnimating)
 	{
 		PendingNode = Node;
+		PendingNodeTimer = 0.f;
 		return;
 	}
 	ApplyNodeChanged(Node);
@@ -1609,8 +1603,8 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 			// StartBodyAnimation uses for the NPC's lines) so "YOU" reads in
 			// the same typeface as the speaker, just forced to the shared
 			// dialogue text size.
-			FSlateFontInfo LineFont = BodyText ? BodyText->GetFont() : MakeRodin(/*Size=*/20);
-			LineFont.Size = 20;
+			FSlateFontInfo LineFont = BodyText ? BodyText->GetFont() : MakeRodin(/*Size=*/18);
+			LineFont.Size = 18;
 
 			float WrapW = 400.f;
 			{
@@ -1790,8 +1784,8 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	// bumped up so captions read like subtitles printed on screen.
 	FSlateFontInfo BodyFont = BodyText
 		? BodyText->GetFont()
-		: MakeRodin(/*Size=*/20);
-	BodyFont.Size = 20;
+		: MakeRodin(/*Size=*/18);
+	BodyFont.Size = 18;
 
 	// Wrap width for each sentence box's inner text — matches the width
 	// AppendBubble gave the outer WrapBox (BodyWords). Cached geometry can
@@ -1907,8 +1901,8 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	// the (now much bigger, caption-style) body text.
 	FSlateFontInfo ChoiceFont = Label
 		? Label->GetFont()
-		: MakeRodin(/*Size=*/20);
-	ChoiceFont.Size = 20;
+		: MakeRodin(/*Size=*/18);
+	ChoiceFont.Size = 18;
 
 	// Same closed-caption cadence as the body cascade (see WordHoldDuration),
 	// offset by StartDelay so the row still waits its turn in the stagger.
@@ -2054,18 +2048,25 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 				if (RightHistoryScroll) { RightHistoryScroll->ScrollToEnd(); bDialogueScrollTargetActive = false; }
 			}
 		}
-		if (bPlayerAllDone)
-		{
-			bPlayerLineAnimating = false;
+		if (bPlayerAllDone) bPlayerLineAnimating = false;
+	}
 
-			// The NPC's turn was held back in HandleNodeChanged while the
-			// player's line was still revealing — start it now.
-			if (PendingNode.IsSet())
-			{
-				FEclipseDialogueNodeView Node = PendingNode.GetValue();
-				PendingNode.Reset();
-				ApplyNodeChanged(Node);
-			}
+	// ── Beat before the NPC's turn ─────────────────────────────────────────
+	// HandleNodeChanged held the NPC's turn back in PendingNode while the
+	// player's line was revealing (started PendingNodeTimer at 0 the moment
+	// it did). Once the player's line finishes (bPlayerLineAnimating clears
+	// above), keep ticking that timer here — every frame, not just while the
+	// player line block above is still running — so there's a small beat
+	// before the NPC's name/portrait/line pop in, instead of it snapping in
+	// the instant the player's line stops.
+	if (PendingNode.IsSet() && !bPlayerLineAnimating)
+	{
+		PendingNodeTimer += DeltaSeconds;
+		if (PendingNodeTimer >= PendingNodeDelay)
+		{
+			FEclipseDialogueNodeView Node = PendingNode.GetValue();
+			PendingNode.Reset();
+			ApplyNodeChanged(Node);
 		}
 	}
 

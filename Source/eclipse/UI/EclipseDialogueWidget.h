@@ -173,6 +173,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
 	float MumbleSourceLength = 20.0f;
 
+	// ── Transcript box layout ──────────────────────────────────────────────
+	// Screen-space anchors (0-1) for the scrollable dialogue box (right
+	// third of the viewport). Edit these on the WBP's Class Defaults to
+	// resize/reposition the box without touching C++.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Layout")
+	float BoxTopAnchor = 0.18f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Layout")
+	float BoxBottomAnchor = 0.75f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue|Layout")
+	float BoxRightMargin = 12.f;
+
 private:
 	UFUNCTION()
 	void HandleDialogueOpened(AEclipseNpcCharacter* Npc);
@@ -365,8 +378,13 @@ private:
 	bool  bPlayerLineAnimating = false;
 
 	// Node held back by HandleNodeChanged while bPlayerLineAnimating is true —
-	// applied by NativeTick the moment the player's line finishes.
+	// applied by NativeTick once the player's line has finished AND this
+	// timer clears PendingNodeDelay, so the NPC's turn doesn't snap in the
+	// instant the player's line stops (see NativeTick's "held-back NPC turn"
+	// block).
 	TOptional<FEclipseDialogueNodeView> PendingNode;
+	float PendingNodeTimer = 0.f;
+	static constexpr float PendingNodeDelay = 0.35f;
 
 	// Cursor through the mumble source clip. Advances by each slice's duration
 	// so consecutive slices play sequential chunks of the file — preserves the
