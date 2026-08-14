@@ -1523,7 +1523,7 @@ void UEclipseDialogueWidget::NativeOnFocusLost(const FFocusEvent& InFocusEvent)
 	Super::NativeOnFocusLost(InFocusEvent);
 }
 
-namespace { float WordHoldDuration(const FString& Word); }
+namespace { float WordHoldDuration(const FString& Word); FLinearColor Transparent(FLinearColor C); }
 
 void UEclipseDialogueWidget::MakeChoice(int32 Index)
 {
@@ -1617,7 +1617,7 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 					UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(
 						UTextBlock::StaticClass(), NAME_None);
 					Text->SetFont(LineFont);
-					Text->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.f)));
+					Text->SetColorAndOpacity(FSlateColor(Transparent(FLinearColor::White)));
 					Text->SetText(FText::FromString(W + TEXT(" ")));
 					Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 					SBox.Inner->AddChildToWrapBox(Text);
@@ -1690,6 +1690,14 @@ namespace
 			}
 		}
 		return Hold;
+	}
+
+	// Same color, alpha zeroed — used to seed a word's starting color for the
+	// alpha-reveal cascade (StartBodyAnimation, AnimateChoiceText, MakeChoice).
+	FLinearColor Transparent(FLinearColor C)
+	{
+		C.A = 0.f;
+		return C;
 	}
 
 	// Colors "<Stat> Damaged"/"<Stat> Improved" bigrams — as authored in body
@@ -1800,10 +1808,18 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(
 				UTextBlock::StaticClass(), NAME_None);
 			Text->SetFont(BodyFont);
-			Text->SetColorAndOpacity(FSlateColor(WordColors[WordIdx]));
+			// Stays laid out (SelfHitTestInvisible, not Collapsed) from the
+			// moment it's created — same reasoning as the player's "YOU" line
+			// (see MakeChoice): a Collapsed→Visible reveal makes the
+			// containing WrapBox redo its line-wrap decision every time a
+			// word pops in, which can render the word on the current line
+			// for a frame before it jumps down to its correct wrapped line.
+			// Transparent-to-opaque keeps every word's line fixed from the
+			// start; only its alpha animates.
+			Text->SetColorAndOpacity(FSlateColor(Transparent(WordColors[WordIdx])));
 			// Trailing space separates words sharing the same box.
 			Text->SetText(FText::FromString(Word + TEXT(" ")));
-			Text->SetVisibility(ESlateVisibility::Collapsed);
+			Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			SBox.Inner->AddChildToWrapBox(Text);
 
 			AnimWordBlocks.Add(Text);
@@ -1876,8 +1892,11 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 
 	// Same closed-caption cadence as the body cascade (see WordHoldDuration),
 	// offset by StartDelay so the row still waits its turn in the stagger.
-	// No chip/box here — choice rows stay plain text (see ChoiceTint) —
-	// just a Collapsed→Visible pop at the scheduled delay, no fade.
+	// No chip/box here — choice rows stay plain text (see ChoiceTint) — laid
+	// out (SelfHitTestInvisible, alpha 0) from construction and revealed via
+	// alpha, same convention as the body cascade (see StartBodyAnimation) —
+	// the shared per-word reveal loop in NativeTick only knows how to fade
+	// TextBlocks in via alpha, not pop them from Collapsed.
 	float RunningDelay = StartDelay;
 	for (int32 wi = 0; wi < Words.Num(); ++wi)
 	{
@@ -1886,8 +1905,8 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
 		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
 		W->SetFont(ChoiceFont);
-		W->SetColorAndOpacity(FSlateColor(TargetTint));
-		W->SetVisibility(ESlateVisibility::Collapsed);
+		W->SetColorAndOpacity(FSlateColor(Transparent(TargetTint)));
+		W->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		WB->AddChildToWrapBox(W);
 
 		AnimWordBlocks.Add(W);
@@ -2071,10 +2090,15 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 	}
 
 	// ── Per-word reveal ────────────────────────────────────────────────────
-	// No fade, no motion: each word/chip is Collapsed until DialogueAnimTime
-	// reaches its scheduled delay, then pops straight to Visible — closed-
-	// caption cadence comes entirely from WHEN each word appears (see
-	// WordHoldDuration), not from an animated transition.
+	// Words are laid out (SelfHitTestInvisible, alpha 0) from construction —
+	// same reasoning as the player's "YOU" line (see StartBodyAnimation): a
+	// Collapsed→Visible reveal makes the containing WrapBox redo its
+	// line-wrap decision on every word, which can render a word on the
+	// current line for a frame before it jumps down to its correct wrapped
+	// line. Alpha-only reveal keeps every word's line fixed from the start.
+	// Each sentence's own box is still the one thing that pops via
+	// Collapsed→Visible — that's an atomic single reveal (all its words
+	// already exist inside it), so there's no incremental reflow to glitch.
 	const int32 N = AnimWordBlocks.Num();
 	for (int32 i = 0; i < N; ++i)
 	{
@@ -2083,19 +2107,18 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 
 		const float Delay = (AnimWordDelays.IsValidIndex(i) ? AnimWordDelays[i] : 0.f);
 		const bool bDue = DialogueAnimTime >= Delay;
+		if (!bDue) { bAllDone = false; continue; }
 
-		if (bDue)
+		bool bJustRevealed = false;
+
+		if (UTextBlock* T = Cast<UTextBlock>(Block))
 		{
-			if (Block->GetVisibility() == ESlateVisibility::Collapsed)
+			FLinearColor C = T->GetColorAndOpacity().GetSpecifiedColor();
+			if (C.A < 1.f)
 			{
-				Block->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-
-				// Keep the view pinned to the newest word — mirrors the
-				// player-line and choice-reveal loops above. Without this the
-				// NPC's own body cascade never re-scrolls as it grows, so a
-				// snippet taller than the box reveals words below the fold
-				// that the player can't see until they scroll manually.
-				if (RightHistoryScroll) { RightHistoryScroll->ScrollToEnd(); bDialogueScrollTargetActive = false; }
+				C.A = 1.f;
+				T->SetColorAndOpacity(FSlateColor(C));
+				bJustRevealed = true;
 
 				// Leading edge: the moment a word is revealed, splice off a
 				// random mumble slice — but only every Nth word so the mumble
@@ -2112,9 +2135,16 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 				}
 			}
 		}
-		else
+		else if (Block->GetVisibility() == ESlateVisibility::Collapsed)
 		{
-			bAllDone = false;
+			Block->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			bJustRevealed = true;
+		}
+
+		if (bJustRevealed && RightHistoryScroll)
+		{
+			RightHistoryScroll->ScrollToEnd();
+			bDialogueScrollTargetActive = false;
 		}
 	}
 
