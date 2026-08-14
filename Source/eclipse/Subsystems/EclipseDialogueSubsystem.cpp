@@ -11,6 +11,10 @@
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Internationalization/Regex.h"
 
 // ── Inkpot (Ink) runtime ──
 #include "Inkpot/Inkpot.h"
@@ -340,6 +344,10 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 			State = GI->GetSubsystem<UEclipseGameStateSubsystem>();
 
 	const TArray<UInkpotChoice*>& InkChoices = Story->GetCurrentChoices();
+	// Counts how many times each display text has been seen so far this
+	// turn — disambiguates sibling choices that share identical button text
+	// (see FindInkGateLabel's OccurrenceIndex).
+	TMap<FString, int32> GateTextOccurrence;
 	for (int32 i = 0; i < InkChoices.Num(); ++i)
 	{
 		UInkpotChoice* InkChoice = InkChoices[i];
@@ -347,6 +355,19 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 
 		FEclipseDialogueChoice Choice;
 		Choice.Text = InkChoice->GetText();
+
+		{
+			const FString DisplayText = Choice.Text.ToString().TrimStartAndEnd();
+			int32& Occurrence = GateTextOccurrence.FindOrAdd(DisplayText);
+			FName GateStat; int32 GateValue = 0;
+			if (FindInkGateLabel(DisplayText, Occurrence, GateStat, GateValue))
+			{
+				Choice.bHasStatCheckLabel = true;
+				Choice.StatCheckLabelStat = GateStat;
+				Choice.StatCheckLabelValue = GateValue;
+			}
+			++Occurrence;
+		}
 
 		// Split this choice's tags into: "MENU:x" (menu-action dispatch),
 		// "SKILLCHECK:STAT:N" (skill-check marker), "GATE:..." (a StatGate/
@@ -494,6 +515,72 @@ bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& 
 		|| OutStat == TEXT("rhythm")
 		|| OutStat == TEXT("zen")
 		|| OutStat == TEXT("psychedelics");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Ink native "{stat OP N}" choice-gate label lookup — see FindInkGateLabel's
+//  declaration for why this has to go back to the raw .ink source instead of
+//  reading it off the compiled story.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void UEclipseDialogueSubsystem::BuildInkGateLabelCache() const
+{
+	bInkGateLabelCacheBuilt = true;
+
+	TArray<FString> InkFiles;
+	IFileManager::Get().FindFilesRecursive(InkFiles, *(FPaths::ProjectDir() / TEXT("Ink")), TEXT("*.ink"), true, false);
+
+	// "* {stat > N} [option text] printed text" — captures the stat/value and
+	// either the bracketed option-only text (what the button actually shows;
+	// anything after the closing bracket is printed-once-chosen text, not
+	// part of the label, so it's consumed but not captured) or, if there's
+	// no bracket, the rest of the line.
+	static const FRegexPattern GatePattern(
+		TEXT("^\\s*\\*+\\s*\\{(\\w+)\\s*(?:>=|<=|==|!=|>|<)\\s*(-?\\d+(?:\\.\\d+)?)\\}\\s*(?:\\[([^\\]]*)\\].*|(.*))$"));
+
+	for (const FString& FilePath : InkFiles)
+	{
+		FString Contents;
+		if (!FFileHelper::LoadFileToString(Contents, *FilePath)) continue;
+
+		TArray<FString> Lines;
+		Contents.ParseIntoArrayLines(Lines);
+		for (const FString& Line : Lines)
+		{
+			FRegexMatcher Matcher(GatePattern, Line);
+			if (!Matcher.FindNext()) continue;
+
+			FString OptionText = Matcher.GetCaptureGroup(3);
+			if (OptionText.IsEmpty()) OptionText = Matcher.GetCaptureGroup(4);
+			OptionText.TrimStartAndEndInline();
+			if (OptionText.IsEmpty()) continue;
+
+			InkGateLabelCache.Add(FInkGateLabel{
+				OptionText,
+				FName(*Matcher.GetCaptureGroup(1).ToLower()),
+				FCString::Atoi(*Matcher.GetCaptureGroup(2)) });
+		}
+	}
+}
+
+bool UEclipseDialogueSubsystem::FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue) const
+{
+	if (!bInkGateLabelCacheBuilt) BuildInkGateLabelCache();
+
+	const FString Trimmed = ChoiceDisplayText.TrimStartAndEnd();
+	int32 Seen = 0;
+	for (const FInkGateLabel& Entry : InkGateLabelCache)
+	{
+		if (!Entry.ChoiceText.Equals(Trimmed, ESearchCase::IgnoreCase)) continue;
+		if (Seen == OccurrenceIndex)
+		{
+			OutStat = Entry.Stat;
+			OutValue = Entry.Value;
+			return true;
+		}
+		++Seen;
+	}
+	return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

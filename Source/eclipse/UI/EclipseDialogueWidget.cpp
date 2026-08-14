@@ -996,6 +996,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	if (RightHistoryScroll) RightHistoryScroll->ClearChildren();
 	CurrentChoices.Reset();
 	ChoiceBaseTints.Reset();
+	ChoiceLabelWordCounts.Reset();
 	PendingNode.Reset();
 
 	// Tear down the per-word animation state so we don't keep ticking dead
@@ -1067,11 +1068,11 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 
 namespace
 {
-	// Display text for a choice with the authored "[STAT:N]" prefix stripped
-	// from skill checks. The player never sees explicit requirements — the
-	// check reads through the stat colour coding and which options are
-	// available at all. The tag stays in the AUTHORED text (it documents the
-	// check for writers); only the rendered string loses it.
+	// Display text for a choice with the authored "[STAT:N]" prefix replaced
+	// by a clean, readable requirement tag — e.g. "[AESTHETICS 3] I like the
+	// outfit." The player now sees exactly what's being checked; the stat
+	// colour coding on top of that (ChoiceTint) still shows how close they
+	// are to clearing it.
 	FString DisplayChoiceText(const FEclipseDialogueChoice& Choice)
 	{
 		FString S = Choice.Text.ToString();
@@ -1083,8 +1084,27 @@ namespace
 				S.RemoveAt(0, CloseIdx + 1);
 				S.TrimStartInline();
 			}
+			S = FString::Printf(TEXT("[%s %d] %s"),
+				*Choice.SkillCheckStat.ToString().ToUpper(), Choice.SkillCheckValue, *S);
+		}
+		if (Choice.bHasStatCheckLabel)
+		{
+			FString StatName = Choice.StatCheckLabelStat.ToString().ToLower();
+			if (StatName.Len() > 0) StatName = StatName.Left(1).ToUpper() + StatName.Mid(1);
+			S = FString::Printf(TEXT("%s [%d]: %s"), *StatName, Choice.StatCheckLabelValue, *S);
 		}
 		return S;
+	}
+
+	// How many leading whitespace-split words of DisplayChoiceText's output
+	// are the stat-check label prefix, not the choice's own wording — both
+	// prefix shapes ("[AESTHETICS 3]" and "Aesthetics [3]:") are exactly 2
+	// tokens (stat names never contain spaces), so no need to re-parse text.
+	int32 ChoiceLabelWordCount(const FEclipseDialogueChoice& Choice)
+	{
+		if (Choice.bHasStatCheckLabel) return 2;
+		if (Choice.bIsSkillCheck && Choice.Text.ToString().StartsWith(TEXT("["))) return 2;
+		return 0;
 	}
 }
 
@@ -1096,16 +1116,21 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	// red (NativeTick hover pass), skill checks blend toward their hue.
 	const FLinearColor ChoiceWhite(1.f, 1.f, 1.f, 1.f);
 
-	if (!Choice.bIsSkillCheck)
+	if (!Choice.bIsSkillCheck && !Choice.bHasStatCheckLabel)
 	{
 		return Choice.bAvailable
 			? ChoiceWhite
 			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red hint for blocked picks
 	}
 
+	// bHasStatCheckLabel choices (Ink-native "{stat > N}" gates) are always
+	// bAvailable — Ink already filtered out the failing ones — so they only
+	// ever take this stat-hue path, never the red "blocked" one above.
+	const FName Stat = Choice.bIsSkillCheck ? Choice.SkillCheckStat : Choice.StatCheckLabelStat;
+
 	// Per-stat hue. Deliberately distinct from the transcript palette
 	// (cream player / cyan NPC / orange effects / mint XP).
-	const FLinearColor Hue = StatHue(Choice.SkillCheckStat).Get(Cream);
+	const FLinearColor Hue = StatHue(Stat).Get(Cream);
 
 	// The colour EARNS its way in: levels 1-2 render plain white like any
 	// other option; from level 3 the text blends toward the stat hue,
@@ -1116,7 +1141,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	{
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			Level = GS->GetStatValue(Choice.SkillCheckStat);
+			Level = GS->GetStatValue(Stat);
 		}
 	}
 	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
@@ -1142,6 +1167,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	{
 		ChoiceButtons.Reset();
 		ChoiceBaseTints.Reset();
+	ChoiceLabelWordCounts.Reset();
 		ChoiceRowBackgrounds.Reset();
 		ChoiceRevealButtons.Reset();
 		ChoiceRevealDelays.Reset();
@@ -1252,6 +1278,22 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				ChoiceBaseTints.Add(Tint);
 				ChoiceRowBackgrounds.Add(RowBg);
 
+				// Stat-tagged choices (skill checks, Ink "{stat > N}" gates)
+				// get their label prefix ("Aesthetics [3]:") painted in the
+				// stat's hue, permanently — only the label, not the rest of
+				// the choice's own wording, and unaffected by hover (see the
+				// LabelWordCount skip in NativeTick's hover pass). StatHue's
+				// colours are all mid-brightness and stay legible on the
+				// white card.
+				const int32 LabelWordCount = ChoiceLabelWordCount(Choice);
+				FLinearColor LabelTint = FLinearColor::Black;
+				if (LabelWordCount > 0)
+				{
+					const FName Stat = Choice.bIsSkillCheck ? Choice.SkillCheckStat : Choice.StatCheckLabelStat;
+					LabelTint = EclipseUI::StatHue(Stat).Get(FLinearColor::Black);
+				}
+				ChoiceLabelWordCounts.Add(LabelWordCount);
+
 				// Each choice row stays Collapsed until the body has finished
 				// cascading; then they ripple in one-by-one. NativeTick flips
 				// these to Visible once DialogueAnimTime crosses StartDelay.
@@ -1265,7 +1307,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				if (BodyWords)
 				{
 					Btn->SetVisibility(ESlateVisibility::Collapsed);
-					AnimateChoiceText(Label, i, S, Tint, StartDelay);
+					AnimateChoiceText(Label, i, S, Tint, StartDelay, LabelWordCount, LabelTint);
 
 					ChoiceRevealButtons.Add(Btn);
 					ChoiceRevealDelays.Add(StartDelay);
@@ -1305,6 +1347,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoicesBox->ClearChildren();
 	ChoiceButtons.Reset();
 	ChoiceBaseTints.Reset();
+	ChoiceLabelWordCounts.Reset();
 	ChoiceRowBackgrounds.Reset();
 
 	for (int32 i = 0; i < Choices.Num() && i < MaxSlots; ++i)
@@ -1845,7 +1888,8 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 }
 
 void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIndex,
-	const FString& Text, const FLinearColor& TargetTint, float StartDelay)
+	const FString& Text, const FLinearColor& TargetTint, float StartDelay,
+	int32 LabelWordCount, const FLinearColor& LabelTint)
 {
 	using namespace EclipseUI;
 	if (!Label || !WidgetTree) return;
@@ -1905,7 +1949,8 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 			FName(*FString::Printf(TEXT("ChoiceWord_%d_%d"), ChoiceIndex, wi)));
 		W->SetText(FText::FromString(Words[wi] + TEXT(" ")));
 		W->SetFont(ChoiceFont);
-		W->SetColorAndOpacity(FSlateColor(Transparent(TargetTint)));
+		const FLinearColor WordTint = (wi < LabelWordCount) ? LabelTint : TargetTint;
+		W->SetColorAndOpacity(FSlateColor(Transparent(WordTint)));
 		W->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		WB->AddChildToWrapBox(W);
 
@@ -1984,15 +2029,23 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			{
 				L->SetColorAndOpacity(FSlateColor(C));
 			}
-			// Word-cascade path — recolour every word block in the row.
+			// Word-cascade path — recolour every word block in the row,
+			// except the stat-check label prefix (if any), which keeps its
+			// own stat hue permanently rather than following hover/base.
+			const int32 LabelWordCount = ChoiceLabelWordCounts.IsValidIndex(i) ? ChoiceLabelWordCounts[i] : 0;
 			const FName WBName(*FString::Printf(TEXT("ChoiceWords_%d"), i));
 			if (UWrapBox* WB = Cast<UWrapBox>(WidgetTree->FindWidget(WBName)))
 			{
+				int32 WordIdx = 0;
 				for (UWidget* Child : WB->GetAllChildren())
 				{
 					if (UTextBlock* T = Cast<UTextBlock>(Child))
 					{
-						T->SetColorAndOpacity(FSlateColor(C));
+						if (WordIdx >= LabelWordCount)
+						{
+							T->SetColorAndOpacity(FSlateColor(C));
+						}
+						++WordIdx;
 					}
 				}
 			}

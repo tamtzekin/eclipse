@@ -228,6 +228,13 @@ private:
 	// and restores this base tint otherwise.
 	TArray<FLinearColor> ChoiceBaseTints;
 
+	// How many leading (whitespace-split) words of each choice row are the
+	// stat-check label ("Aesthetics [3]:") rather than the actual choice
+	// wording — parallel to ChoiceButtons/ChoiceBaseTints. NativeTick's hover
+	// pass skips these when recolouring a row, so the label keeps its stat
+	// hue permanently instead of flashing to the hover/base colour.
+	TArray<int32> ChoiceLabelWordCounts;
+
 	// Background card per choice row (parallel to ChoiceButtons) — white
 	// bg / black text at rest, flips to black bg / white text on hover or
 	// keyboard selection (matching the NPC caption boxes' own black card).
@@ -407,9 +414,13 @@ private:
 	// PreText label with a UWrapBox of per-word UTextBlocks (or finds an
 	// existing one created on a previous run) and registers each word in
 	// AnimWordBlocks with the supplied start-delay + per-word stagger.
+	// LabelWordCount leading (whitespace-split) words use LabelTint instead
+	// of TargetTint — the stat-check label prefix ("Aesthetics [3]:"), kept
+	// visually distinct from the rest of the choice's own wording.
 	void AnimateChoiceText(class UTextBlock* Label, int32 ChoiceIndex,
 	                       const FString& Text, const FLinearColor& TargetTint,
-	                       float StartDelay);
+	                       float StartDelay, int32 LabelWordCount = 0,
+	                       const FLinearColor& LabelTint = FLinearColor::Black);
 
 	// Fires a single random-pitch slice of DialogueMumbleSound. Picks a random
 	// StartTime within the source clip, a random duration between

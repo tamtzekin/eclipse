@@ -127,6 +127,18 @@ struct FEclipseDialogueChoice
 	// from any gate directive that failed. Empty when available.
 	// Examples: "(need ZEN 1)", "(no BAGGIE)".
 	UPROPERTY(BlueprintReadOnly) FText GateHint;
+
+	// Set when this choice's raw .ink line starts with a native Ink
+	// conditional gate — "* {aesthetics > 3} [...]" — found by matching the
+	// compiled choice text back against the .ink source (see
+	// UEclipseDialogueSubsystem::FindInkGateLabel; Ink itself doesn't expose
+	// the condition at runtime, only whether the choice passed it). Display
+	// only — unlike bIsSkillCheck, this never grants XP or costs Stimulation;
+	// Ink already silently hides the choice if the condition is false, so
+	// every choice that reaches here already passed it.
+	UPROPERTY(BlueprintReadOnly) bool bHasStatCheckLabel = false;
+	UPROPERTY(BlueprintReadOnly) FName StatCheckLabelStat;
+	UPROPERTY(BlueprintReadOnly) int32 StatCheckLabelValue = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -251,6 +263,30 @@ private:
 	// being passed here — see the class doc comment above for why the
 	// brackets can't live in the .ink source itself.
 	bool ParseSkillCheck(const FText& ChoiceText, FName& OutStat, int32& OutValue) const;
+
+	// Ink's native "{stat > N}" per-choice conditional is evaluated inside
+	// the compiled story and leaves no trace on the resulting UInkpotChoice
+	// (no source text, no tag) — a choice either exists because it passed,
+	// or doesn't exist at all. To label it anyway, this scans the raw .ink
+	// source files (Ink/Justin/**/*.ink, project-relative) once, caching
+	// every "{stat OP N} [option text]" line it finds, then looks the
+	// CURRENT choice's display text up in that cache by exact match. Display
+	// only — best-effort; a source file rename/move or a choice whose option
+	// text contains Ink interpolation just means no label, not a crash.
+	//
+	// OccurrenceIndex: sibling choices can share identical button text (e.g.
+	// two choices both labelled "[AESTHETICS]" with different thresholds) —
+	// text alone can't tell them apart. The caller counts how many times
+	// it's already seen this same display text among the choices it's built
+	// THIS turn (0, 1, 2, ...) and passes that in; this returns the Nth cache
+	// entry with matching text, in the same top-to-bottom source order the
+	// choices were authored in, so sibling duplicates resolve correctly.
+	bool FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue) const;
+
+	struct FInkGateLabel { FString ChoiceText; FName Stat; int32 Value; };
+	mutable TArray<FInkGateLabel> InkGateLabelCache;
+	mutable bool bInkGateLabelCacheBuilt = false;
+	void BuildInkGateLabelCache() const;
 
 	// Stage-directions parser. Accepts a comma-separated list of tokens like
 	// "[ZEN: 1], [BAGGIE], +1 RHYTHM, -2 ENERGY" and emits a directive
