@@ -139,6 +139,15 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) bool bHasStatCheckLabel = false;
 	UPROPERTY(BlueprintReadOnly) FName StatCheckLabelStat;
 	UPROPERTY(BlueprintReadOnly) int32 StatCheckLabelValue = 0;
+
+	// Synthetic "[CONTINUE]" choice — BuildNodeFromStory pulls the NPC's
+	// body one Ink paragraph (gather) at a time instead of all of them at
+	// once, and injects this in place of real choices whenever more
+	// narrative is still waiting. Not a real decision: the widget skips the
+	// usual "YOU" bubble + player-line animation for it and just asks the
+	// subsystem to pull the next paragraph (see MakeChoice's InkIndex == -2
+	// case).
+	UPROPERTY(BlueprintReadOnly) bool bIsContinuePrompt = false;
 };
 
 USTRUCT(BlueprintType)
@@ -256,6 +265,33 @@ private:
 	// carries none). Read in MakeChoice and dispatched via
 	// DispatchMenuAction before the story advances past the click.
 	TArray<FName> CurrentChoiceMenuAction;
+
+	// Body paragraphs still waiting to be shown — BuildNodeFromStory splits
+	// the whole pulled block on FULL (blank) line breaks, so a stretch of
+	// .ink with no choice in between (several gathers back to back) reveals
+	// one paragraph at a time behind a synthetic [CONTINUE] instead of
+	// printing all at once. Lines with no blank line between them stay in
+	// the same paragraph. Emptied as AdvancePendingParagraph pulls from the
+	// front; whatever real choices Ink had waiting only get built once this
+	// drains (see BuildChoicesFromStory).
+	TArray<FString> PendingParagraphs;
+
+	// Pops the next paragraph off PendingParagraphs into CurrentNode.Body —
+	// offers another [CONTINUE] if more remain, otherwise builds the real
+	// choices Ink already has waiting. Driven by MakeChoice's InkIndex == -2
+	// case.
+	void AdvancePendingParagraph();
+
+	// Injects the synthetic "[CONTINUE]" choice (InkIndex sentinel -2) and
+	// broadcasts — shared by BuildNodeFromStory and AdvancePendingParagraph.
+	void OfferContinuePrompt();
+
+	// Builds CurrentNode.Choices from Story->GetCurrentChoices() (gate-
+	// evaluated, hidden failures dropped, synthetic "[Goodbye]" fallback if
+	// none survive) and broadcasts OnNodeChanged. Split out of
+	// BuildNodeFromStory so AdvancePendingParagraph can call it once
+	// PendingParagraphs drains without re-pulling from Ink.
+	void BuildChoicesFromStory();
 
 	// Skill-check parser: pulls "[WORD:10]" out of a raw string, returns
 	// stat + threshold. Fed the choice's "SKILLCHECK:WORD:10" tag content,

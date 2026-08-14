@@ -4,10 +4,7 @@
 
 === glamorous_dealer ===
 // Check how annoyed they are first, then send player to dialogue path
-What is it?
-{Patience <= neutral: -> first_chat}
-
-What is it?
+{Patience <= neutral: -> second_chat}
 {Patience >= neutral: -> first_chat}
 
 
@@ -52,11 +49,11 @@ She won't take her eyes off her flip phones, both of them.
 
 == ask_for_cigarette
   Five euros.
-  * [I'm not paying for a single cigarette.]
+  * I'm not paying for a one cigarette.
     Everything is an exchange, babe, this is how we maintain absolute balance.
     -> first_chat
 
-  * {euros > 5} [(Wallet: €{euros}) Fine, take it.]
+  * {euros > 5} (Wallet: €{euros}) Fine, take it.
     'Cherish this one, babe. It might be your last drag in this lifetime.' She winks.
     You lost €5 (Wallet: €{euros})
     ~ euros = euros - 5
@@ -64,24 +61,28 @@ She won't take her eyes off her flip phones, both of them.
     ~ get(slim_cigarette)
     -> first_chat
 
-  * {aesthetics > 1} [I like the outfit.]
+  * {aesthetics > 1} I like the outfit.
     She stares. 'Do you talk to all women like this?'
     ~ Patience--
     Aesthetics Damaged: Level {aesthetics}
     ~ aesthetics = aesthetics - 1
     -> DONE
 
-  * {aesthetics > 5} [Looks like you know how to make money, the way you dress.]
+  * {aesthetics > 5} Looks like you know how to make money, the way you dress.
     What, you looking for work, baby? I'm open to collaborating, if you are.
-    ** [What kind of work?]
+    ** What kind of work?
        Forget it. I need someone a bit more discreet.
        -> DONE
-    ** {zen > 3} [I'll take 5%. Just tell me who it needs to go to.]
+    ** {zen > 3} I'll take 5%. Just tell me who it needs to go to.
        'Then you understand how this works, baby. Good.'
        Aesthetics Improved: {aesthetics}
         ~ aesthetics = aesthetics + 1
        ~ get(thick_book)
        -> DONE
+
+== second_chat
+We're done talking.
+-> END
 
 == dark_hair
 * I'm here to pay her debt.

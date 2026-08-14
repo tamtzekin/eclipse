@@ -266,7 +266,17 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 		if (!bDialogueOpen) return true;
 	}
 
-	// InkIndex < 0 is the synthetic "[Goodbye]" sentinel (Ink had no more
+	// InkIndex == -2 is the synthetic "[CONTINUE]" sentinel — BuildNodeFromStory
+	// already pulled and queued every line (PendingParagraphs), so this just
+	// pops the next one; nothing was actually chosen, no player line to
+	// echo, no clock cost (it's pacing, not a narrative beat).
+	if (InkIndex == -2)
+	{
+		AdvancePendingParagraph();
+		return true;
+	}
+
+	// InkIndex == -1 is the synthetic "[Goodbye]" sentinel (Ink had no more
 	// content at this decision point) — nothing to choose, just close.
 	// No +20s — the live clock just resumes.
 	if (InkIndex < 0)
@@ -296,6 +306,7 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
 	CurrentChoiceMenuAction.Reset();
+	PendingParagraphs.Reset();
 
 	if (!Story)
 	{
@@ -328,7 +339,40 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		}
 	}
 
-	CurrentNode.Body = FText::FromString(Body.TrimStartAndEnd());
+	// One [CONTINUE] beat per FULL (blank) line break — a stretch of .ink
+	// with no choice in between (several gathers back to back) otherwise
+	// prints as one block. A blank line marks a paragraph boundary; lines
+	// with no blank between them are the same paragraph, joined with a
+	// space. Show the first paragraph now and queue the rest in
+	// PendingParagraphs for [CONTINUE] to pull forward one at a time (see
+	// AdvancePendingParagraph).
+	TArray<FString> Lines;
+	Body.ParseIntoArrayLines(Lines, /*bInCullEmpty=*/false);
+
+	TArray<FString> Paragraphs;
+	FString CurrentParagraph;
+	for (FString& Line : Lines)
+	{
+		Line.TrimStartAndEndInline();
+		if (Line.IsEmpty())
+		{
+			if (!CurrentParagraph.IsEmpty())
+			{
+				Paragraphs.Add(MoveTemp(CurrentParagraph));
+				CurrentParagraph.Reset();
+			}
+			continue;
+		}
+		if (!CurrentParagraph.IsEmpty()) CurrentParagraph += TEXT(" ");
+		CurrentParagraph += Line;
+	}
+	if (!CurrentParagraph.IsEmpty()) Paragraphs.Add(MoveTemp(CurrentParagraph));
+
+	CurrentNode.Body = FText::FromString(Paragraphs.IsEmpty() ? FString() : Paragraphs[0]);
+	if (!Paragraphs.IsEmpty())
+	{
+		PendingParagraphs.Append(Paragraphs.GetData() + 1, Paragraphs.Num() - 1);
+	}
 
 	// Node-level tags → EffectsLine (display only — a preview, not
 	// auto-applied; only choice-level directives get applied on click, in
@@ -338,6 +382,46 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		CurrentNode.EffectsLine = BuildEffectsLineText(ParseStageDirections(NodeTags));
 	}
 
+	if (!PendingParagraphs.IsEmpty())
+	{
+		OfferContinuePrompt();
+		return;
+	}
+
+	BuildChoicesFromStory();
+}
+
+void UEclipseDialogueSubsystem::AdvancePendingParagraph()
+{
+	CurrentNode.Choices.Reset();
+	CurrentChoiceInkIndex.Reset();
+	CurrentChoiceMenuAction.Reset();
+
+	CurrentNode.Body = FText::FromString(PendingParagraphs[0]);
+	PendingParagraphs.RemoveAt(0);
+
+	if (!PendingParagraphs.IsEmpty())
+	{
+		OfferContinuePrompt();
+		return;
+	}
+
+	BuildChoicesFromStory();
+}
+
+void UEclipseDialogueSubsystem::OfferContinuePrompt()
+{
+	FEclipseDialogueChoice ContinueChoice;
+	ContinueChoice.Text = FText::FromString(TEXT("[CONTINUE]"));
+	ContinueChoice.bIsContinuePrompt = true;
+	CurrentNode.Choices.Add(ContinueChoice);
+	CurrentChoiceInkIndex.Add(-2);
+	CurrentChoiceMenuAction.Add(NAME_None);
+	OnNodeChanged.Broadcast(CurrentNode);
+}
+
+void UEclipseDialogueSubsystem::BuildChoicesFromStory()
+{
 	UEclipseGameStateSubsystem* State = nullptr;
 	if (UWorld* W = GetWorld())
 		if (UGameInstance* GI = W->GetGameInstance())
@@ -467,6 +551,7 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
 	CurrentChoiceMenuAction.Reset();
+	PendingParagraphs.Reset();
 
 	// Resume the chapter clock that OpenDialogue paused.
 	if (UGameInstance* GI = GetGameInstance())

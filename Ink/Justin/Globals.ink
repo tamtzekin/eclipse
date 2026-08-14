@@ -14,10 +14,10 @@ VAR quest_stage = "intro"
 VAR met_npc = false
 
 // Stats
-VAR aesthetics = 5
-VAR rhythm = 1
-VAR zen = 2
-VAR psychedelics = 1
+VAR aesthetics = 10
+VAR rhythm = 10
+VAR zen = 10
+VAR psychedelics = 10
 
 // Money system
 VAR euros = 15

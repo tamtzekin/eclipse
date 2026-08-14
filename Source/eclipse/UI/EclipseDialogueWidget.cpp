@@ -1577,11 +1577,19 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 		Audio->PlayUI(DialogueChoiceSound);
 	}
 
+	// [CONTINUE] isn't a real player turn — same speaker, just the next
+	// paragraph — so skip the hide/re-show flicker on the portrait + name
+	// tag below, and skip stamping a "YOU" bubble further down.
+	const bool bIsContinuePrompt = CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index].bIsContinuePrompt;
+
 	// The player's turn starts now — hide the NPC's top-left name tag +
 	// portrait. HandleNodeChanged re-shows them the moment the NPC speaks
 	// again (or they stay hidden if this choice closes the dialogue).
-	if (SpeakerNameText) SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
-	if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+	if (!bIsContinuePrompt)
+	{
+		if (SpeakerNameText) SpeakerNameText->SetVisibility(ESlateVisibility::Collapsed);
+		if (SpeakerPortrait) SpeakerPortrait->SetVisibility(ESlateVisibility::Hidden);
+	}
 
 	// Collapse (not remove) the just-clicked options — ChoicesBox stays
 	// exactly where it is in RightHistoryScroll (right after the NPC's last
@@ -1598,7 +1606,9 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 	// black-box grouping — but every sentence box (and every word inside it)
 	// pops in AT ONCE, no stagger: the player already committed to this
 	// line, so it reads as something just said, not something being spoken.
-	if (RightHistoryScroll && CurrentChoices.IsValidIndex(Index))
+	// Skipped for the synthetic [CONTINUE] prompt — it isn't something the
+	// player said, just pacing between the NPC's own paragraphs.
+	if (RightHistoryScroll && CurrentChoices.IsValidIndex(Index) && !bIsContinuePrompt)
 	{
 		const FEclipseDialogueChoice& Picked = CurrentChoices[Index];
 		UWrapBox* Words = AppendBubble(
