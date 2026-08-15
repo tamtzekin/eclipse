@@ -3,8 +3,6 @@
 // WEAKNESSES: RHYTHM
 // SUPER WEAKNESS: ZEN
 
-plus a small StatEffect tag.
-
 === guestlist_girl ===
 'Please, I need to get in.' She's not paying attention to you. 'You don't know what I've been through to get here tonight.'
 * Is there a problem?
@@ -48,7 +46,14 @@ BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no
         *** {zen > 4} I'd like to attune myself to the inner workings of the List.
         'The List is the law of our reality. The List decides the collisions of forces that exist in this moment. We are here only because the List allows us to share this space.'
         
-        *** Guess I'll find another way to get in (Leave).
+            **** And if I were to ... get on the List?
+            Then you would enter.
+            
+            **** {zen > 5} Is there a specific List I should be on?
+            The Librarian's list.
+            -> DONE 
+            
+        *** Guess I'll find another way in. (Leave)
         -> DONE
 
     * {aesthetics > 3} You're trying to get in too?
