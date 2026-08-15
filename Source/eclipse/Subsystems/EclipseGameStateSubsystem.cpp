@@ -746,15 +746,18 @@ void UEclipseGameStateSubsystem::ChangeStimulation(int32 Delta) { ChangeMeter(TE
 
 void UEclipseGameStateSubsystem::TickChapterClock(float DeltaSeconds)
 {
-	// Plain accumulator — no auto-advance. Other systems (NPC movement
-	// schedules, ambient cues) read ChapterElapsedSeconds to drive their
-	// own behaviour. Chapter advances are manual: triggered by quest /
-	// dialogue beats via OnChapterTransition() or SkipChapter() (debug).
+	// Deliberately does nothing: the clock does NOT advance with wall-clock
+	// time. Game-time only moves when the player spends it — today that
+	// means talking (UEclipseDialogueSubsystem::MakeChoice adds a fixed
+	// bump per continuing choice), matching the JS prototype where standing
+	// still costs you nothing. Other systems (NPC schedules, ambient cues)
+	// still read ChapterElapsedSeconds; they just see it change in discrete
+	// steps rather than continuously.
 	//
-	// ClockScale converts wall-clock to game-clock — default 2.0 means
-	// 30 real seconds reads as 1:00 of in-game time on the HUD readout.
-	if (!bClockRunning || DeltaSeconds <= 0.f) return;
-	ChapterElapsedSeconds += DeltaSeconds * ClockScale;
+	// Kept as a no-op rather than deleted so the existing per-frame call in
+	// AEclipsePlayerCharacter::Tick stays harmless, and so re-enabling a
+	// real-time mode later is a one-line change here.
+	(void)DeltaSeconds;
 }
 
 float UEclipseGameStateSubsystem::GetChapterDurationSeconds() const
@@ -783,8 +786,15 @@ FText UEclipseGameStateSubsystem::GetChapterClockText() const
 	// starts at 0:00 and counts up — the same accumulator the dialogue
 	// adds +20s to on continuing clicks). Wraps every 24h so the display
 	// reads as a real clock instead of drifting past midnight.
-	const float Elapsed   = FMath::Max(0.f, ChapterElapsedSeconds);
-	const int32 TotalMins = FMath::FloorToInt(Elapsed / 60.f);
+	const float Elapsed  = FMath::Max(0.f, ChapterElapsedSeconds);
+	int32 TotalMins      = FMath::FloorToInt(Elapsed / 60.f);
+	// Quantise the DISPLAY only — ChapterElapsedSeconds keeps its exact
+	// value for anything that reads it (schedules, saves). Flooring rather
+	// than rounding means the clock never shows time the player hasn't
+	// actually spent yet.
+	const int32 Step = FMath::Max(1, ClockDisplayStepMinutes);
+	TotalMins = (TotalMins / Step) * Step;
+
 	const int32 HourOfDay = (TotalMins / 60) % 24;
 	const int32 MinOfHour = TotalMins % 60;
 	return FText::FromString(FString::Printf(TEXT("%d:%02d"), HourOfDay, MinOfHour));

@@ -5,6 +5,7 @@
 #include "EclipseUiStyle.h"
 #include "EclipseDeathOverlayWidget.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -171,11 +172,55 @@ void UEclipseHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	// Phone-face owns the clock + currency readouts now. Leave the bound
-	// HUD widgets alive but collapsed so a future design can flip them
-	// back on with a single SetVisibility(Visible).
-	if (ChapterClockText) ChapterClockText->SetVisibility(ESlateVisibility::Collapsed);
-	if (CurrencyText)     CurrencyText->SetVisibility(ESlateVisibility::Collapsed);
+	// Currency still lives on the phone face; the clock is back on the HUD,
+	// bottom-right and large, because time is now a resource the player
+	// spends by talking (see UEclipseGameStateSubsystem::TickChapterClock)
+	// and needs to be readable at a glance without opening the phone.
+	if (CurrencyText) CurrencyText->SetVisibility(ESlateVisibility::Collapsed);
+
+	// Inject the readout if neither the WBP nor the fallback tree supplied
+	// one — same runtime-injection pattern the dialogue widget uses, so the
+	// clock exists regardless of which path built this HUD.
+	if (!ChapterClockText && WidgetTree)
+	{
+		if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget))
+		{
+			ChapterClockText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("ChapterClockText_Runtime"));
+			if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(ChapterClockText))
+			{
+				// Bottom-left, anchored to the corner so it holds position at
+				// any resolution. Alignment (0,1) pins the widget's own
+				// bottom-left to that anchor, so the inset is a simple
+				// offset rather than a size-dependent calculation.
+				CS->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+				CS->SetAlignment(FVector2D(0.f, 1.f));
+				CS->SetAutoSize(true);
+				CS->SetPosition(FVector2D(ClockMargin, -ClockMargin));
+			}
+		}
+	}
+	if (ChapterClockText)
+	{
+		// Purple halo. Slate has no blur, so the glow is a font OUTLINE in
+		// the halo colour (hugging the glyph edges) plus a ZERO-offset drop
+		// shadow in the same hue — zero offset is deliberate: an offset
+		// would read as a drop shadow, centred it just thickens the halo
+		// evenly on all sides.
+		{
+			FSlateFontInfo ClockFont = EclipseUI::MakeBMSPA(ClockFontSize, /*Letter=*/2.f);
+			ClockFont.OutlineSettings.OutlineSize = ClockGlowSize;
+			ClockFont.OutlineSettings.OutlineColor = ClockGlowColor;
+			ClockFont.OutlineSettings.bApplyOutlineToDropShadows = true;
+			ChapterClockText->SetFont(ClockFont);
+		}
+		ChapterClockText->SetShadowOffset(FVector2D::ZeroVector);
+		ChapterClockText->SetShadowColorAndOpacity(ClockGlowColor);
+		ChapterClockText->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
+		ChapterClockText->SetJustification(ETextJustify::Left);
+		ChapterClockText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		UpdateChapterClock();
+	}
 
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
 			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
@@ -222,6 +267,10 @@ void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSecon
 void UEclipseHUDWidget::HandleStateChanged()
 {
 	UpdateBars();
+	// The clock only moves in discrete steps now (a dialogue choice bumps
+	// it and broadcasts), so this delegate is its ONLY refresh path — there
+	// is no per-frame update to fall back on.
+	UpdateChapterClock();
 }
 
 void UEclipseHUDWidget::HandlePlayerDeath()
@@ -303,10 +352,30 @@ void UEclipseHUDWidget::UpdateChapterClock()
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
 			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
-		ChapterClockText->SetText(FText::FromString(FString::Printf(
-			TEXT("%s  ·  %s"),
-			*GS->GetChapterLabelText().ToString(),
-			*GS->GetChapterClockText().ToString())));
+		// Time only — the chapter label was dropped from this readout when
+		// the clock moved to a large corner display; the phone face still
+		// carries "CH N" for players who want it.
+		const FText NewClock = GS->GetChapterClockText();
+		const FString NewClockStr = NewClock.ToString();
+
+		// Tick on the visible flick-over only. GetChapterClockText() floors
+		// to ClockDisplayStepMinutes, so with 1 minute per choice this
+		// fires once every 5 choices rather than on each one. The
+		// LastClockDisplay guard matters because OnStateChanged also fires
+		// for meter changes — without it every stat tweak would tick.
+		const bool bFlickedOver = !LastClockDisplay.IsEmpty() && LastClockDisplay != NewClockStr;
+		LastClockDisplay = NewClockStr;
+
+		ChapterClockText->SetText(NewClock);
+
+		if (bFlickedOver)
+		{
+			if (UEclipseAudioSubsystem* Audio = GetGameInstance()
+					? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+			{
+				Audio->PlayUI(ClockTickSound);
+			}
+		}
 	}
 }
 

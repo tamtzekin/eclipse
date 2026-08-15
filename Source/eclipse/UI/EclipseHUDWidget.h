@@ -75,12 +75,39 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CrosshairImage;
 
-	// Chapter clock readout — kept on the HUD class so a future design
-	// can toggle it back on. Today the actual readout lives on the phone
-	// face (UEclipsePhoneWidget); this widget's instance is collapsed at
-	// NativeConstruct time.
+	// Chapter clock readout — bottom-right of the HUD, deliberately large.
+	// Runtime-injected in NativeConstruct if neither the WBP nor the C++
+	// fallback tree provided one. The phone face shows the same value.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ChapterClockText;
+
+	// Point size of the bottom-right clock, and its inset from the corner.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Clock", meta = (ClampMin = "8"))
+	int32 ClockFontSize = 48;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Clock")
+	float ClockMargin = 28.f;
+
+	// Purple halo around the clock glyphs — fed to both the font outline
+	// and a zero-offset drop shadow. Alpha'd well below 1 so it reads as
+	// light bleeding off the edges rather than a hard stroke; 0 size
+	// disables the glow.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Clock", meta = (ClampMin = "0", ClampMax = "8"))
+	int32 ClockGlowSize = 3;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Clock")
+	FLinearColor ClockGlowColor = FLinearColor(0.42f, 0.24f, 0.95f, 0.65f);
+
+	// Plays whenever the DISPLAYED time changes — i.e. once per
+	// ClockDisplayStepMinutes worth of choices, not on every choice.
+	// Optional: PlayUI no-ops while this is unassigned.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|HUD|Clock")
+	TObjectPtr<class USoundBase> ClockTickSound;
+
+	// Last string actually shown, so we only tick on a real change rather
+	// than on every OnStateChanged broadcast (meters fire it constantly).
+	// Empty until the first update, which suppresses a tick on open.
+	FString LastClockDisplay;
 
 	// Currency readout — same as above, lives on the phone face now.
 	// HUD instance collapsed at NativeConstruct.
