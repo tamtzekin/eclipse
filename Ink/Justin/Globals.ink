@@ -34,7 +34,7 @@ LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle
     ~ return Inventory ? x
 
 === function dont_have(x)
-    ~ return Inventory ?! x
+    ~ return Inventory !? x
     
 // Connections system (when you 'know someone')
 LIST Connections = dj_crisis
