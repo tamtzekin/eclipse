@@ -7,10 +7,16 @@
 'Please, I need to get in.' She's not paying attention to you. 'You don't know what I've been through to get here tonight.'
 * Is there a problem?
 BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no soul that goes by your name. You're one of many, and in this moment, you weren't meant to be here.
-    ** Is everything alright?
-    'This peasant is not letting me past. I am on the list. Do you understand what that means?' She spits at his feet. 'We should've killed all of you off.'
+-> shes_on_the_list
+
+* {aesthetics > 3} You're trying to get in too?
+    -> trying_to_get_in
+
+== shes_on_the_list
+    ** [Ask the girl what's wrong] Is he bothering you?
+    'This peasant is not letting me past. I am on the list. Do you understand what that means?' She screws her nose. 'I thought we killed off the rats.'
     
-     She makes a sign to him, a symbol that carries the weight of centuries, the spilling over of grief into a different kind of violence, more subtle, symbolic and slow.
+     She makes a sign at him. Some archaic finger-shape like a butterfly, but its meaning was violent.
         *** What list?
         I am one of DJ Crisis' group. He takes us everywhere with him. To the empire and every little shithole country on its flight path.
         ~ Connections += dj_crisis
@@ -56,7 +62,7 @@ BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no
         *** Guess I'll find another way in. (Leave)
         -> DONE
 
-    * {aesthetics > 3} You're trying to get in too?
+== trying_to_get_in
     She looks you up and down, then in the eyes, the back to your body. 'They'll let you in.' Her hand brushes your ear, she's too close, you feel the hair of her cheek.
     
     Tell them you're on DJ Crisis' list. Tell them you're one of his boys.' 

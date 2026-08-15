@@ -1,11 +1,11 @@
-// GlamorousDealer.ink — SKM_Quinn_Simple.
+// GlamorousDealer.ink
 // drug/banned book dealer, very rich
 // Strengths: AESTHETICS + ZEN
 
 === glamorous_dealer ===
 // Check how annoyed they are first, then send player to dialogue path
 {Patience >= neutral: -> first_chat}
-{Patience < neutral: -> second_chat}
+{Patience < bored: -> annoyed_glamorous_dealer}
 
 
 == first_chat
@@ -15,15 +15,11 @@ She won't take her eyes off her flip phones, both of them.
   ~ Patience--
 
   ** ...to that club. Over there.
-     She stares into one phone, watching the artificial salvation prayer video loop to infinity.
-     *** My friend is missing.
-     You notice her eyes look at you for a second, but she's texting someone. 'Does your friend have dark hair?
-        **** That's her.
-        Then this is the girl who I'm waiting for tonight. It's 9 o clock. She's supposed to be here. So if you can tell me where she is I'd like to know soon.
-        ~ Patience++
+     She stares into one phone, watching prayer videos on loop, DIOS TE BENDIGA DIOS HE SALVAJATE DIOS TE BENDIGA. 
+     *** Is there a reason why you're not saying anything??
+     She's texting a flood of people at once. She's too busy for you.
         -> DONE
 
-        **** [CONTINUE]
         -> dark_hair
 
         **** No. She was blonde.
@@ -44,17 +40,16 @@ She won't take her eyes off her flip phones, both of them.
 * Sorry. I thought you were someone else.
   She isn't aware you exist.
   ~ Patience--
-  ** [Leave.]
--> END
+  -> END
 
 == ask_for_cigarette
   Five euros.
-  * I'm not paying for a one cigarette.
-    Everything is an exchange, babe, this is how we maintain absolute balance.
+  * 'I'm not paying for a single cigarette[.'] that I could get by asking anyone else here, come on.
+    'Then go and talk to them. I prefer to keep the market in perfect balance.'
     -> first_chat
 
-  * {euros > 5} (Wallet: €{euros}) Fine, take it.
-    'Cherish this one, babe. It might be your last drag in this lifetime.' She winks.
+  * {euros >= 5} (Wallet: €{euros}) Fine, take it.
+    'Cherish this one, babe. It might be your last drag in this lifetime.' She sighs.
     You lost €5 (Wallet: €{euros})
     ~ euros = euros - 5
     You got a single, precious, Slim Cigarette.
@@ -68,19 +63,18 @@ She won't take her eyes off her flip phones, both of them.
     ~ aesthetics = aesthetics - 1
     -> DONE
 
-  * {aesthetics > 5} Looks like you know how to make money, the way you dress.
-    What, you looking for work, baby? I'm open to collaborating, if you are.
+  * {aesthetics > 2} Looks like you know how to make money, the way you dress. You looking for work, baby? I'm open to collaborating, if you are.
     ** What kind of work?
        Forget it. I need someone a bit more discreet.
        -> DONE
-    ** {zen > 3} I'll take 5%. Just tell me who it needs to go to.
+    ** {zen > 2} I'll take 5%. Just tell me who it needs to go to.
        'Then you understand how this works, baby. Good.'
        Aesthetics Improved: {aesthetics}
         ~ aesthetics = aesthetics + 1
        ~ get(thick_book)
        -> DONE
 
-== second_chat
+== annoyed_glamorous_dealer
 We're done talking.
 -> END
 

@@ -997,6 +997,23 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	CurrentChoices.Reset();
 	ChoiceBaseTints.Reset();
 	ChoiceLabelWordCounts.Reset();
+	ChoiceRowBackgrounds.Reset();
+	ChoiceLabelWidgets.Reset();
+
+	// Path A's ChoiceBtn_0..4 rows are persistent WBP widgets — never
+	// destroyed between dialogues — so each slot's WrapBox stays physically
+	// attached to its row even after we stop tracking it here. Resetting the
+	// array alone orphaned those widgets in place (still parented, still
+	// showing whatever text they last had) while AnimateChoiceText, seeing
+	// an "empty" ChoiceWordBoxes on the next dialogue, constructed a brand
+	// new WrapBox alongside the old one — the two rendered stacked in the
+	// same row, which is why a stale "[Goodbye]" (or two, across repeated
+	// close/reopen cycles) could sit above the current, correct choice text.
+	// Detach before dropping the tracking array so no orphan is left behind.
+	for (UWrapBox* WB : ChoiceWordBoxes)
+	{
+		if (WB) WB->RemoveFromParent();
+	}
 	ChoiceWordBoxes.Reset();
 	PendingNode.Reset();
 
@@ -1158,41 +1175,36 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	// subsystem advances to the next node (after which Choices has changed).
 	CurrentChoices = Choices;
 
-	// TEMP DIAGNOSTIC — remove once the stale-choice-text bug is found.
-	for (int32 DbgI = 0; DbgI < Choices.Num(); ++DbgI)
-	{
-		UE_LOG(LogEclipse, Warning, TEXT("Dlg: RebuildChoices[%d] = '%s' (continuePrompt=%d)"),
-			DbgI, *Choices[DbgI].Text.ToString(), Choices[DbgI].bIsContinuePrompt ? 1 : 0);
-	}
-
 	constexpr int32 MaxSlots = 5;
 
 	// ── Path A: WBP has pre-built ChoiceBtn_0..4 (designer-styled) ──
 	UButton*    PreBtns[]  = { ChoiceBtn_0,  ChoiceBtn_1,  ChoiceBtn_2,  ChoiceBtn_3,  ChoiceBtn_4  };
 	UTextBlock* PreTexts[] = { ChoiceText_0, ChoiceText_1, ChoiceText_2, ChoiceText_3, ChoiceText_4 };
 
-	if (PreBtns[0] != nullptr)
+	// Path A (reusing the WBP's persistent ChoiceBtn_0..4) is disabled.
+	// Those buttons repeatedly rendered stale or blank content even when
+	// logging proved the widget tree, text, and visibility were all correct
+	// on every turn — every targeted fix (fresh WrapBox, explicit
+	// label/background hide+show, layout invalidation, dropping the word
+	// animation, instant reveal) failed to make them paint reliably. Path B
+	// below sidesteps them entirely: it clears ChoicesBox and constructs
+	// brand-new buttons every call, so no widget ever persists across turns
+	// and there is nothing left to hold stale paint state.
+	// To re-enable Path A, restore this to `if (PreBtns[0] != nullptr)`.
+	if (false)
 	{
 		ChoiceButtons.Reset();
 		ChoiceBaseTints.Reset();
-	ChoiceLabelWordCounts.Reset();
+		ChoiceLabelWordCounts.Reset();
 		ChoiceRowBackgrounds.Reset();
+		ChoiceLabelWidgets.Reset();
 		ChoiceRevealButtons.Reset();
 		ChoiceRevealDelays.Reset();
-		// NOT reset — ChoiceWordBoxes deliberately persists across calls
-		// (Path A reuses the same WrapBox per slot, same as ChoiceButtons
-		// itself); only grow it if this is the first time we've seen this
-		// many slots. Clearing it here would orphan whatever WrapBox a slot
-		// already had — still attached to its row, still visible — while
-		// AnimateChoiceText constructs a brand new one alongside it.
-		if (ChoiceWordBoxes.Num() < MaxSlots)
-		{
-			ChoiceWordBoxes.SetNum(MaxSlots);
-		}
+
 		for (int32 i = 0; i < MaxSlots; ++i)
 		{
 			UButton*    Btn   = PreBtns[i];
-			UTextBlock* Label = PreTexts[i];
+			UTextBlock* OrigLabel = PreTexts[i];
 			if (!Btn) continue;
 
 			// Fire on press, not press+release — avoids the "feels like double-
@@ -1221,41 +1233,6 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			{
 				VS->SetHorizontalAlignment(HAlign_Fill);
 			}
-			UBorder* RowBg = nullptr;
-			if (UWidget* RowW = WidgetTree
-				? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceRow_%d"), i)))
-				: nullptr)
-			{
-				if (UButtonSlot* BS = Cast<UButtonSlot>(RowW->Slot))
-				{
-					BS->SetHorizontalAlignment(HAlign_Fill);
-				}
-				// Wrap the row in a white card the first time through; reuse
-				// it on every later RebuildChoices call for this same slot
-				// (WBP rows persist across nodes) rather than re-wrapping.
-				const FName BgName(*FString::Printf(TEXT("ChoiceBg_%d"), i));
-				RowBg = Cast<UBorder>(WidgetTree->FindWidget(BgName));
-				if (!RowBg)
-				{
-					RowBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), BgName);
-					RowBg->SetPadding(FMargin(10.f, 6.f));
-					RowW->RemoveFromParent();
-					RowBg->SetContent(RowW);
-					Btn->SetContent(RowBg);
-					if (UButtonSlot* NewBS = Cast<UButtonSlot>(RowBg->Slot))
-					{
-						NewBS->SetHorizontalAlignment(HAlign_Fill);
-					}
-				}
-				RowBg->SetBrush(RoundedBrush(FLinearColor::White, FLinearColor::Transparent, 0.f, 8.f));
-			}
-			// Drop the circle-number chrome — plain text rows only.
-			if (UWidget* Circle = WidgetTree
-				? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceCircleSize_%d"), i)))
-				: nullptr)
-			{
-				Circle->SetVisibility(ESlateVisibility::Collapsed);
-			}
 
 			// Always (re)hook the callback. AddDynamic stringifies the function
 			// name at the macro callsite, so we need an explicit literal per slot
@@ -1270,6 +1247,19 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				case 3: Btn->OnClicked.AddDynamic(this, &UEclipseDialogueWidget::OnChoice3); break;
 				case 4: Btn->OnClicked.AddDynamic(this, &UEclipseDialogueWidget::OnChoice4); break;
 			}
+
+			// Discard whatever content this button currently has and rebuild
+			// it fresh from C++ every call — don't reuse or try to hide the
+			// WBP's own baked ChoiceRow_i/ChoiceBg_i/ChoiceText_i
+			// sub-widgets. That reuse path proved unreliable across many
+			// rounds of testing: design-time placeholder text and card
+			// backgrounds kept bleeding through no matter how explicitly
+			// they were cleared/collapsed, strongly suggesting this WBP's
+			// actual saved hierarchy doesn't match what the reuse code
+			// assumed. Only the button itself (ChoiceBtn_i) has been
+			// reliable throughout — its clicks always mapped to the right
+			// choice — so it's the only thing still trusted from the WBP.
+			Btn->SetContent(nullptr);
 
 			if (i < Choices.Num())
 			{
@@ -1289,70 +1279,57 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 				{
 					S += TEXT("  ") + Choice.GateHint.ToString();
 				}
-				// TEMP DIAGNOSTIC — remove once the stale-choice-text bug is found.
-				UE_LOG(LogEclipse, Warning, TEXT("Dlg: slot %d -> DisplayChoiceText='%s' BodyWords=%s"),
-					i, *S, BodyWords ? TEXT("valid") : TEXT("NULL"));
 				// Base text is plain black (card is white at rest) — NativeTick's
 				// hover pass swaps both the card and the text to the opposite
 				// scheme (black card / white text) on hover or keyboard select.
 				const FLinearColor Tint = FLinearColor::Black;
+
+				UBorder* RowBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), NAME_None);
+				RowBg->SetPadding(FMargin(10.f, 6.f));
+				RowBg->SetBrush(RoundedBrush(FLinearColor::White, FLinearColor::Transparent, 0.f, 8.f));
+
+				UTextBlock* NewLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), NAME_None);
+				NewLabel->SetFont(OrigLabel ? OrigLabel->GetFont() : EclipseUI::MakeRodin(20));
+				NewLabel->SetAutoWrapText(true);
+				NewLabel->SetText(FText::FromString(S));
+				NewLabel->SetColorAndOpacity(FSlateColor(Tint));
+				RowBg->SetContent(NewLabel);
+				Btn->SetContent(RowBg);
+				if (UButtonSlot* NewBS = Cast<UButtonSlot>(RowBg->Slot))
+				{
+					NewBS->SetHorizontalAlignment(HAlign_Fill);
+				}
+
 				ChoiceBaseTints.Add(Tint);
 				ChoiceRowBackgrounds.Add(RowBg);
+				ChoiceLabelWidgets.Add(NewLabel);
 
-				// Stat-tagged choices (skill checks, Ink "{stat > N}" gates)
-				// get their label prefix ("Aesthetics [3]:") painted in the
-				// stat's hue, permanently — only the label, not the rest of
-				// the choice's own wording, and unaffected by hover (see the
-				// LabelWordCount skip in NativeTick's hover pass). StatHue's
-				// colours are all mid-brightness and stay legible on the
-				// white card.
+				// LabelWordCount still feeds NativeTick's hover pass (skips
+				// recolouring the stat-check label prefix on hover). The
+				// stat-hue tint itself was only ever applied via the now-
+				// removed per-word animation, so a static-label choice just
+				// reads in plain Tint for now — a minor style regression
+				// versus the animated version, not a functional one.
 				const int32 LabelWordCount = ChoiceLabelWordCount(Choice);
-				FLinearColor LabelTint = FLinearColor::Black;
-				if (LabelWordCount > 0)
-				{
-					const FName Stat = Choice.bIsSkillCheck ? Choice.SkillCheckStat : Choice.StatCheckLabelStat;
-					LabelTint = EclipseUI::StatHue(Stat).Get(FLinearColor::Black);
-				}
 				ChoiceLabelWordCounts.Add(LabelWordCount);
 
-				// Each choice row stays Collapsed until the body has finished
-				// cascading; then they ripple in one-by-one. NativeTick flips
-				// these to Visible once DialogueAnimTime crosses StartDelay.
-				// PreChoicesDelay is a beat after the last body word lands
-				// before the options start appearing at all — reads as a
-				// pause for the line to land, not choices racing the text.
-				const float PreChoicesDelay = 0.45f;  // s after body finishes
-				const float ChoiceStagger   = 0.12f;   // s between rows
-				const float StartDelay = BodyAnimTotalTime + PreChoicesDelay + ChoiceStagger * static_cast<float>(i);
-
-				if (BodyWords)
-				{
-					Btn->SetVisibility(ESlateVisibility::Collapsed);
-					AnimateChoiceText(Label, i, S, Tint, StartDelay, LabelWordCount, LabelTint);
-
-					ChoiceRevealButtons.Add(Btn);
-					ChoiceRevealDelays.Add(StartDelay);
-				}
-				else if (Label)
-				{
-					// No body animation infra at all — just set the static label.
-					Btn->SetVisibility(ESlateVisibility::Visible);
-					Label->SetText(FText::FromString(S));
-					Label->SetColorAndOpacity(FSlateColor(Tint));
-				}
+				// Choices now appear immediately rather than staggering in
+				// over ~0.5-0.7s — the previous Collapsed-until-StartDelay
+				// cascade (see git history) made a correctly-built, correctly
+				// -revealed row indistinguishable from a genuinely broken one
+				// if checked even slightly too early. Simpler and unambiguous.
+				Btn->SetVisibility(ESlateVisibility::Visible);
 				ChoiceButtons.Add(Btn);
 			}
 			else
 			{
+				// Content already cleared above (Btn->SetContent(nullptr)) —
+				// nothing left to hide.
 				Btn->SetVisibility(ESlateVisibility::Collapsed);
-				// Also collapse any leftover word-wrap from a previous node
-				// with more choices, so empty rows don't take vertical space.
-				if (ChoiceWordBoxes.IsValidIndex(i) && ChoiceWordBoxes[i])
-				{
-					ChoiceWordBoxes[i]->SetVisibility(ESlateVisibility::Collapsed);
-				}
 			}
 		}
+
+
 		// Default selection on first available
 		SelectedIndex = 0;
 		for (int32 i = 0; i < ChoiceButtons.Num(); ++i)
@@ -1362,7 +1339,13 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		return;
 	}
 
-	// ── Path B: dynamic construction (fallback if WBP didn't provide rows) ──
+	// ── Path B: dynamic construction (the only path — see above) ──
+	// Every widget here is built fresh and added to a cleared ChoicesBox on
+	// each call, so nothing survives between turns to render stale content.
+	// All widgets are constructed with NAME_None rather than "ChoiceBtn_%d"/
+	// "ChoiceRow_%d"/etc: the WBP already owns widgets under those exact
+	// names, and reusing them risks a lookup/construction collision
+	// resolving to the stale WBP widget instead of the new one.
 	if (!ChoicesBox) return;
 	ChoicesBox->ClearChildren();
 	ChoiceButtons.Reset();
@@ -1370,6 +1353,11 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoiceLabelWordCounts.Reset();
 	ChoiceWordBoxes.Reset();
 	ChoiceRowBackgrounds.Reset();
+	ChoiceLabelWidgets.Reset();
+
+	// Make sure the container itself is actually visible — an earlier turn
+	// (or Path A's Collapse-on-unused logic) can leave it hidden.
+	ChoicesBox->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	for (int32 i = 0; i < Choices.Num() && i < MaxSlots; ++i)
 	{
@@ -1377,8 +1365,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 
 		// Each row is: [num-circle] [text]
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceBtn_%d"), i)));
+			UButton::StaticClass(), NAME_None);
 
 		// Button chrome stays fully transparent — the visible card (white
 		// bg at rest, black on hover/select) is the wrapping Border below;
@@ -1395,13 +1382,11 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		Btn->SetIsEnabled(Choice.GateHint.IsEmpty());
 
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceRow_%d"), i)));
+			UHorizontalBox::StaticClass(), NAME_None);
 
 		// ── Circle number node (24x24) ──
 		UBorder* CircleBg = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceCircle_%d"), i)));
+			UBorder::StaticClass(), NAME_None);
 		CircleBg->SetBrush(RoundedBrush(
 			FLinearColor(0.945f, 0.929f, 0.851f, 0.04f),  // bg
 			FLinearColor(0.945f, 0.929f, 0.851f, 0.85f),  // chalk outline
@@ -1411,8 +1396,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		CircleBg->SetVerticalAlignment(VAlign_Center);
 
 		UTextBlock* CircleNum = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceNum_%d"), i)));
+			UTextBlock::StaticClass(), NAME_None);
 		CircleNum->SetText(FText::AsNumber(i + 1));
 		CircleNum->SetFont(MakeBMSPA(11));
 		CircleNum->SetColorAndOpacity(FSlateColor(Cream));
@@ -1421,8 +1405,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 
 		// Wrap the circle in a SizeBox to enforce 24×24 footprint.
 		USizeBox* CircleSize = WidgetTree->ConstructWidget<USizeBox>(
-			USizeBox::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceCircleSize_%d"), i)));
+			USizeBox::StaticClass(), NAME_None);
 		CircleSize->SetWidthOverride(24.f);
 		CircleSize->SetHeightOverride(24.f);
 		CircleSize->AddChild(CircleBg);
@@ -1438,8 +1421,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 
 		// ── Text label ──
 		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceText_%d"), i)));
+			UTextBlock::StaticClass(), NAME_None);
 		// Stripped display text — see DisplayChoiceText. Gate hints stay.
 		FString LabelStr = DisplayChoiceText(Choice);
 		if (!Choice.GateHint.IsEmpty())
@@ -1453,6 +1435,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		// scheme (black card / white text) on hover or keyboard select.
 		const FLinearColor Tint = FLinearColor::Black;
 		ChoiceBaseTints.Add(Tint);
+		ChoiceLabelWidgets.Add(Label);
+		ChoiceLabelWordCounts.Add(ChoiceLabelWordCount(Choice));
 		Label->SetColorAndOpacity(FSlateColor(Tint));
 		Label->SetAutoWrapText(true);
 
@@ -1465,8 +1449,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		// Wrap the row in a white card — NativeTick flips this brush to
 		// black on hover/select, mirroring the row's text colour swap.
 		UBorder* RowBg = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(),
-			FName(*FString::Printf(TEXT("ChoiceBg_%d"), i)));
+			UBorder::StaticClass(), NAME_None);
 		RowBg->SetBrush(RoundedBrush(FLinearColor::White, FLinearColor::Transparent, 0.f, 8.f));
 		RowBg->SetPadding(FMargin(10.f, 6.f));
 		RowBg->SetContent(Row);
@@ -1932,36 +1915,38 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	Label->SetText(FText::GetEmpty());
 	Label->SetVisibility(ESlateVisibility::Collapsed);
 
-	// Find/construct a wrap box parked next to the label. Re-using lets the
-	// WrapBox persist between dialogue nodes so we don't churn allocations.
-	// Tracked directly via ChoiceWordBoxes[ChoiceIndex] rather than re-found
-	// each call by name (WidgetTree->FindWidget) — name-based lookup here
-	// was resolving to stale widgets across turns (a choice slot's text
-	// could lag behind the real, already-correct choice data by however
-	// many turns since that slot was last active).
+	// Always build a fresh wrap box rather than reusing/clearing the
+	// previous one. Diagnostic logging proved the widget tree and word data
+	// were already correct on every call — right words, right slot, right
+	// reveal timing — even when the on-screen row still showed stale (or
+	// no) text. So the bug wasn't logic, it was stale Slate render/paint
+	// state tied to reusing the same WrapBox instance across a big content
+	// change (e.g. the 1-word "[CONTINUE]" prompt replaced by an 8-word
+	// real choice). Discarding and reconstructing sidesteps whatever cached
+	// geometry the old instance was carrying — 5 slots max, the extra
+	// allocation is free.
 	if (!ChoiceWordBoxes.IsValidIndex(ChoiceIndex))
 	{
 		ChoiceWordBoxes.SetNum(ChoiceIndex + 1);
 	}
-	UWrapBox* WB = ChoiceWordBoxes[ChoiceIndex];
-	if (!WB)
+	if (UWrapBox* Old = ChoiceWordBoxes[ChoiceIndex])
 	{
-		WB = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), NAME_None);
-		ChoiceWordBoxes[ChoiceIndex] = WB;
-		Parent->AddChild(WB);
-		const int32 LabelIdx = Parent->GetChildIndex(Label);
-		Parent->ShiftChild(FMath::Max(0, LabelIdx), WB);
+		Old->RemoveFromParent();
+	}
+	UWrapBox* WB = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), NAME_None);
+	ChoiceWordBoxes[ChoiceIndex] = WB;
+	Parent->AddChild(WB);
+	const int32 LabelIdx = Parent->GetChildIndex(Label);
+	Parent->ShiftChild(FMath::Max(0, LabelIdx), WB);
 
-		// HBox slot tweaks: take the remaining horizontal space, top-align so
-		// long wrapped choices don't drift off-centre relative to the circle.
-		if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(WB->Slot))
-		{
-			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			HS->SetVerticalAlignment(VAlign_Center);
-		}
+	// HBox slot tweaks: take the remaining horizontal space, top-align so
+	// long wrapped choices don't drift off-centre relative to the circle.
+	if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(WB->Slot))
+	{
+		HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		HS->SetVerticalAlignment(VAlign_Center);
 	}
 	WB->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	WB->ClearChildren();
 
 	TArray<FString> Words;
 	Text.ParseIntoArrayWS(Words);
@@ -2070,9 +2055,18 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 				ChoiceRowBackgrounds[i]->SetBrush(EclipseUI::RoundedBrush(CardColor, FLinearColor::Transparent, 0.f, 8.f));
 			}
 
-			// Static label path (Path B / no-animation Path A).
-			const FName LabelName(*FString::Printf(TEXT("ChoiceText_%d"), i));
-			if (UTextBlock* L = Cast<UTextBlock>(WidgetTree->FindWidget(LabelName)))
+			// Path A tracks its label directly (ChoiceLabelWidgets — see
+			// RebuildChoices for why this isn't a by-name FindWidget lookup
+			// anymore). Path B still names its dynamically-built label
+			// "ChoiceText_%d", so fall back to that if there's no tracked
+			// reference for this slot.
+			UTextBlock* L = ChoiceLabelWidgets.IsValidIndex(i) ? ChoiceLabelWidgets[i].Get() : nullptr;
+			if (!L)
+			{
+				const FName LabelName(*FString::Printf(TEXT("ChoiceText_%d"), i));
+				L = Cast<UTextBlock>(WidgetTree->FindWidget(LabelName));
+			}
+			if (L)
 			{
 				L->SetColorAndOpacity(FSlateColor(C));
 			}
@@ -2176,6 +2170,20 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		if (B->GetVisibility() == ESlateVisibility::Collapsed && DialogueAnimTime >= RevealAt)
 		{
 			B->SetVisibility(ESlateVisibility::Visible);
+			// Force a fresh layout/paint pass on the way back from Collapsed.
+			// These are long-lived WBP buttons that get Collapsed then
+			// re-revealed EVERY turn (unlike body text, which never uses
+			// Collapsed — only alpha fades) — across repeated cycles the
+			// row's content could render stale/blank despite the underlying
+			// widget tree and word data being correct (confirmed via
+			// logging). Explicitly invalidating on reveal rules out (or
+			// fixes, if this was it) stale cached geometry surviving the
+			// Collapsed state.
+			B->InvalidateLayoutAndVolatility();
+			if (UWidget* RowBg = WidgetTree ? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceBg_%d"), i))) : nullptr)
+			{
+				RowBg->InvalidateLayoutAndVolatility();
+			}
 			// ChoicesBox now lives inside RightHistoryScroll (see
 			// HandleNodeChanged) — each row popping in grows the scrollable
 			// content, so keep the view pinned to the newest row.

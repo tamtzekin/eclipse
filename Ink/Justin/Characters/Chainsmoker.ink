@@ -1,7 +1,9 @@
-=== chainsmoker ===
-You got fire?
+// RHYTHM 
 
-* {Inventory ? lighter} Take it.
+=== chainsmoker ===
+Hey, you got fire?
+
+* {Inventory ? lighter} [Hand over your lighter] Take it.
 Thanks. 
 He takes the lighter with two fingers, holds it loosely. Plays with the thing before even attempting to pull out a cigarette.
     ** ...
@@ -11,21 +13,17 @@ He takes the lighter with two fingers, holds it loosely. Plays with the thing be
         Hey I wasn't done.
         ~ Patience--
         
-        *** [Wait it out...]
+        *** {zen > 2} [Wait it out...]
         He reaches to his friend to select a different cigarette. 
         Aren't you letting this go on for a little too long? 
             **** [Take it back. Now.]
             The fire lights a perfect circle on the tip of his cigarette, he lands it in the centre of your palm. 
-            -> the_war
             
-    ** Are you done?
-    You seem to be in a rush. 
+            
+    ** Do you want me to do it for you?
+    You realise your impatience is going to kill you one day. Maybe tonight, if you're in such a rush. 
     
 * {Inventory !? slim_cigarette} [Can I get a cig?]
-
-* {aesthetics > 3} [I like the outfit.]
-She stares. 'Do you talk to all women like that?'
-
 
 -> first_knot
 
@@ -35,10 +33,6 @@ I don't know. This is not my club.
 * [Option 2]
 -> second_knot
 
-= the_war
-You realise your impatience is going to kill you one day. Maybe tonight, if you're in a hurry.
-    
-    
 
 = second_knot
 * [Option 1]

@@ -19,8 +19,10 @@
 // ── Inkpot (Ink) runtime ──
 #include "Inkpot/Inkpot.h"
 #include "Inkpot/InkpotStory.h"
+#include "Inkpot/InkpotStoryInternal.h"
 #include "Inkpot/InkpotChoice.h"
 #include "Asset/InkpotStoryAsset.h"
+#include "Ink/StoryState.h"
 
 namespace
 {
@@ -266,17 +268,7 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 		if (!bDialogueOpen) return true;
 	}
 
-	// InkIndex == -2 is the synthetic "[CONTINUE]" sentinel — BuildNodeFromStory
-	// already pulled and queued every line (PendingParagraphs), so this just
-	// pops the next one; nothing was actually chosen, no player line to
-	// echo, no clock cost (it's pacing, not a narrative beat).
-	if (InkIndex == -2)
-	{
-		AdvancePendingParagraph();
-		return true;
-	}
-
-	// InkIndex == -1 is the synthetic "[Goodbye]" sentinel (Ink had no more
+	// InkIndex == -1 is the synthetic "[LEAVE]" sentinel (Ink had no more
 	// content at this decision point) — nothing to choose, just close.
 	// No +20s — the live clock just resumes.
 	if (InkIndex < 0)
@@ -316,48 +308,34 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 	CurrentNode.SpeakerName = ActiveNpc ? ActiveNpc->NpcName
 		: (ActiveItem ? ActiveItem->ItemId : FName(TEXT("NPC")));
 
+	// Pull everything Ink has up to the next choice point / dead end, in one
+	// go. Pacing inside that block is NOT auto-inserted — no "# BEAT" tags,
+	// no knot-crossing beats, no synthetic [CONTINUE]. If a stretch of prose
+	// should pause, the author writes the break as a real Ink choice
+	// (e.g. `* [CONTINUE]`) in the .ink source. The only button this code
+	// still generates on its own is the [LEAVE] dead-end fallback below
+	// (see BuildChoicesFromStory).
 	FString Body = Story->ContinueMaximally();
 
-	// An un-bracketed choice ("* Do you know how I can get in?", no
-	// "[...]") is, per Ink's own rule, printed once as the choice button
-	// and then AGAIN as the first line of the continued content once
-	// picked — that's how Ink lets authors skip brackets and still have
-	// the line read naturally in a transcript. The dialogue widget already
-	// renders that same text as the player's "YOU" line the instant the
-	// choice is clicked (EclipseDialogueWidget::MakeChoice), so left alone
-	// this second copy would print again here under the NPC's name. Strip
-	// just that leading echoed line — everything the NPC actually says
-	// after it is untouched.
+	// An un-bracketed choice ("* Do you know how I can get in?", no "[...]")
+	// is, per Ink's own rule, printed once as the choice button and then
+	// AGAIN as the first line of the continued content once picked — that's
+	// how Ink lets authors skip brackets and still have the line read
+	// naturally in a transcript. The dialogue widget already renders that
+	// same text as the player's "YOU" line the instant the choice is clicked
+	// (EclipseDialogueWidget::MakeChoice), so left alone this second copy
+	// would print again here under the NPC's name. Strip just that leading
+	// echoed line — everything the NPC actually says after it is untouched.
 	if (EchoedChoiceText)
 	{
 		const FString ChoiceStr = EchoedChoiceText->ToString().TrimStartAndEnd();
-		FString TrimmedBody = Body.TrimStartAndEnd();
+		const FString TrimmedBody = Body.TrimStartAndEnd();
 		if (!ChoiceStr.IsEmpty() && TrimmedBody.StartsWith(ChoiceStr, ESearchCase::CaseSensitive))
 		{
 			Body = TrimmedBody.Mid(ChoiceStr.Len());
 		}
 	}
-
-	// One [CONTINUE] beat per printed line — a stretch of .ink with no
-	// choice in between (several gathers back to back) otherwise prints as
-	// one block. KNOWN ISSUE (not yet root-caused): choice button TEXT can
-	// go stale across a few of these beats even though the underlying
-	// choice data/click behaviour is correct — see chat history around
-	// ChoiceWordBoxes. Revisit before relying on this for real content.
-	TArray<FString> Paragraphs;
-	Body.ParseIntoArrayLines(Paragraphs);
-	for (FString& Line : Paragraphs)
-	{
-		Line.TrimStartAndEndInline();
-	}
-	Paragraphs.RemoveAll([](const FString& Line) { return Line.IsEmpty(); });
-
-	CurrentNode.Body = FText::FromString(Paragraphs.IsEmpty() ? FString() : Paragraphs[0]);
-	PendingParagraphs.Reset();
-	if (!Paragraphs.IsEmpty())
-	{
-		PendingParagraphs.Append(Paragraphs.GetData() + 1, Paragraphs.Num() - 1);
-	}
+	CurrentNode.Body = FText::FromString(Body.TrimStartAndEnd());
 
 	// Node-level tags → EffectsLine (display only — a preview, not
 	// auto-applied; only choice-level directives get applied on click, in
@@ -367,42 +345,7 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		CurrentNode.EffectsLine = BuildEffectsLineText(ParseStageDirections(NodeTags));
 	}
 
-	if (!PendingParagraphs.IsEmpty())
-	{
-		OfferContinuePrompt();
-		return;
-	}
-
 	BuildChoicesFromStory();
-}
-
-void UEclipseDialogueSubsystem::AdvancePendingParagraph()
-{
-	CurrentNode.Choices.Reset();
-	CurrentChoiceInkIndex.Reset();
-	CurrentChoiceMenuAction.Reset();
-
-	CurrentNode.Body = FText::FromString(PendingParagraphs[0]);
-	PendingParagraphs.RemoveAt(0);
-
-	if (!PendingParagraphs.IsEmpty())
-	{
-		OfferContinuePrompt();
-		return;
-	}
-
-	BuildChoicesFromStory();
-}
-
-void UEclipseDialogueSubsystem::OfferContinuePrompt()
-{
-	FEclipseDialogueChoice ContinueChoice;
-	ContinueChoice.Text = FText::FromString(TEXT("[CONTINUE]"));
-	ContinueChoice.bIsContinuePrompt = true;
-	CurrentNode.Choices.Add(ContinueChoice);
-	CurrentChoiceInkIndex.Add(-2);
-	CurrentChoiceMenuAction.Add(NAME_None);
-	OnNodeChanged.Broadcast(CurrentNode);
 }
 
 void UEclipseDialogueSubsystem::BuildChoicesFromStory()
@@ -424,6 +367,11 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 
 		FEclipseDialogueChoice Choice;
 		Choice.Text = InkChoice->GetText();
+
+		// A hand-authored `* [CONTINUE]` is a pacing beat, not a line the
+		// player speaks — flag it so the widget skips the "YOU" bubble.
+		Choice.bIsContinuePrompt = Choice.Text.ToString().TrimStartAndEnd()
+			.Equals(TEXT("[CONTINUE]"), ESearchCase::IgnoreCase);
 
 		{
 			const FString DisplayText = Choice.Text.ToString().TrimStartAndEnd();
@@ -508,14 +456,17 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 		CurrentChoiceMenuAction.Add(MenuAction);
 	}
 
-	// Always offer at least one way out — a dead end (Ink hit -> END with
-	// no choices) or every choice getting hidden-gate-filtered above.
+	// The one and only button this code generates on its own: a way out of a
+	// dead end — Ink hit "-> DONE" / "-> END" with nothing left to choose
+	// (or every choice got hidden-gate-filtered above). Everything else,
+	// including any mid-scene "[CONTINUE]" pacing beat, is hand-authored as
+	// a real choice in the .ink source.
 	if (CurrentNode.Choices.IsEmpty())
 	{
-		FEclipseDialogueChoice Goodbye;
-		Goodbye.Text = FText::FromString(TEXT("[Goodbye]"));
-		Goodbye.bAvailable = true;
-		CurrentNode.Choices.Add(Goodbye);
+		FEclipseDialogueChoice Leave;
+		Leave.Text = FText::FromString(TEXT("[LEAVE]"));
+		Leave.bAvailable = true;
+		CurrentNode.Choices.Add(Leave);
 		CurrentChoiceInkIndex.Add(-1);
 		CurrentChoiceMenuAction.Add(NAME_None);
 	}
@@ -536,7 +487,6 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
 	CurrentChoiceMenuAction.Reset();
-	PendingParagraphs.Reset();
 
 	// Resume the chapter clock that OpenDialogue paused.
 	if (UGameInstance* GI = GetGameInstance())

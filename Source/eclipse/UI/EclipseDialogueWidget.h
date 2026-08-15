@@ -250,6 +250,17 @@ private:
 	// keyboard selection (matching the NPC caption boxes' own black card).
 	TArray<TObjectPtr<UBorder>> ChoiceRowBackgrounds;
 
+	// Label per choice row (parallel to ChoiceButtons/ChoiceRowBackgrounds).
+	// RebuildChoices constructs both fresh from C++ every call rather than
+	// reusing/hiding the WBP's own baked ChoiceRow_i/ChoiceBg_i/ChoiceText_i
+	// sub-widgets — that reuse path proved unreliable no matter how it was
+	// hidden/re-shown (design-time placeholder text and card backgrounds
+	// kept bleeding through). Tracked directly here — not re-found by name
+	// each frame — for the same reason ChoiceWordBoxes moved off
+	// WidgetTree->FindWidget: a reused/collided name can resolve to a
+	// stale widget instead of the current one.
+	TArray<TObjectPtr<class UTextBlock>> ChoiceLabelWidgets;
+
 	// Phase driver for the subtle hover pulse (NativeTick's hover pass) —
 	// free-running seconds, not reset per node.
 	float ChoicePulseTime = 0.f;

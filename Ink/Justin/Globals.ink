@@ -1,5 +1,5 @@
 // Globals.ink — shared Ink variables.
-//
+
 // Synced one-directionally from UEclipseGameStateSubsystem into the story
 // right before each ChoosePath (see EclipseDialogueSubsystem::OpenDialogue).
 // Ink content reads these to branch; it never writes them back — all actual
@@ -42,6 +42,5 @@ LIST Connections = dj_crisis
 // Character switch tracking
 LIST CurrentPlayer = character_one, character_two, character_three
 
-// Patience of NPC you're talking too
+// Patience of NPC you're talking to
 LIST Patience = annoyed, bored, (neutral), friendly, flirty
-

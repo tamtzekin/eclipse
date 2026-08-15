@@ -140,13 +140,13 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) FName StatCheckLabelStat;
 	UPROPERTY(BlueprintReadOnly) int32 StatCheckLabelValue = 0;
 
-	// Synthetic "[CONTINUE]" choice — BuildNodeFromStory pulls the NPC's
-	// body one Ink paragraph (gather) at a time instead of all of them at
-	// once, and injects this in place of real choices whenever more
-	// narrative is still waiting. Not a real decision: the widget skips the
-	// usual "YOU" bubble + player-line animation for it and just asks the
-	// subsystem to pull the next paragraph (see MakeChoice's InkIndex == -2
-	// case).
+	// True for a pacing beat rather than a real decision — set when a
+	// hand-authored Ink choice's display text is exactly "[CONTINUE]"
+	// (see BuildChoicesFromStory). Nothing synthesises these anymore; the
+	// author writes `* [CONTINUE]` in the .ink source wherever a stretch of
+	// prose should pause. The widget uses this to skip the usual "YOU"
+	// bubble + player-line animation, so a pacing click doesn't read as
+	// something the player said.
 	UPROPERTY(BlueprintReadOnly) bool bIsContinuePrompt = false;
 };
 
@@ -197,6 +197,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseDialogueClosed);
  *     before reaching ParseSkillCheck).
  *   - menuAction handlers (enterStall / giveTabs / startGame / takeItem) are
  *     tagged "MENU:actionName" on the choice that should fire them.
+ *   - Pacing is entirely hand-authored. Everything Ink has up to the next
+ *     choice point prints in one go; nothing here auto-inserts a pause. To
+ *     break a long stretch of prose, write a real Ink choice — `* [CONTINUE]`
+ *     — at the break point. (A choice whose display text is exactly
+ *     "[CONTINUE]" is flagged bIsContinuePrompt so the widget renders it as
+ *     a beat rather than a line the player said.)
+ *   - The ONLY button this code generates on its own is "[LEAVE]", offered
+ *     when Ink dead-ends ("-> DONE" / "-> END") with no choices left, so the
+ *     player always has a way out. See BuildChoicesFromStory.
  */
 UCLASS()
 class ECLIPSE_API UEclipseDialogueSubsystem : public UGameInstanceSubsystem
@@ -266,36 +275,9 @@ private:
 	// DispatchMenuAction before the story advances past the click.
 	TArray<FName> CurrentChoiceMenuAction;
 
-	// Body lines still waiting to be shown — BuildNodeFromStory splits the
-	// whole pulled block on printed lines, so a stretch of .ink with no
-	// choice in between (several gathers back to back) reveals one line at a
-	// time behind a synthetic [CONTINUE] instead of printing all at once.
-	// Emptied as AdvancePendingParagraph pulls from the front.
-	//
-	// KNOWN ISSUE (not yet root-caused): the choice BUTTON TEXT can go stale
-	// across one of these [CONTINUE] beats even though the underlying choice
-	// data and click behaviour are correct (confirmed via logging — see chat
-	// history). Several widget-side fixes were tried (NAME_None word/box
-	// construction, a directly-tracked ChoiceWordBoxes array instead of
-	// WidgetTree->FindWidget by name) without fully resolving it. Revisit
-	// before relying on this for real content.
-	TArray<FString> PendingParagraphs;
-
-	// Pops the next paragraph off PendingParagraphs into CurrentNode.Body —
-	// offers another [CONTINUE] if more remain, otherwise builds the real
-	// choices Ink already has waiting. Driven by MakeChoice's InkIndex == -2
-	// case.
-	void AdvancePendingParagraph();
-
-	// Injects the synthetic "[CONTINUE]" choice (InkIndex sentinel -2) and
-	// broadcasts — shared by BuildNodeFromStory and AdvancePendingParagraph.
-	void OfferContinuePrompt();
-
 	// Builds CurrentNode.Choices from Story->GetCurrentChoices() (gate-
-	// evaluated, hidden failures dropped, synthetic "[Goodbye]" fallback if
-	// none survive) and broadcasts OnNodeChanged. Called once PendingParagraphs
-	// is empty — either immediately (no [CONTINUE] beats at all) or once
-	// AdvancePendingParagraph drains the queue.
+	// evaluated, hidden failures dropped, synthetic "[LEAVE]" fallback if
+	// none survive) and broadcasts OnNodeChanged.
 	void BuildChoicesFromStory();
 
 	// Skill-check parser: pulls "[WORD:10]" out of a raw string, returns
