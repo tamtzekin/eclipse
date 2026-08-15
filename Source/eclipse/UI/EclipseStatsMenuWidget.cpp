@@ -262,8 +262,8 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	RhythmRow       = MakeStatRow(TEXT("RhythmRow"));
 	ZenRow          = MakeStatRow(TEXT("ZenRow"));
 	PsychedelicsRow = MakeStatRow(TEXT("PsychedelicsRow"));
-	// (Stimulation row removed — Stimulation is now a life-meter on the
-	// HUD instead of a stat in this panel. StimulationRow UPROPERTY stays
+	// (Stimulation row removed — the stat no longer exists at all. The
+	// binding was dropped too; this comment stays
 	// as BindWidgetOptional for backward-compat with older WBPs.)
 
 	// (Heat / Thirst / Currency rows + divider intentionally removed —
@@ -311,7 +311,7 @@ void UEclipseStatsMenuWidget::RefreshAll()
 	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm,       GS->RhythmXP);
 	SetRow(ZenRow,          TEXT("ZEN"),          GS->Zen,          GS->ZenXP);
 	SetRow(PsychedelicsRow, TEXT("PSYCHEDELICS"), GS->Psychedelics, GS->PsychedelicsXP);
-	// (StimulationRow no longer populated — see header comment.)
+	// (Stimulation removed from the game — no row to populate.)
 
 	// HEAT / THIRST / CURRENCY intentionally NOT rendered here — those live
 	// on the persistent HUD (bottom-right). Stats panel is character stats

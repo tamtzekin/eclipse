@@ -199,7 +199,7 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	// Skill-check resolution — every clicked check grinds its stat
 	// (learn-by-doing: use a skill in conversation, earn XP toward its next
 	// level). Passing grants the full SkillXPOnPass; a failed attempt still
-	// teaches at half rate but also pays the Stimulation failure tax. The
+	// teaches at half rate but also pays the Heat failure tax. The
 	// dialogue widget no longer disables failed-skill buttons; players can
 	// attempt risky checks at a cost.
 	if (Chosen.bIsSkillCheck)
@@ -215,13 +215,13 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 				else
 				{
 					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnFail);
-					if (Chosen.StimulationDamageOnFail > 0)
+					if (Chosen.HeatDamageOnFail > 0)
 					{
-						UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Stimulation"),
+						UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Heat"),
 							*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
-							GS->GetStatValue(Chosen.SkillCheckStat), Chosen.StimulationDamageOnFail);
-						// "Damage" = push toward 0 (the death extreme).
-						GS->ChangeStimulation(-Chosen.StimulationDamageOnFail);
+							GS->GetStatValue(Chosen.SkillCheckStat), Chosen.HeatDamageOnFail);
+						// "Damage" = push Heat toward 0 (the death extreme).
+						GS->ChangeHeat(-Chosen.HeatDamageOnFail);
 					}
 				}
 			}
@@ -536,7 +536,6 @@ bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& 
 	OutStat = FName(*Inner.Left(Colon).ToLower());
 	OutValue = FCString::Atoi(*Inner.Mid(Colon + 1));
 	return OutStat == TEXT("aesthetics")
-		|| OutStat == TEXT("stimulation")
 		|| OutStat == TEXT("rhythm")
 		|| OutStat == TEXT("zen")
 		|| OutStat == TEXT("psychedelics");
@@ -635,7 +634,7 @@ bool UEclipseDialogueSubsystem::FindInkGateLabel(const FString& ChoiceDisplayTex
 
 namespace
 {
-	// Recognise the four gameplay stats. (Stimulation moved into the meter
+	// Recognise the four gameplay stats. (Stimulation was removed; see
 	// system — see IsKnownMeterKey below.)
 	bool IsKnownStatKey(FName Lower)
 	{
@@ -649,7 +648,7 @@ namespace
 	{
 		return Lower == TEXT("heat")
 			|| Lower == TEXT("thirst")
-			|| Lower == TEXT("stimulation");
+			;
 	}
 
 	// Hidden numeric social stats (currently just Annoyance). Numeric like
@@ -873,7 +872,7 @@ void UEclipseDialogueSubsystem::ApplyStageEffect(const FEclipseStageDirective& E
 		break;
 	case EEclipseStageDirectiveKind::MeterEffect:
 		// Signed delta on the 0..10 meter scale, clamped + broadcast inside
-		// ChangeMeter. Stimulation==0 also fires OnPlayerDeath from there.
+		// ChangeMeter. Heat==0 also fires OnPlayerDeath from there.
 		State->ChangeMeter(Eff.Stat, Eff.Value);
 		break;
 	case EEclipseStageDirectiveKind::HiddenStatEffect:

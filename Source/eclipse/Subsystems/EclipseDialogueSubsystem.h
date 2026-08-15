@@ -75,7 +75,7 @@ struct FEclipseStageDirective
 	UPROPERTY(BlueprintReadOnly) EEclipseStageDirectiveKind Kind = EEclipseStageDirectiveKind::StatGate;
 	// Lowercase stat / meter / hidden key, depending on Kind:
 	//   StatGate / StatEffect                → "aesthetics" / "rhythm" / "zen" / "psychedelics"
-	//   MeterEffect / MeterCompareGate       → "heat" / "thirst" / "stimulation"
+	//   MeterEffect / MeterCompareGate       → "heat" / "thirst"
 	//   HiddenStatGate / HiddenStatEffect    → "annoyance"
 	//   IdentityGate                         → "gender" / "race"
 	//   ItemGate                             → empty
@@ -111,12 +111,12 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) bool bIsSkillCheck = false;
 	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly) int32 SkillCheckValue = 0;
-	// Stimulation cost when this choice is a failed skill check that the
-	// player clicks anyway. Surfaced to the widget so it can render a
-	// "[-N STIMULATION]" risk hint, consumed in MakeChoice via the
-	// GameStateSubsystem ChangeStimulation API. (Renamed from
-	// EnergyDamageOnFail — Energy meter was absorbed into Stimulation.)
-	UPROPERTY(BlueprintReadOnly) int32 StimulationDamageOnFail = 2;
+	// Heat cost when this choice is a failed skill check that the player
+	// clicks anyway. Surfaced to the widget so it can render a
+	// "[-N HEAT]" risk hint, consumed in MakeChoice via the
+	// GameStateSubsystem ChangeHeat API. Heat is the meter that kills at
+	// 0, so botching checks is what puts the player in danger.
+	UPROPERTY(BlueprintReadOnly) int32 HeatDamageOnFail = 2;
 
 	// All stage directives parsed from this choice's Ink tags. Gates are
 	// evaluated when the choice is built (sets bAvailable + GateHint);
@@ -133,7 +133,7 @@ struct FEclipseDialogueChoice
 	// compiled choice text back against the .ink source (see
 	// UEclipseDialogueSubsystem::FindInkGateLabel; Ink itself doesn't expose
 	// the condition at runtime, only whether the choice passed it). Display
-	// only — unlike bIsSkillCheck, this never grants XP or costs Stimulation;
+	// only — unlike bIsSkillCheck, this never grants XP or costs Heat;
 	// Ink already silently hides the choice if the condition is false, so
 	// every choice that reaches here already passed it.
 	UPROPERTY(BlueprintReadOnly) bool bHasStatCheckLabel = false;
@@ -232,7 +232,7 @@ public:
 	// Learn-by-doing XP granted to a stat each time the player clicks one of
 	// its skill-check choices (see UEclipseGameStateSubsystem::GrantStatXP;
 	// levels roll at StatXPToLevel=100). Failed attempts still teach —
-	// half rate — on top of the Stimulation damage they already cost.
+	// half rate — on top of the Heat damage they already cost.
 	static constexpr int32 SkillXPOnPass = 20;
 	static constexpr int32 SkillXPOnFail = 10;
 
@@ -322,7 +322,7 @@ private:
 	// Apply a single effect-kind directive to the player's state. StatEffect
 	// keys route through UEclipseGameStateSubsystem::ApplyStatDelta;
 	// MeterEffect keys route through ChangeMeter (which clamps to [0,10]
-	// and fires OnPlayerDeath on a Stimulation→0 transition). No-op for
+	// and fires OnPlayerDeath on a Heat→0 transition). No-op for
 	// non-effect kinds (defensive).
 	void ApplyStageEffect(const FEclipseStageDirective& Eff) const;
 

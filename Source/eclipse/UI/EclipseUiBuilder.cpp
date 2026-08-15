@@ -565,8 +565,10 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 
 		// No backdrop — bars sit directly on the canvas, top-left. Fixed-width
 		// SizeBox gives the Fill-aligned rows/bars below a concrete width.
-		const float HudColumnWidth = 320.f;
-		const float HudBarHeight   = 14.f;
+		// Keep in step with EclipseHUDWidget.cpp's ColumnWidth / BarHeight —
+		// the populator and the runtime fallback must agree on dimensions.
+		const float HudColumnWidth = 720.f;
+		const float HudBarHeight   = 26.f;
 		const int32 MeterMax    = 10;
 
 		USizeBox* ColumnSize = New<USizeBox>(Tree, TEXT("MeterColumnSize"));
@@ -594,7 +596,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			UTextBlock* LabelTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sLabelText"), Suffix)));
 			LabelTxt->SetText(FText::FromString(Label));
-			LabelTxt->SetFont(MakeBMSPA(18, 3.f));
+			LabelTxt->SetFont(MakeBMSPA(28, 3.f));
 			LabelTxt->SetColorAndOpacity(FSlateColor(Cream));
 			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(LabelTxt))
 			{
@@ -605,7 +607,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			UTextBlock* ValueTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
 			ValueTxt->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), MeterMax)));
-			ValueTxt->SetFont(MakeBMSPA(18, 2.f));
+			ValueTxt->SetFont(MakeBMSPA(28, 2.f));
 			ValueTxt->SetColorAndOpacity(FSlateColor(Cream));
 			ValueTxt->SetJustification(ETextJustify::Right);
 			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(ValueTxt))
@@ -644,7 +646,6 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 
 		BuildBar(TEXT("Heat"),        TEXT("HEAT"));
 		BuildBar(TEXT("Thirst"),      TEXT("THIRST"));
-		BuildBar(TEXT("Stimulation"), TEXT("STIM"));
 	});
 #else
 	(void)WBPAssetPath; return false;
@@ -1336,7 +1337,7 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 //
 //  Same widget-name conventions as the C++ widget's BindWidgetOptional list
 //  so once the WBP is populated, the C++ side rebinds without any rename
-//  step. Names: AestheticsRow, StimulationRow, RhythmRow, ZenRow,
+//  step. Names: AestheticsRow, RhythmRow, ZenRow,
 //  PsychedelicsRow, HeatRow, ThirstRow, CurrencyRow, CloseBtn. (The widget
 //  reads stat values into these UTextBlocks at RefreshAll-time.)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1454,7 +1455,6 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		};
 
 		MakeStatRow(TEXT("AestheticsRow"),   TEXT("AESTHETICS     1"));
-		MakeStatRow(TEXT("StimulationRow"),  TEXT("STIMULATION    1"));
 		MakeStatRow(TEXT("RhythmRow"),       TEXT("RHYTHM         1"));
 		MakeStatRow(TEXT("ZenRow"),          TEXT("ZEN            1"));
 		MakeStatRow(TEXT("PsychedelicsRow"), TEXT("PSYCHEDELICS   1"));

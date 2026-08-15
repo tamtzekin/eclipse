@@ -19,7 +19,7 @@ class UImage;
  *   • Player portrait
  *   • Close button
  *
- * (Heat / Thirst / Stimulation meter readouts + currency moved to the
+ * (Heat / Thirst meter readouts + currency moved to the
  * HUD and phone face respectively — this panel is now stats-only.)
  *
  * Lives at /Game/Justin/UI/WBP_StatsMenu when a designer-styled WBP exists,
@@ -56,7 +56,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>   HeatRow;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>   ThirstRow;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>   CurrencyRow;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>   StimulationRow;
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>      CloseBtn;
 

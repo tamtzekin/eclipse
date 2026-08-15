@@ -124,10 +124,10 @@ void UEclipseDeathOverlayWidget::OnTryAgainClicked()
 			if (!bLoaded)
 			{
 				// Mirror the subsystem defaults — sweet-spot middle for
-				// Thirst, slightly low for Heat, alert for Stimulation.
-				GS->Heat        = 3;
-				GS->Thirst      = 5;
-				GS->Stimulation = 7;
+				// Thirst, slightly low for Heat. Heat must come back above
+				// 0 or the player would respawn already dead.
+				GS->Heat   = 3;
+				GS->Thirst = 5;
 			}
 		}
 	}

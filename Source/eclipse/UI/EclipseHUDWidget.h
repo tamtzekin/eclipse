@@ -13,7 +13,7 @@ class UHorizontalBox;
 class UProgressBar;
 
 /**
- * Top-left HUD cluster — three life-meters (Heat, Thirst, Stimulation)
+ * Top-left HUD cluster — two life-meters (Heat, Thirst)
  * stacked vertically as continuous fill bars. Binds to
  * EclipseGameStateSubsystem::OnStateChanged. No backdrop panel — the
  * bars float directly over the game view.
@@ -29,12 +29,11 @@ class UProgressBar;
  * Per-meter base tints:
  *   HEAT          red
  *   THIRST        cyan
- *   STIMULATION   yellow-white
  *
  * Blueprint child names (BindWidgetOptional — populator names match):
- *   UProgressBar  HeatBar / ThirstBar / StimulationBar
- *   UTextBlock    HeatValueText / ThirstValueText / StimulationValueText
- *   UTextBlock    HeatLabelText / ThirstLabelText / StimulationLabelText
+ *   UProgressBar  HeatBar / ThirstBar
+ *   UTextBlock    HeatValueText / ThirstValueText
+ *   UTextBlock    HeatLabelText / ThirstLabelText
  */
 UCLASS()
 class ECLIPSE_API UEclipseHUDWidget : public UUserWidget
@@ -56,19 +55,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> ThirstBar;
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> StimulationBar;
-
-	// Stat-name labels on the left of each row ("HEAT", "THIRST", "STIMULATION").
+	// Stat-name labels on the left of each row ("HEAT", "THIRST").
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeatLabelText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ThirstLabelText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StimulationLabelText;
 
 	// Integer-value labels on the right of each row (e.g. "7"). Updated
 	// alongside the segments in UpdateBars.
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeatValueText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ThirstValueText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StimulationValueText;
 
 	// Center-screen crosshair dot — bound from the WBP designer if
 	// present, otherwise built programmatically in Initialize().
@@ -141,13 +135,11 @@ private:
 	// the first UpdateBars call seeds these without flashing.
 	int32 LastHeat        = -1;
 	int32 LastThirst      = -1;
-	int32 LastStimulation = -1;
 
 	// Per-meter pulse timer in [0, PulseDuration]. NativeTick decays these
 	// toward 0; UpdateBars resets to PulseDuration on a value change.
 	float HeatPulse        = 0.f;
 	float ThirstPulse      = 0.f;
-	float StimulationPulse = 0.f;
 
 	// Time the flash takes to fade back to normal. Short enough to feel
 	// like instant feedback, long enough that the eye catches it.

@@ -17,7 +17,7 @@ class ECLIPSE_API UEclipseSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	// Stats — 4-stat system after Stimulation moved into the meter system.
+	// Stats — 4-stat system (Stimulation was removed entirely).
 	UPROPERTY() int32 Aesthetics   = 1;
 	UPROPERTY() int32 Rhythm       = 1;
 	UPROPERTY() int32 Zen          = 1;
@@ -40,12 +40,11 @@ public:
 	UPROPERTY() int32 Annoyance = 0;
 
 	// Meters — sweet-spot 0..10 ints. Defaults match the subsystem
-	// (Heat=3, Thirst=5, Stimulation=7). Old float-scale saves from prior
+	// (Heat=3, Thirst=5). Old float-scale saves from prior
 	// builds are migrated at load time in TryLoadCurrent / LoadFromSlot:
 	// any value > 10 is divided by 10 and clamped to [0, 10].
 	UPROPERTY() int32 Heat        = 3;
 	UPROPERTY() int32 Thirst      = 5;
-	UPROPERTY() int32 Stimulation = 7;
 	UPROPERTY() TArray<FName> Inventory;
 	UPROPERTY() TArray<FName> EquippedClothing;
 	UPROPERTY() TMap<EEclipseSlotType, FName> EquippedSlots;

@@ -90,8 +90,8 @@ public:
 	//   Zen           — composure, silence. (~old "Shadow")
 	//   Psychedelics  — perception, openness to weird input.
 	//
-	// (Stimulation was previously a fifth stat but has been absorbed into
-	// the life-meter system — see Meters block below.)
+	// (Stimulation was previously a fifth stat, then a life meter; it has
+	// now been removed entirely — Heat is the meter that can kill you.)
 	//
 	// Skill checks reference these via lowercase StatKey strings:
 	//   "aesthetics" | "rhythm" | "zen" | "psychedelics"
@@ -226,7 +226,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Hidden")
 	void ChangeAnnoyance(int32 Delta);
 
-	// ── Life meters (Heat / Thirst / Stimulation) ─────────────────────
+	// ── Life meters (Heat / Thirst) ───────────────────────────────────
 	//
 	// Integer 0..10 "sweet-spot" model: BOTH extremes are bad. 5 is neutral;
 	// the critical zones are ≤2 (too low) and ≥8 (too high). Meters do NOT
@@ -237,41 +237,39 @@ public:
 	// each meter is from danger.
 	//
 	// Semantic per meter (both ends bad; 5 = sweet spot):
-	//   HEAT          0 freezing · 5 comfortable · 10 overheated
-	//   THIRST        0 dry       · 5 hydrated    · 10 sloshing (wet)
-	//   STIMULATION   0 sluggish · 5 alert       · 10 tweaking
+	//   HEAT     0 freezing · 5 comfortable · 10 overheated
+	//   THIRST   0 dry      · 5 hydrated    · 10 sloshing (wet)
 	//
 	// THIRST orientation: LOW = dry, HIGH = wet — i.e. drinking water
 	// or beer raises the meter (toward sloshing), chewing gum lowers it
-	// (toward dry). Both extremes are bad but only Stimulation == 0
-	// kills the player (see OnPlayerDeath in ChangeMeter).
+	// (toward dry). Both extremes are bad but only Heat == 0 kills the
+	// player (see OnPlayerDeath in ChangeMeter).
 	//
 	// Dialogue content gates these via stage directives like
-	//   "HEAT > 8"        — choice available only when overheating
-	//   "STIMULATION < 3" — choice available only when fatigued
+	//   "HEAT > 8"   — choice available only when overheating
+	//   "THIRST < 3" — choice available only when parched
 	// and apply changes via the same syntax as stat changes:
-	//   "+1 HEAT", "-2 THIRST", "+3 STIMULATION"
+	//   "+1 HEAT", "-2 THIRST"
 	//
-	// Death: ONLY Stimulation == 0 fires OnPlayerDeath. Heat/Thirst at
-	// either extreme just lock dialogue gates and surface the critical
-	// HUD tint; they don't kill the player directly.
+	// Death: ONLY Heat == 0 (freezing out) fires OnPlayerDeath. Thirst at
+	// either extreme just locks dialogue gates and surfaces the critical
+	// HUD tint; it doesn't kill the player directly.
 	static constexpr int32 MeterMax          = 10;
 	static constexpr int32 MeterCriticalLow  = 2;   // value ≤ this → critical
 	static constexpr int32 MeterCriticalHigh = 8;   // value ≥ this → critical
 
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Heat        = 3;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Thirst      = 5;
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Stimulation = 7;
 
-	// Adds Delta (signed) to the named meter (lowercase "heat" / "thirst" /
-	// "stimulation"), clamps to [0, MeterMax], broadcasts OnStateChanged.
-	// If the meter is Stimulation and the post-clamp value is 0, also fires
-	// OnPlayerDeath (single-shot — won't re-fire if you stay at 0).
+	// Adds Delta (signed) to the named meter (lowercase "heat" / "thirst"),
+	// clamps to [0, MeterMax], broadcasts OnStateChanged. If the meter is
+	// Heat and the post-clamp value is 0, also fires OnPlayerDeath
+	// (single-shot — won't re-fire if you stay at 0).
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void ChangeMeter(FName MeterKey, int32 Delta);
 
 	// Convenience wrappers for the common case where the caller knows which
-	// meter at compile time. All three route through ChangeMeter so the
+	// meter at compile time. Both route through ChangeMeter so the
 	// death-trigger + clamp + broadcast logic stays in one place.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void ChangeHeat(int32 Delta);
@@ -279,10 +277,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void ChangeThirst(int32 Delta);
 
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
-	void ChangeStimulation(int32 Delta);
-
-	// Read a meter by name (lowercase "heat" / "thirst" / "stimulation").
+	// Read a meter by name (lowercase "heat" / "thirst").
 	// Returns 0 for unknown keys. Used by the dialogue subsystem's comparison-gate
 	// evaluator so "HEAT > 8" reads through this single accessor.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
@@ -485,7 +480,7 @@ public:
 	static FName GetBaseItemId(FName MaybeRuntimeId);
 
 	// (Old float-scale Drain/Gain APIs removed — see ChangeHeat /
-	// ChangeThirst / ChangeStimulation / ChangeMeter above for the new
+	// ChangeThirst / ChangeMeter above for the new
 	// signed-int delta API on the 0..10 integer scale.)
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Quest")
@@ -536,9 +531,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
 
-	// Fires once when Stimulation transitions from > 0 to 0. The HUD
+	// Fires once when Heat transitions from > 0 to 0. The HUD
 	// listens and opens the death overlay (TRY AGAIN / QUIT). Reset by
-	// Load or by ChangeStimulation lifting the value back above 0.
+	// Load or by ChangeHeat lifting the value back above 0.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipsePlayerDied OnPlayerDeath;
 

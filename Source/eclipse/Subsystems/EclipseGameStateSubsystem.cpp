@@ -430,9 +430,8 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 		if (Row.Type == EEclipseItemType::Usable)
 		{
 			const bool bAnyDelta =
-				(Row.Effect.HeatDelta        != 0) ||
-				(Row.Effect.ThirstDelta      != 0) ||
-				(Row.Effect.StimulationDelta != 0);
+				(Row.Effect.HeatDelta   != 0) ||
+				(Row.Effect.ThirstDelta != 0);
 			const bool bHasLegacy = (Row.Effect.RestoreThirst > 0.f);
 
 			if (!bAnyDelta && !bHasLegacy)
@@ -444,9 +443,8 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 
 			if (bAnyDelta)
 			{
-				if (Row.Effect.HeatDelta        != 0) ChangeHeat       (Row.Effect.HeatDelta);
-				if (Row.Effect.ThirstDelta      != 0) ChangeThirst     (Row.Effect.ThirstDelta);
-				if (Row.Effect.StimulationDelta != 0) ChangeStimulation(Row.Effect.StimulationDelta);
+				if (Row.Effect.HeatDelta   != 0) ChangeHeat  (Row.Effect.HeatDelta);
+				if (Row.Effect.ThirstDelta != 0) ChangeThirst(Row.Effect.ThirstDelta);
 			}
 			else
 			{
@@ -695,18 +693,17 @@ bool UEclipseGameStateSubsystem::GetClothingRow(FName ClothingId, FEclipseClothi
 	return true;
 }
 
-// ── Life meters (Heat / Thirst / Stimulation) ──────────────────────────────
+// ── Life meters (Heat / Thirst) ────────────────────────────────────────────
 //
 // Sweet-spot 0..10 model. Meters do NOT drain over time — they only move
 // when consumables, dialogue effects, or other explicit events push them
-// via ChangeMeter / ChangeXxx. Death only triggers at Stimulation == 0;
-// Heat/Thirst extremes are dialogue-gates and HUD-tint cues, not killers.
+// via ChangeMeter / ChangeXxx. Death triggers at Heat == 0 (frozen);
+// Thirst extremes are dialogue-gates and HUD-tint cues, not killers.
 
 int32 UEclipseGameStateSubsystem::GetMeterValue(FName MeterKey) const
 {
 	if (MeterKey == TEXT("heat"))        return Heat;
 	if (MeterKey == TEXT("thirst"))      return Thirst;
-	if (MeterKey == TEXT("stimulation")) return Stimulation;
 	return 0;
 }
 
@@ -715,7 +712,6 @@ void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 	int32* Field = nullptr;
 	if      (MeterKey == TEXT("heat"))        Field = &Heat;
 	else if (MeterKey == TEXT("thirst"))      Field = &Thirst;
-	else if (MeterKey == TEXT("stimulation")) Field = &Stimulation;
 
 	if (!Field)
 	{
@@ -729,11 +725,12 @@ void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 	UE_LOG(LogEclipse, Log, TEXT("ChangeMeter: %s %d %+d -> %d"),
 		*MeterKey.ToString(), Before, Delta, *Field);
 
-	// Death is single-shot on the Stimulation 0 transition (no re-fire if
-	// the meter is repeatedly pushed past zero while already at 0).
-	if (Field == &Stimulation && Before > 0 && *Field == 0)
+	// Death is single-shot on the Heat 0 transition — freezing out is the
+	// fail state now that Stimulation is gone. No re-fire if the meter is
+	// repeatedly pushed past zero while already at 0.
+	if (Field == &Heat && Before > 0 && *Field == 0)
 	{
-		UE_LOG(LogEclipse, Log, TEXT("Stimulation reached 0 — player died"));
+		UE_LOG(LogEclipse, Log, TEXT("Heat reached 0 — player died"));
 		OnPlayerDeath.Broadcast();
 	}
 
@@ -742,7 +739,6 @@ void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 
 void UEclipseGameStateSubsystem::ChangeHeat(int32 Delta)        { ChangeMeter(TEXT("heat"),        Delta); }
 void UEclipseGameStateSubsystem::ChangeThirst(int32 Delta)      { ChangeMeter(TEXT("thirst"),      Delta); }
-void UEclipseGameStateSubsystem::ChangeStimulation(int32 Delta) { ChangeMeter(TEXT("stimulation"), Delta); }
 
 void UEclipseGameStateSubsystem::TickChapterClock(float DeltaSeconds)
 {
@@ -886,7 +882,6 @@ namespace
 		Save->Annoyance                = GS.Annoyance;
 		Save->Heat                     = GS.Heat;
 		Save->Thirst                   = GS.Thirst;
-		Save->Stimulation              = GS.Stimulation;
 		Save->Inventory                = GS.Inventory;
 		Save->EquippedClothing         = GS.EquippedClothing;
 		Save->EquippedSlots            = GS.EquippedSlots;
@@ -969,7 +964,6 @@ namespace
 		};
 		GS.Heat                     = MigrateMeter(Save->Heat);
 		GS.Thirst                   = MigrateMeter(Save->Thirst);
-		GS.Stimulation              = MigrateMeter(Save->Stimulation);
 		GS.Inventory                = Save->Inventory;
 		GS.EquippedClothing         = Save->EquippedClothing;
 		GS.EquippedSlots            = Save->EquippedSlots;

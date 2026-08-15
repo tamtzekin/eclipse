@@ -47,10 +47,9 @@ struct FEclipseItemEffect
 	//   beer:      ThirstDelta = +2,  HeatDelta = -1            (hydrate + cool)
 	//   gum:       ThirstDelta = -1                            (dries the mouth)
 	//   lollipop:  ThirstDelta = +1                            (saliva)
-	//   Molly:     StimulationDelta = +2, HeatDelta = +1        (tweak + sweat)
+	//   Molly:     HeatDelta = +1                             (sweat)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 HeatDelta         = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 ThirstDelta       = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 StimulationDelta  = 0;
 
 	// Legacy float field kept for backward compat with DT rows authored
 	// against the pre-refactor 0..100 model. UseItem checks the int
@@ -73,6 +72,6 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemType Type = EEclipseItemType::Usable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FEclipseItemEffect Effect;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Duration = 0.f;    // 0 = permanent / non-timed
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "aesthetics"|"stimulation"|"rhythm"|"zen"|"psychedelics"|None
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "aesthetics"|"rhythm"|"zen"|"psychedelics"|None
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName QuestFlag;         // e.g. "hasHair" — for Angel's Hair drink
 };
