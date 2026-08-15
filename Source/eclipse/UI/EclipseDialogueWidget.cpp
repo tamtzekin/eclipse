@@ -1429,7 +1429,16 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			LabelStr += TEXT("  ") + Choice.GateHint.ToString();
 		}
 		Label->SetText(FText::FromString(LabelStr));
-		Label->SetFont(MakeRodin(20));
+		// Exactly the body text's typeface AND size — pulled off the
+		// WBP-bound BodyText, the same source StartBodyAnimation uses for
+		// the NPC's lines, then forced to the shared dialogue text size.
+		// Choices and narration read as one system this way instead of the
+		// choices having their own (previously hardcoded 20pt Rodin) look.
+		{
+			FSlateFontInfo ChoiceFont = BodyText ? BodyText->GetFont() : MakeRodin(/*Size=*/18);
+			ChoiceFont.Size = 18;
+			Label->SetFont(ChoiceFont);
+		}
 		// Base text is plain black (card is white at rest) — NativeTick's
 		// hover pass swaps both the card and the text to the opposite
 		// scheme (black card / white text) on hover or keyboard select.
@@ -1439,10 +1448,21 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		ChoiceLabelWordCounts.Add(ChoiceLabelWordCount(Choice));
 		Label->SetColorAndOpacity(FSlateColor(Tint));
 		Label->SetAutoWrapText(true);
+		// Bound the wrap so a long choice still breaks onto more lines
+		// rather than running off the panel — the card hugs the text up to
+		// this width, then grows downward instead of sideways.
+		{
+			float MaxTextW = 340.f;
+			const float BoxW = ChoicesBox->GetCachedGeometry().GetLocalSize().X;
+			if (BoxW > 120.f) MaxTextW = BoxW - 60.f;
+			Label->SetWrapTextAt(MaxTextW);
+		}
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
 		{
-			S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			// Auto (not Fill) so the row is only as wide as the text —
+			// Fill would stretch it to the full column width.
+			S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			S->SetVerticalAlignment(VAlign_Center);
 		}
 
@@ -1456,11 +1476,12 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		ChoiceRowBackgrounds.Add(RowBg);
 
 		Btn->SetContent(RowBg);
-		// UButtonSlot defaults to HAlign_Center — force Fill so the card
-		// spans the ghost button's full width.
+		// Left-aligned, NOT Fill — the card shrink-wraps to its text so a
+		// short choice reads as a short chip rather than a full-width bar.
 		if (UButtonSlot* BS = Cast<UButtonSlot>(RowBg->Slot))
 		{
-			BS->SetHorizontalAlignment(HAlign_Fill);
+			BS->SetHorizontalAlignment(HAlign_Left);
+			BS->SetVerticalAlignment(VAlign_Center);
 		}
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 		switch (i)
@@ -1475,7 +1496,18 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		if (UVerticalBoxSlot* S = ChoicesBox->AddChildToVerticalBox(Btn))
 		{
 			S->SetPadding(FMargin(0.f, 4.f));
+			// Left, not the UVerticalBoxSlot default of Fill — otherwise the
+			// button (and so its click area) would still span the whole
+			// column even though the card inside it hugs the text.
+			S->SetHorizontalAlignment(HAlign_Left);
 		}
+
+		// Held back until the NPC's line has finished printing — see the
+		// reveal pass in NativeTick. Hidden via RenderOpacity rather than
+		// Collapsed so the row keeps its layout space and nothing jumps
+		// when it appears.
+		Btn->SetRenderOpacity(0.f);
+		ChoiceRevealButtons.Add(Btn);
 
 		ChoiceButtons.Add(Btn);
 	}
@@ -2152,49 +2184,44 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 		}
 	}
 
+	// ── Choice reveal gate ────────────────────────────────────────────────
+	// Choices stay invisible until the NPC's line has finished printing, so
+	// the player can't answer a sentence they haven't read yet.
+	//
+	// Deliberately placed BEFORE the bDialogueAnimating early-out below and
+	// evaluated from scratch every frame: an earlier version keyed the
+	// reveal off a timer that only advanced while that flag was set, which
+	// left rows stranded permanently invisible on any turn where the body
+	// had nothing to animate. Here the gate is simply "the body isn't
+	// animating any more", which is guaranteed to become true — including
+	// immediately for a node with no body text at all.
+	if (ChoiceRevealButtons.Num() > 0)
+	{
+		const bool bBodyDone = !bDialogueAnimating || DialogueAnimTime >= BodyAnimTotalTime;
+		if (bBodyDone)
+		{
+			bool bRevealedAny = false;
+			for (UButton* B : ChoiceRevealButtons)
+			{
+				if (!B || B->GetRenderOpacity() >= 1.f) continue;
+				B->SetRenderOpacity(1.f);
+				bRevealedAny = true;
+			}
+			// Rows appearing grows the scrollable content — keep the view
+			// pinned to the newest row.
+			if (bRevealedAny && RightHistoryScroll)
+			{
+				RightHistoryScroll->ScrollToEnd();
+				bDialogueScrollTargetActive = false;
+			}
+		}
+	}
+
 	if (!bDialogueAnimating) return;
 
 	DialogueAnimTime += DeltaSeconds;
 
 	bool bAllDone = true;
-
-	// ── Per-choice button reveal ──────────────────────────────────────────
-	// Each button stays Collapsed (zero layout) until the body finishes and
-	// its own staggered delay is reached; then it pops to Visible and the
-	// per-word fade inside it starts running.
-	for (int32 i = 0; i < ChoiceRevealButtons.Num(); ++i)
-	{
-		UButton* B = ChoiceRevealButtons[i];
-		if (!B) continue;
-		const float RevealAt = ChoiceRevealDelays.IsValidIndex(i) ? ChoiceRevealDelays[i] : 0.f;
-		if (B->GetVisibility() == ESlateVisibility::Collapsed && DialogueAnimTime >= RevealAt)
-		{
-			B->SetVisibility(ESlateVisibility::Visible);
-			// Force a fresh layout/paint pass on the way back from Collapsed.
-			// These are long-lived WBP buttons that get Collapsed then
-			// re-revealed EVERY turn (unlike body text, which never uses
-			// Collapsed — only alpha fades) — across repeated cycles the
-			// row's content could render stale/blank despite the underlying
-			// widget tree and word data being correct (confirmed via
-			// logging). Explicitly invalidating on reveal rules out (or
-			// fixes, if this was it) stale cached geometry surviving the
-			// Collapsed state.
-			B->InvalidateLayoutAndVolatility();
-			if (UWidget* RowBg = WidgetTree ? WidgetTree->FindWidget(FName(*FString::Printf(TEXT("ChoiceBg_%d"), i))) : nullptr)
-			{
-				RowBg->InvalidateLayoutAndVolatility();
-			}
-			// ChoicesBox now lives inside RightHistoryScroll (see
-			// HandleNodeChanged) — each row popping in grows the scrollable
-			// content, so keep the view pinned to the newest row.
-			if (RightHistoryScroll) { RightHistoryScroll->ScrollToEnd(); bDialogueScrollTargetActive = false; }
-		}
-		// Keep the animation flag alive while there are still hidden rows
-		// pending — even if every word block is currently transparent and
-		// counted as "not done" by the loop below, this guards against a
-		// short body that finishes its words before the choice reveal time.
-		if (DialogueAnimTime < RevealAt) bAllDone = false;
-	}
 
 	// ── Per-word reveal ────────────────────────────────────────────────────
 	// Words are laid out (SelfHitTestInvisible, alpha 0) from construction —
