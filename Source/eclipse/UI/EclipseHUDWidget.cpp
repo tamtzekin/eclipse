@@ -394,8 +394,8 @@ void UEclipseHUDWidget::UpdateChapterClock()
 		const FString NewClockStr = NewClock.ToString();
 
 		// Tick on the visible flick-over only. GetChapterClockText() floors
-		// to ClockDisplayStepMinutes, so with 1 minute per choice this
-		// fires once every 5 choices rather than on each one. The
+		// to ClockDisplayStepMinutes, so at 2 minutes per choice and a
+		// 10-minute step this fires once every 5 choices. The
 		// LastClockDisplay guard matters because OnStateChanged also fires
 		// for meter changes — without it every stat tweak would tick.
 		const bool bFlickedOver = !LastClockDisplay.IsEmpty() && LastClockDisplay != NewClockStr;

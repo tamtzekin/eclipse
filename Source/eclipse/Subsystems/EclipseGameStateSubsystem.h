@@ -353,18 +353,18 @@ public:
 
 	// Game-seconds spent per continuing dialogue choice. This is the only
 	// thing that moves the clock — it does not advance with wall-clock time
-	// (see TickChapterClock). One in-game minute per choice.
+	// (see TickChapterClock). Two in-game minutes per choice.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time")
-	float DialogueChoiceSeconds = 60.f;
+	float DialogueChoiceSeconds = 120.f;
 
 	// The clock READOUT is quantised to this many minutes — the underlying
-	// ChapterElapsedSeconds still advances a minute at a time, but the
+	// ChapterElapsedSeconds still advances two minutes at a time, but the
 	// display floors to the step, so it reads 0:00 for five choices then
-	// jumps to 0:05. Deliberate: a clock that ticks on literally every
+	// jumps to 0:10. Deliberate: a clock that ticks on literally every
 	// click makes the player feel metered, whereas time moving in visible
 	// blocks reads as the night slipping away. Set to 1 for a live readout.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time", meta = (ClampMin = "1"))
-	int32 ClockDisplayStepMinutes = 5;
+	int32 ClockDisplayStepMinutes = 10;
 
 	// Heat bleeds off with elapsed game time: -1 Heat per this many in-game
 	// minutes. Since time only moves when the player talks, this means the
