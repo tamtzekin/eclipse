@@ -133,12 +133,17 @@ struct FEclipseDialogueChoice
 	// compiled choice text back against the .ink source (see
 	// UEclipseDialogueSubsystem::FindInkGateLabel; Ink itself doesn't expose
 	// the condition at runtime, only whether the choice passed it). Display
-	// only — unlike bIsSkillCheck, this never grants XP or costs Heat;
 	// Ink already silently hides the choice if the condition is false, so
-	// every choice that reaches here already passed it.
+	// every choice that reaches here satisfied its gate — but "satisfied"
+	// isn't the same as "passed the check": authors write matched pairs
+	// like "{rhythm > 3} Hide it." / "{rhythm < 3} Hide it." where the
+	// second is the FAILURE branch. bStatCheckLabelIsPass records which,
+	// off the gate's comparison operator, so MakeChoice grinds the stat at
+	// the right rate instead of rewarding the fallback as a success.
 	UPROPERTY(BlueprintReadOnly) bool bHasStatCheckLabel = false;
 	UPROPERTY(BlueprintReadOnly) FName StatCheckLabelStat;
 	UPROPERTY(BlueprintReadOnly) int32 StatCheckLabelValue = 0;
+	UPROPERTY(BlueprintReadOnly) bool bStatCheckLabelIsPass = true;
 
 	// True for a pacing beat rather than a real decision — set when a
 	// hand-authored Ink choice's display text is exactly "[CONTINUE]"
@@ -310,9 +315,9 @@ private:
 	// THIS turn (0, 1, 2, ...) and passes that in; this returns the Nth cache
 	// entry with matching text, in the same top-to-bottom source order the
 	// choices were authored in, so sibling duplicates resolve correctly.
-	bool FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue) const;
+	bool FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue, bool& OutIsPass) const;
 
-	struct FInkGateLabel { FString ChoiceText; FName Stat; int32 Value; };
+	struct FInkGateLabel { FString ChoiceText; FName Stat; int32 Value; bool bIsPass; };
 	mutable TArray<FInkGateLabel> InkGateLabelCache;
 	mutable bool bInkGateLabelCacheBuilt = false;
 	void BuildInkGateLabelCache() const;

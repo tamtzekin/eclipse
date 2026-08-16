@@ -203,13 +203,28 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 	// teaches at half rate but also pays the Heat failure tax. The
 	// dialogue widget no longer disables failed-skill buttons; players can
 	// attempt risky checks at a cost.
-	if (Chosen.bIsSkillCheck)
+	//
+	// Two authoring forms both count as "using a skill", and both grind:
+	//   bIsSkillCheck        — an explicit "[STAT:N]" / "SKILLCHECK:" marker,
+	//                          which the player can attempt and FAIL.
+	//   bHasStatCheckLabel   — an Ink-native "{stat > N}" gate. Ink itself
+	//                          filters these, so any that reach the player
+	//                          already passed — always full XP, never the
+	//                          Heat tax. This is the form the shipped ink
+	//                          actually uses, so leaving it out meant no
+	//                          conversation was grinding anything.
+	if (Chosen.bIsSkillCheck || Chosen.bHasStatCheckLabel)
 	{
 		if (UGameInstance* GI = GetGameInstance())
 		{
 			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
-				if (Chosen.bAvailable)
+				if (Chosen.bHasStatCheckLabel && !Chosen.bIsSkillCheck)
+				{
+					GS->GrantStatXP(Chosen.StatCheckLabelStat,
+						Chosen.bStatCheckLabelIsPass ? SkillXPOnPass : SkillXPOnFail);
+				}
+				else if (Chosen.bAvailable)
 				{
 					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnPass);
 				}
@@ -381,12 +396,13 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 		{
 			const FString DisplayText = Choice.Text.ToString().TrimStartAndEnd();
 			int32& Occurrence = GateTextOccurrence.FindOrAdd(DisplayText);
-			FName GateStat; int32 GateValue = 0;
-			if (FindInkGateLabel(DisplayText, Occurrence, GateStat, GateValue))
+			FName GateStat; int32 GateValue = 0; bool bGateIsPass = true;
+			if (FindInkGateLabel(DisplayText, Occurrence, GateStat, GateValue, bGateIsPass))
 			{
 				Choice.bHasStatCheckLabel = true;
 				Choice.StatCheckLabelStat = GateStat;
 				Choice.StatCheckLabelValue = GateValue;
+				Choice.bStatCheckLabelIsPass = bGateIsPass;
 			}
 			++Occurrence;
 		}
@@ -560,7 +576,7 @@ void UEclipseDialogueSubsystem::BuildInkGateLabelCache() const
 	// part of the label, so it's consumed but not captured) or, if there's
 	// no bracket, the rest of the line.
 	static const FRegexPattern GatePattern(
-		TEXT("^\\s*\\*+\\s*\\{(\\w+)\\s*(?:>=|<=|==|!=|>|<)\\s*(-?\\d+(?:\\.\\d+)?)\\}\\s*(?:\\[([^\\]]*)\\].*|(.*))$"));
+		TEXT("^\\s*\\*+\\s*\\{(\\w+)\\s*(>=|<=|==|!=|>|<)\\s*(-?\\d+(?:\\.\\d+)?)\\}\\s*(?:\\[([^\\]]*)\\].*|(.*))$"));
 
 	for (const FString& FilePath : InkFiles)
 	{
@@ -574,20 +590,27 @@ void UEclipseDialogueSubsystem::BuildInkGateLabelCache() const
 			FRegexMatcher Matcher(GatePattern, Line);
 			if (!Matcher.FindNext()) continue;
 
-			FString OptionText = Matcher.GetCaptureGroup(3);
-			if (OptionText.IsEmpty()) OptionText = Matcher.GetCaptureGroup(4);
+			FString OptionText = Matcher.GetCaptureGroup(4);
+			if (OptionText.IsEmpty()) OptionText = Matcher.GetCaptureGroup(5);
 			OptionText.TrimStartAndEndInline();
 			if (OptionText.IsEmpty()) continue;
+
+			// Only "stat is high enough" reads as passing the check. "<" and
+			// "<=" are the author's fallback branch, and "==" / "!=" aren't a
+			// threshold at all — both grind at the reduced fail rate.
+			const FString Op = Matcher.GetCaptureGroup(2);
+			const bool bIsPass = (Op == TEXT(">") || Op == TEXT(">="));
 
 			InkGateLabelCache.Add(FInkGateLabel{
 				OptionText,
 				FName(*Matcher.GetCaptureGroup(1).ToLower()),
-				FCString::Atoi(*Matcher.GetCaptureGroup(2)) });
+				FCString::Atoi(*Matcher.GetCaptureGroup(3)),
+				bIsPass });
 		}
 	}
 }
 
-bool UEclipseDialogueSubsystem::FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue) const
+bool UEclipseDialogueSubsystem::FindInkGateLabel(const FString& ChoiceDisplayText, int32 OccurrenceIndex, FName& OutStat, int32& OutValue, bool& OutIsPass) const
 {
 	if (!bInkGateLabelCacheBuilt) BuildInkGateLabelCache();
 
@@ -600,6 +623,7 @@ bool UEclipseDialogueSubsystem::FindInkGateLabel(const FString& ChoiceDisplayTex
 		{
 			OutStat = Entry.Stat;
 			OutValue = Entry.Value;
+			OutIsPass = Entry.bIsPass;
 			return true;
 		}
 		++Seen;

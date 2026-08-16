@@ -1130,15 +1130,17 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 {
 	using namespace EclipseUI;
 
-	// Resting text colour for options — white; hover/selection paints it
-	// red (NativeTick hover pass), skill checks blend toward their hue.
-	const FLinearColor ChoiceWhite(1.f, 1.f, 1.f, 1.f);
+	// The card behind a choice row is WHITE at rest, so the resting text is
+	// black and every tint here has to read against white. (Hover flips the
+	// card to black and NativeTick overrides the colour, so only the resting
+	// state is this function's problem.)
+	const FLinearColor ChoiceBase(0.f, 0.f, 0.f, 1.f);
 
 	if (!Choice.bIsSkillCheck && !Choice.bHasStatCheckLabel)
 	{
 		return Choice.bAvailable
-			? ChoiceWhite
-			: FLinearColor(0.85f, 0.45f, 0.40f, 1.f);   // red hint for blocked picks
+			? ChoiceBase
+			: FLinearColor(0.62f, 0.14f, 0.11f, 1.f);   // red hint for blocked picks
 	}
 
 	// bHasStatCheckLabel choices (Ink-native "{stat > N}" gates) are always
@@ -1147,10 +1149,13 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	const FName Stat = Choice.bIsSkillCheck ? Choice.SkillCheckStat : Choice.StatCheckLabelStat;
 
 	// Per-stat hue. Deliberately distinct from the transcript palette
-	// (cream player / cyan NPC / orange effects / mint XP).
-	const FLinearColor Hue = StatHue(Stat).Get(Cream);
+	// (cream player / cyan NPC / orange effects / mint XP). Darkened,
+	// because the StatHue pastels are tuned for dark backgrounds and wash
+	// out completely on the white card.
+	const FLinearColor Raw = StatHue(Stat).Get(Cream);
+	const FLinearColor Hue(Raw.R * 0.55f, Raw.G * 0.55f, Raw.B * 0.55f, 1.f);
 
-	// The colour EARNS its way in: levels 1-2 render plain white like any
+	// The colour EARNS its way in: levels 1-2 render plain black like any
 	// other option; from level 3 the text blends toward the stat hue,
 	// reaching full saturation around level 9. Levelling a stat visibly
 	// colours-in every dialogue option keyed to it.
@@ -1163,7 +1168,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 		}
 	}
 	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
-	return FMath::Lerp(ChoiceWhite, Hue, Blend);
+	return FMath::Lerp(ChoiceBase, Hue, Blend);
 }
 
 void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>& Choices)
@@ -1439,10 +1444,12 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			ChoiceFont.Size = 18;
 			Label->SetFont(ChoiceFont);
 		}
-		// Base text is plain black (card is white at rest) — NativeTick's
-		// hover pass swaps both the card and the text to the opposite
-		// scheme (black card / white text) on hover or keyboard select.
-		const FLinearColor Tint = FLinearColor::Black;
+		// Resting colour: black for ordinary lines, the stat hue for
+		// skill-check rows (see ChoiceTint). NativeTick's hover pass swaps
+		// both the card and the text to the opposite scheme (black card /
+		// white text) on hover or keyboard select, so this is the at-rest
+		// value only.
+		const FLinearColor Tint = ChoiceTint(Choice);
 		ChoiceBaseTints.Add(Tint);
 		ChoiceLabelWidgets.Add(Label);
 		ChoiceLabelWordCounts.Add(ChoiceLabelWordCount(Choice));
