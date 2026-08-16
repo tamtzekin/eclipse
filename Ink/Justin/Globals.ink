@@ -42,6 +42,24 @@ LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_get_inside, cold_
 
 === function new_quest(x)
     ~ SideQuests += x
+
+// Display text for the side-quest checklist on the HUD. The C++ side reads
+// which SideQuests items are active, then calls this once per item with the
+// item's NAME AS A STRING to get the line to draw — so the wording lives
+// here in the script with the rest of the writing, not in code.
+//
+// Add a new quest: add it to the LIST above, then add a line here. An item
+// with no line falls through to the last `~ return q` and displays its raw
+// name, which is the visible reminder that the text is still missing.
+=== function quest_text(q)
+    { q:
+    - "alina_needs_a_cigarette":       ~ return "Alina needs a smoke"
+    - "cold_tomas_wants_to_get_inside": ~ return "Tomas wants to go in"
+    - "cold_tomas_wants_to_go_inside":  ~ return "Tomas wants to go in"
+    - "cold_tomas_wants_a_jacket":     ~ return "Tomas needs a jacket"
+    - "you_need_a_drink":              ~ return "You're thirsty, find something to drink"
+    }
+    ~ return q
     
 // === function complete_quest(x)
 //     ~ SideQuests -= x

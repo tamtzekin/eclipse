@@ -34,10 +34,10 @@ namespace
 {
 	// Per-meter visual tunables — pulled out so the populator + the runtime
 	// fallback agree on dimensions.
-	// Scaled up + stretched: the meters read as a wide strip across the
-	// bottom of the screen rather than a small top-left cluster.
-	constexpr float ColumnWidth = 720.f;   // total width shared by every row + bar
-	constexpr float BarHeight   = 26.f;
+	// Deliberately compact: the meters are a reference readout, not the
+	// focus, and the side-quest checklist now shares this column under them.
+	constexpr float ColumnWidth = 440.f;   // total width shared by every row + bar
+	constexpr float BarHeight   = 14.f;
 
 	// Build one meter block (label+value row, then a full-width fill bar)
 	// and slot it into the supplied parent UVerticalBox. Returns the bar +
@@ -64,7 +64,7 @@ namespace
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("%sLabelText"), Suffix)));
 		OutLabelText->SetText(FText::FromString(LabelStr));
-		OutLabelText->SetFont(MakeBMSPA(/*Size=*/28, /*Letter=*/3.f));
+		OutLabelText->SetFont(MakeBMSPA(/*Size=*/17, /*Letter=*/2.f));
 		OutLabelText->SetColorAndOpacity(FSlateColor(Cream));
 		if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(OutLabelText))
 		{
@@ -76,7 +76,7 @@ namespace
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
 		OutValueText->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), UEclipseGameStateSubsystem::MeterMax)));
-		OutValueText->SetFont(MakeBMSPA(/*Size=*/28, /*Letter=*/2.f));
+		OutValueText->SetFont(MakeBMSPA(/*Size=*/17, /*Letter=*/1.5f));
 		OutValueText->SetColorAndOpacity(FSlateColor(Cream));
 		OutValueText->SetJustification(ETextJustify::Right);
 		if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(OutValueText))
@@ -109,7 +109,7 @@ namespace
 		if (UVerticalBoxSlot* VS = Block->AddChildToVerticalBox(BarSize))
 		{
 			VS->SetHorizontalAlignment(HAlign_Fill);
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 7.f));
 		}
 
 		// Stack this block in the parent column.
@@ -223,6 +223,25 @@ void UEclipseHUDWidget::NativeConstruct()
 		UpdateChapterClock();
 	}
 
+	// Side-quest checklist, appended under the meter bars. Both the WBP
+	// populator and the C++ fallback name that box "MeterColumn", so this
+	// finds it either way; if neither built one, the checklist is simply
+	// absent rather than landing somewhere arbitrary on the canvas.
+	if (!QuestList && WidgetTree)
+	{
+		if (UPanelWidget* MeterCol = Cast<UPanelWidget>(WidgetTree->FindWidget(TEXT("MeterColumn"))))
+		{
+			QuestList = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("QuestList_Runtime"));
+			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(MeterCol->AddChild(QuestList)))
+			{
+				VS->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+				VS->SetHorizontalAlignment(HAlign_Left);
+			}
+			UpdateQuestList();
+		}
+	}
+
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
 			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
@@ -249,6 +268,13 @@ void UEclipseHUDWidget::NativeDestruct()
 void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
+
+	QuestRefreshCountdown -= DeltaSeconds;
+	if (QuestRefreshCountdown <= 0.f)
+	{
+		QuestRefreshCountdown = QuestRefreshInterval;
+		UpdateQuestList();
+	}
 
 	if (bDebugVisible)
 	{
@@ -396,6 +422,39 @@ void UEclipseHUDWidget::UpdateCurrency()
 	{
 		CurrencyText->SetText(FText::FromString(FString::Printf(
 			TEXT("C %d   N %d"), GS->Coins, GS->Notes)));
+	}
+}
+
+void UEclipseHUDWidget::UpdateQuestList()
+{
+	if (!QuestList) return;
+
+	UGameInstance* GI = GetGameInstance();
+	UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+	if (!DS) return;
+
+	const TArray<FString> Lines = DS->GetActiveSideQuests();
+	if (Lines == LastQuestLines) return;   // nothing gained or completed
+	LastQuestLines = Lines;
+
+	QuestList->ClearChildren();
+	QuestList->SetVisibility(Lines.Num() > 0
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+
+	for (const FString& Line : Lines)
+	{
+		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), NAME_None);
+		T->SetText(FText::FromString(TEXT("- ") + Line));
+		T->SetFont(EclipseUI::MakeRodin(QuestFontSize));
+		T->SetColorAndOpacity(FSlateColor(EclipseUI::CreamDim));
+		T->SetAutoWrapText(true);
+		T->SetWrapTextAt(ColumnWidth);
+		if (UVerticalBoxSlot* VS = QuestList->AddChildToVerticalBox(T))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
+		}
 	}
 }
 

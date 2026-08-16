@@ -568,8 +568,8 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 		// SizeBox gives the Fill-aligned rows/bars below a concrete width.
 		// Keep in step with EclipseHUDWidget.cpp's ColumnWidth / BarHeight —
 		// the populator and the runtime fallback must agree on dimensions.
-		const float HudColumnWidth = 720.f;
-		const float HudBarHeight   = 26.f;
+		const float HudColumnWidth = 440.f;
+		const float HudBarHeight   = 14.f;
 		const int32 MeterMax    = 10;
 
 		USizeBox* ColumnSize = New<USizeBox>(Tree, TEXT("MeterColumnSize"));
@@ -597,7 +597,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			UTextBlock* LabelTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sLabelText"), Suffix)));
 			LabelTxt->SetText(FText::FromString(Label));
-			LabelTxt->SetFont(MakeBMSPA(28, 3.f));
+			LabelTxt->SetFont(MakeBMSPA(17, 2.f));
 			LabelTxt->SetColorAndOpacity(FSlateColor(Cream));
 			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(LabelTxt))
 			{
@@ -608,7 +608,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 			UTextBlock* ValueTxt = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
 			ValueTxt->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), MeterMax)));
-			ValueTxt->SetFont(MakeBMSPA(28, 2.f));
+			ValueTxt->SetFont(MakeBMSPA(17, 1.5f));
 			ValueTxt->SetColorAndOpacity(FSlateColor(Cream));
 			ValueTxt->SetJustification(ETextJustify::Right);
 			if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(ValueTxt))

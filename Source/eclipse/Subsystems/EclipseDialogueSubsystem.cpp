@@ -24,6 +24,8 @@
 #include "Asset/InkpotStoryAsset.h"
 #include "Ink/StoryState.h"
 #include "Ink/Value.h"
+#include "Inkpot/InkpotList.h"
+#include "Inkpot/InkpotValue.h"
 
 namespace
 {
@@ -1171,6 +1173,61 @@ TArray<FString> UEclipseDialogueSubsystem::GetInkVariableDump()
 		// string / list without a per-type switch.
 		TSharedPtr<Ink::FValue> Val = StaticCastSharedPtr<Ink::FValue>(Story->GetVariable(Key));
 		Out.Add(FString::Printf(TEXT("%s = %s"), *Key, Val.IsValid() ? *Val->ToString() : TEXT("<null>")));
+	}
+	return Out;
+}
+
+TArray<FString> UEclipseDialogueSubsystem::GetActiveSideQuests()
+{
+	TArray<FString> Out;
+	if (!Story) return Out;
+
+	bool bOk = false;
+	FInkpotList List;
+	Story->GetList(TEXT("SideQuests"), List, bOk);
+	if (!bOk) return Out;
+
+	// bUseOrigin=false → bare item names ("you_need_a_drink"), not
+	// "SideQuests.you_need_a_drink", which is what quest_text() switches on.
+	TArray<FString> Names;
+	List.ToStringArray(Names, /*bUseOrigin=*/false);
+
+	for (const FString& Name : Names)
+	{
+		if (const FString* Cached = SideQuestTextCache.Find(Name))
+		{
+			Out.Add(*Cached);
+			continue;
+		}
+
+		// Ink's EvaluateFunction saves and restores the story's call stack
+		// around the call, so this is safe to run mid-conversation. It only
+		// ever happens once per quest anyway — the cache below absorbs the
+		// per-frame HUD polling.
+		FString Text;
+		{
+			Ink::FValueType Arg;
+			Arg.SetSubtype<FString>(Name);
+
+			FInkpotValue Return;
+			FString Captured;
+			Story->EvaluateFunction(TEXT("quest_text"), { FInkpotValue(Arg) }, Return, Captured);
+
+			if (Return.IsValid())
+			{
+				if (TSharedPtr<Ink::FValueType> V = *Return)
+				{
+					if (V->HasSubtype<FString>()) Text = V->GetSubtype<FString>();
+				}
+			}
+		}
+		// Falling back to the raw name matches quest_text()'s own fallback —
+		// a quest with no authored line still shows up, visibly unfinished,
+		// rather than silently vanishing from the checklist.
+		if (Text.IsEmpty()) Text = Name;
+
+		SideQuestTextCache.Add(Name, Text);
+		Out.Add(Text);
 	}
 	return Out;
 }

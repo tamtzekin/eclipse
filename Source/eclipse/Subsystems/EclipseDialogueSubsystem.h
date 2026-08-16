@@ -250,6 +250,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	const FEclipseDialogueNodeView& GetCurrentNodeView() const { return CurrentNode; }
 
+	// The SideQuests LIST's currently-active items, as the display lines to
+	// draw on the HUD checklist. Each raw item name is passed through the
+	// Ink `quest_text(q)` function so the wording lives in Globals.ink with
+	// the rest of the writing; an item with no case there falls through to
+	// that function's `~ return q` and shows its raw name. Results are cached
+	// per name, so each quest costs exactly one Ink function evaluation for
+	// the whole session. Empty when the story isn't loaded.
+	TArray<FString> GetActiveSideQuests();
+
 	// Every Ink global (everything declared VAR / LIST in Globals.ink) as
 	// "name = value" lines, sorted. Values go through Ink::FValue::ToString()
 	// so LISTs print their live contents rather than a numeric mask. Empty
@@ -320,6 +329,10 @@ private:
 	struct FInkGateLabel { FString ChoiceText; FName Stat; int32 Value; bool bIsPass; };
 	mutable TArray<FInkGateLabel> InkGateLabelCache;
 	mutable bool bInkGateLabelCacheBuilt = false;
+
+	// Ink list-item name → display line, filled on demand by
+	// GetActiveSideQuests so quest_text() is evaluated once per quest.
+	TMap<FString, FString> SideQuestTextCache;
 	void BuildInkGateLabelCache() const;
 
 	// Stage-directions parser. Accepts a comma-separated list of tokens like

@@ -4,7 +4,7 @@
 
 * You don't sound like you want to be here.
     I don't know. I get this feeling. I can't describe it. She looks off into the distance at something. 'I need a cigarette.' 
-    ~
+    ~ SideQuests += alina_needs_a_cigarette
     -> quinn_2
 
 * How are we going to get in?

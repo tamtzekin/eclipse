@@ -11,6 +11,7 @@ class UImage;
 class UBorder;
 class UHorizontalBox;
 class UProgressBar;
+class UVerticalBox;
 
 /**
  * Top-left HUD cluster — two life-meters (Heat, Thirst)
@@ -108,6 +109,18 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CurrencyText;
 
+	// ── Side-quest checklist ───────────────────────────────────────────
+	// Sits directly under the meter bars in the same left-hand column,
+	// listing whatever is currently in the Ink `SideQuests` LIST. Built at
+	// runtime and appended to "MeterColumn" (the name both the WBP populator
+	// and the C++ fallback give that box), so it lands under the bars in
+	// either path without needing its own designer-facing asset.
+	UPROPERTY()
+	TObjectPtr<UVerticalBox> QuestList;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Quests", meta = (ClampMin = "8"))
+	int32 QuestFontSize = 15;
+
 	// ── Debug overlay (0 key) ──────────────────────────────────────────
 	// Bottom-anchored terminal-style readout of every gameplay variable:
 	// meters, stats + XP, hidden stats, currency, quest flags, inventory,
@@ -152,6 +165,16 @@ private:
 	// Per-column width in slate units. Fixed rather than fill so the
 	// columns stay aligned as values change length.
 	static constexpr float DebugColumnWidth = 250.f;
+
+	// Ink writes to SideQuests from inside story flow, and there's no
+	// change delegate for that, so the checklist polls. Cheap: reading the
+	// list is a couple of allocations and the rows are only rebuilt when
+	// the set of active quests actually differs from LastQuestLines.
+	float QuestRefreshCountdown = 0.f;
+	static constexpr float QuestRefreshInterval = 0.4f;
+	TArray<FString> LastQuestLines;
+
+	void UpdateQuestList();
 
 	// Builds DebugPanel + DebugColumns on first toggle. No-op afterwards.
 	void EnsureDebugWidgets();
