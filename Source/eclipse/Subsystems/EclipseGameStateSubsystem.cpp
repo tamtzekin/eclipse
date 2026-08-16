@@ -433,8 +433,12 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 				(Row.Effect.HeatDelta   != 0) ||
 				(Row.Effect.ThirstDelta != 0);
 			const bool bHasLegacy = (Row.Effect.RestoreThirst > 0.f);
+			// A permanent stat boost is an effect in its own right — a
+			// perfume that moves no meters must not be refused below as an
+			// empty container.
+			const bool bHasStatBoost = !Row.StatBoost.IsNone() && Row.StatBoostLevels != 0;
 
-			if (!bAnyDelta && !bHasLegacy)
+			if (!bAnyDelta && !bHasLegacy && !bHasStatBoost)
 			{
 				UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' refused — Usable but no effect (empty container)"),
 					*ItemId.ToString());
@@ -446,13 +450,20 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 				if (Row.Effect.HeatDelta   != 0) ChangeHeat  (Row.Effect.HeatDelta);
 				if (Row.Effect.ThirstDelta != 0) ChangeThirst(Row.Effect.ThirstDelta);
 			}
-			else
+			else if (bHasLegacy)
 			{
 				// Legacy 0..100-scale value → +N hydration on the new
 				// 0..10 scale. (Pre-refactor DT rows assumed "high thirst
 				// = hydrated" which matches the new orientation.)
 				const int32 LegacyDelta = FMath::Max(1, FMath::RoundToInt(Row.Effect.RestoreThirst / 10.f));
 				ChangeThirst(LegacyDelta);
+			}
+
+			// Permanent: the levels land on the stat itself, so the gain
+			// outlives the RemoveItem below.
+			if (bHasStatBoost)
+			{
+				ApplyStatDelta(Row.StatBoost, Row.StatBoostLevels);
 			}
 		}
 

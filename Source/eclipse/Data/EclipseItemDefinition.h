@@ -72,6 +72,13 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemType Type = EEclipseItemType::Usable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FEclipseItemEffect Effect;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Duration = 0.f;    // 0 = permanent / non-timed
+
+	// Permanent stat gain applied once when the item is USED, then the item
+	// is consumed. Routed through ApplyStatDelta, so the levels are added to
+	// the stat itself and outlive the item — this is not a timed buff and
+	// nothing removes it later. StatBoost names the stat; StatBoostLevels is
+	// how many levels it moves (negative is allowed and clamps at 0).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "aesthetics"|"rhythm"|"zen"|"psychedelics"|None
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 StatBoostLevels = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName QuestFlag;         // e.g. "hasHair" — for Angel's Hair drink
 };
