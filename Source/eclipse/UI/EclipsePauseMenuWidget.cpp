@@ -12,6 +12,9 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
+#include "EclipseHUD.h"
+#include "EclipseHUDWidget.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -30,6 +33,24 @@
 //   Quit
 //   <status line>
 // ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+	// Show/hide the gameplay HUD (meter bars + clock) while the pause menu
+	// is up. The HUD is added to the viewport at ZOrder 200 and the pause
+	// menu at 100, so without this the bars and clock draw straight over
+	// the menu — raising the menu's ZOrder instead would put it above the
+	// blink-wipe too, so it's cleaner to just hide the HUD.
+	void SetGameplayHUDVisible(APlayerController* PC, bool bVisible)
+	{
+		if (!PC) return;
+		AEclipseHUD* HUD = Cast<AEclipseHUD>(PC->GetHUD());
+		if (!HUD || !HUD->HUDWidget) return;
+		HUD->HUDWidget->SetVisibility(bVisible
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+}
 
 UEclipsePauseMenuWidget* UEclipsePauseMenuWidget::OpenForPlayer(APlayerController* PC)
 {
@@ -61,6 +82,7 @@ UEclipsePauseMenuWidget* UEclipsePauseMenuWidget::OpenForPlayer(APlayerControlle
 	W->AddToViewport(/*ZOrder=*/100);
 	W->SetIsFocusable(true);
 	W->SetKeyboardFocus();
+	SetGameplayHUDVisible(PC, false);
 	UE_LOG(LogEclipse, Log, TEXT("PauseMenu::OpenForPlayer — added to viewport"));
 
 	// Dump the live widget tree so we can see whether the fallback build
@@ -110,6 +132,7 @@ void UEclipsePauseMenuWidget::Close()
 		PC->SetInputMode(Mode);
 		PC->SetShowMouseCursor(false);
 	}
+	SetGameplayHUDVisible(PC, true);
 	RemoveFromParent();
 }
 
@@ -143,7 +166,7 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 
 	// Full-screen dim so the world behind reads as paused.
 	UBorder* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Dim"));
-	Dim->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.55f)));
+	Dim->SetBrush(SolidBrush(FLinearColor::Black));   // fully opaque — no world showing through
 	Dim->SetPadding(FMargin(0.f));
 	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Dim))
 	{
@@ -154,9 +177,10 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 
 	// Full-bleed chalk panel — Border content stretches the full viewport.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("PausePanel"));
-	Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.96f)));
-	Panel->SetPadding(FMargin(0.f));
-	Panel->SetHorizontalAlignment(HAlign_Fill);
+	Panel->SetBrush(SolidBrush(FLinearColor::Black));
+	// Left-aligned column with a margin off the screen edge.
+	Panel->SetPadding(FMargin(80.f, 0.f, 0.f, 0.f));
+	Panel->SetHorizontalAlignment(HAlign_Left);
 	Panel->SetVerticalAlignment(VAlign_Center);
 
 	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
@@ -169,28 +193,21 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PauseColumn"));
 	Panel->SetContent(Column);
 
-	// Title — gigantic
-	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PauseTitle"));
-	Title->SetText(FText::FromString(TEXT("PAUSED")));
-	Title->SetFont(MakeBMSPA(/*Size=*/160, /*Letter=*/14.f));
-	Title->SetColorAndOpacity(FSlateColor(Cyan));
-	Title->SetJustification(ETextJustify::Center);
-	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
-	{
-		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 80.f));
-		VS->SetHorizontalAlignment(HAlign_Center);
-	}
+	// No heading — the menu is just the list of options.
+
 
 	// Helper that builds a button + label, parented to a given vertical box.
 	auto MakeBtnIn = [&](UVerticalBox* Parent, const FString& Label, FName WidgetName,
-		int32 FontSize = 56, TObjectPtr<UTextBlock>* OutLabel = nullptr) -> UButton*
+		int32 FontSize = 22, TObjectPtr<UTextBlock>* OutLabel = nullptr) -> UButton*
 	{
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-		BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-		BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+		// Transparent in every state — plain text, not buttons. The
+		// UButton survives only to carry click + hover.
+		BS.Normal   = SolidBrush(FLinearColor::Transparent);
+		BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+		BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+		BS.Disabled = SolidBrush(FLinearColor::Transparent);
 		Btn->SetStyle(BS);
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 
@@ -199,14 +216,19 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 		T->SetText(FText::FromString(Label));
 		T->SetFont(MakeRodin(FontSize));
 		T->SetColorAndOpacity(FSlateColor(Cream));
-		T->SetJustification(ETextJustify::Center);
+		T->SetJustification(ETextJustify::Left);
 		Btn->SetContent(T);
 		if (OutLabel) *OutLabel = T;
+		if (UButtonSlot* BSlot = Cast<UButtonSlot>(T->Slot))
+		{
+			BSlot->SetHorizontalAlignment(HAlign_Left);
+			BSlot->SetVerticalAlignment(VAlign_Center);
+		}
 
 		if (UVerticalBoxSlot* VS = Parent->AddChildToVerticalBox(Btn))
 		{
-			VS->SetPadding(FMargin(0.f, 14.f));
-			VS->SetHorizontalAlignment(HAlign_Fill);
+			VS->SetPadding(FMargin(0.f, 6.f));
+			VS->SetHorizontalAlignment(HAlign_Left);
 		}
 		return Btn;
 	};
@@ -217,11 +239,12 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 	{
 		VS->SetHorizontalAlignment(HAlign_Fill);
 	}
-	ResumeBtn   = MakeBtnIn(MainList, TEXT("RESUME"),     TEXT("ResumeBtn"));
-	SaveBtn     = MakeBtnIn(MainList, TEXT("SAVE"),       TEXT("SaveBtn"));
-	LoadBtn     = MakeBtnIn(MainList, TEXT("LOAD"),       TEXT("LoadBtn"));
-	MainMenuBtn = MakeBtnIn(MainList, TEXT("MAIN MENU"),  TEXT("MainMenuBtn"));
-	QuitBtn     = MakeBtnIn(MainList, TEXT("QUIT"),       TEXT("QuitBtn"));
+	// QUIT returns to the main menu (MainMenuBtn's handler); the old
+	// exit-the-application row is gone.
+	ResumeBtn   = MakeBtnIn(MainList, TEXT("CONTINUE"), TEXT("ResumeBtn"));
+	SaveBtn     = MakeBtnIn(MainList, TEXT("SAVE"),     TEXT("SaveBtn"));
+	LoadBtn     = MakeBtnIn(MainList, TEXT("LOAD"),     TEXT("LoadBtn"));
+	MainMenuBtn = MakeBtnIn(MainList, TEXT("QUIT"),     TEXT("MainMenuBtn"));
 
 	// ── Slot picker: 3 slot rows + Back. Hidden until OnSave/OnLoad. ──
 	SlotPicker = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SlotPicker"));
@@ -233,7 +256,7 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 
 	SlotPickerTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotPickerTitle"));
 	SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
-	SlotPickerTitle->SetFont(MakeBMSPA(48, 8.f));
+	SlotPickerTitle->SetFont(MakeRodin(22));
 	SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
 	SlotPickerTitle->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
@@ -243,15 +266,15 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 	}
 
 	// Slot row labels are filled in by RefreshSlotLabels() at runtime.
-	Slot0Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 36, &Slot0Btn_Label);
-	Slot1Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 36, &Slot1Btn_Label);
-	Slot2Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 36, &Slot2Btn_Label);
-	SlotBackBtn = MakeBtnIn(SlotPicker, TEXT("BACK"), TEXT("SlotBackBtn"), 40);
+	Slot0Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 20, &Slot0Btn_Label);
+	Slot1Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 20, &Slot1Btn_Label);
+	Slot2Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 20, &Slot2Btn_Label);
+	SlotBackBtn = MakeBtnIn(SlotPicker, TEXT("BACK"), TEXT("SlotBackBtn"), 20);
 
 	// Status line — reports save/load result. Lives below both sub-states.
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatusText"));
 	StatusText->SetText(FText::GetEmpty());
-	StatusText->SetFont(MakeRodin(28));
+	StatusText->SetFont(MakeRodin(18));
 	StatusText->SetColorAndOpacity(FSlateColor(EclipseUI::CreamDim));
 	StatusText->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))

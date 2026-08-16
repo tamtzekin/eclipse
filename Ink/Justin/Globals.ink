@@ -35,7 +35,18 @@ LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle
 
 === function dont_have(x)
     ~ return Inventory !? x
+
+
+// Side Quests
+LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_get_inside, cold_tomas_wants_a_jacket, you_need_a_drink
+
+=== function new_quest(x)
+    ~ SideQuests += x
     
+// === function complete_quest(x)
+//     ~ SideQuests -= x
+//     ~ x = completed
+
 // Connections system (when you 'know someone')
 LIST Connections = dj_crisis
 

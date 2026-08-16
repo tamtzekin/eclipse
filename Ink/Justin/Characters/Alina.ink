@@ -3,9 +3,8 @@
 {...This is it? | What are we still doing standing here? | I'm getting kind of thirsty.}
 
 * You don't sound like you want to be here.
-    I don't know. I get this feeling. I can't describe it. 
-    She looks off into the distance at something.
-    Do you hear that?
+    I don't know. I get this feeling. I can't describe it. She looks off into the distance at something. 'I need a cigarette.' 
+    ~
     -> quinn_2
 
 * How are we going to get in?

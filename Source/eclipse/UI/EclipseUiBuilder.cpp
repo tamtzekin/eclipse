@@ -32,6 +32,7 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Styling/SlateBrush.h"
 #include "Styling/SlateTypes.h"
 #include "Engine/Engine.h"
@@ -714,7 +715,7 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 
 		// Fullscreen dim
 		UBorder* Dim = New<UBorder>(Tree, TEXT("Dim"));
-		Dim->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.55f)));
+		Dim->SetBrush(SolidBrush(FLinearColor::Black));   // fully opaque — no world showing through
 		Dim->SetPadding(FMargin(0.f));
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Dim))
 		{
@@ -727,9 +728,11 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		// the column hits both horizontal edges and the inner buttons can
 		// span the whole width with HAlign_Fill on their slots.
 		UBorder* Panel = New<UBorder>(Tree, TEXT("PausePanel"));
-		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.96f)));
-		Panel->SetPadding(FMargin(0.f));
-		Panel->SetHorizontalAlignment(HAlign_Fill);
+		Panel->SetBrush(SolidBrush(FLinearColor::Black));
+		// Left-aligned column with a margin off the screen edge, rather
+		// than a full-width centred block.
+		Panel->SetPadding(FMargin(80.f, 0.f, 0.f, 0.f));
+		Panel->SetHorizontalAlignment(HAlign_Left);
 		Panel->SetVerticalAlignment(VAlign_Center);
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 		{
@@ -741,31 +744,24 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("PauseColumn"));
 		Panel->SetContent(Column);
 
-		// Title — gigantic BMSPA cyan, sits above the button list / slot picker
-		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("PauseTitle"));
-		Title->SetText(FText::FromString(TEXT("PAUSED")));
-		Title->SetFont(MakeBMSPA(160, 14.f));
-		Title->SetColorAndOpacity(FSlateColor(Cyan));
-		Title->SetJustification(ETextJustify::Center);
-		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
-		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 80.f));
-			VS->SetHorizontalAlignment(HAlign_Center);
-		}
+		// No heading — the menu is just the list of options.
 
 		// MakeBtnIn — accepts an optional explicit label-widget name so the
 		// slot rows can ship labels named "Slot0Label" etc. (matching the
 		// BindWidgetOptional UPROPERTYs on the C++ class). Default falls
 		// back to "<WidgetName>_Label" for non-slot buttons.
 		auto MakeBtnIn = [&](UVerticalBox* Parent, const FString& Label, FName WidgetName,
-			int32 FontSize = 56, FName LabelName = NAME_None)
+			int32 FontSize = 22, FName LabelName = NAME_None)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
-			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			// Fully transparent in every state — the menu reads as plain
+			// text, not buttons. The UButton is kept purely for click +
+			// hover handling; nothing about it is drawn.
+			BS.Normal   = SolidBrush(FLinearColor::Transparent);
+			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			Btn->SetStyle(BS);
 
 			const FName ResolvedLabelName = LabelName.IsNone()
@@ -775,13 +771,20 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 			T->SetText(FText::FromString(Label));
 			T->SetFont(MakeRodin(FontSize));
 			T->SetColorAndOpacity(FSlateColor(Cream));
-			T->SetJustification(ETextJustify::Center);
+			T->SetJustification(ETextJustify::Left);
 			Btn->SetContent(T);
+			// Left, not Fill — the row hugs its text so the whole strip
+			// isn't a click target and the list reads as a text column.
+			if (UButtonSlot* BSlot = Cast<UButtonSlot>(T->Slot))
+			{
+				BSlot->SetHorizontalAlignment(HAlign_Left);
+				BSlot->SetVerticalAlignment(VAlign_Center);
+			}
 
 			if (UVerticalBoxSlot* VS = Parent->AddChildToVerticalBox(Btn))
 			{
-				VS->SetPadding(FMargin(0.f, 14.f));
-				VS->SetHorizontalAlignment(HAlign_Fill);
+				VS->SetPadding(FMargin(0.f, 6.f));
+				VS->SetHorizontalAlignment(HAlign_Left);
 			}
 		};
 
@@ -791,11 +794,12 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		{
 			VS->SetHorizontalAlignment(HAlign_Fill);
 		}
-		MakeBtnIn(MainList, TEXT("RESUME"),    TEXT("ResumeBtn"));
-		MakeBtnIn(MainList, TEXT("SAVE"),      TEXT("SaveBtn"));
-		MakeBtnIn(MainList, TEXT("LOAD"),      TEXT("LoadBtn"));
-		MakeBtnIn(MainList, TEXT("MAIN MENU"), TEXT("MainMenuBtn"));
-		MakeBtnIn(MainList, TEXT("QUIT"),      TEXT("QuitBtn"));
+		// QUIT is wired to MainMenuBtn — it returns to the main menu rather
+		// than exiting the application. The old app-quit row is gone.
+		MakeBtnIn(MainList, TEXT("CONTINUE"), TEXT("ResumeBtn"));
+		MakeBtnIn(MainList, TEXT("SAVE"),     TEXT("SaveBtn"));
+		MakeBtnIn(MainList, TEXT("LOAD"),     TEXT("LoadBtn"));
+		MakeBtnIn(MainList, TEXT("QUIT"),     TEXT("MainMenuBtn"));
 
 		// SlotPicker — title + 3 slot rows + Back. Hidden by default; the
 		// runtime widget toggles visibility when SAVE/LOAD is clicked.
@@ -807,9 +811,9 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		}
 		UTextBlock* SlotPickerTitle = New<UTextBlock>(Tree, TEXT("SlotPickerTitle"));
 		SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
-		SlotPickerTitle->SetFont(MakeBMSPA(48, 8.f));
+		SlotPickerTitle->SetFont(MakeRodin(22));
 		SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
-		SlotPickerTitle->SetJustification(ETextJustify::Center);
+		SlotPickerTitle->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
 		{
 			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 32.f));
@@ -818,17 +822,17 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 		// Labels keep the populator's natural "<WidgetName>_Label" naming —
 		// the C++ UPROPERTYs Slot0Btn_Label / Slot1Btn_Label / Slot2Btn_Label
 		// match this so BindWidgetOptional resolves without any post-rename.
-		MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 36);
-		MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 36);
-		MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 36);
-		MakeBtnIn(SlotPicker, TEXT("BACK"),             TEXT("SlotBackBtn"), 40);
+		MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 20);
+		MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 20);
+		MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 20);
+		MakeBtnIn(SlotPicker, TEXT("BACK"),             TEXT("SlotBackBtn"), 20);
 
 		// Status line — reports save/load result. Lives below both sub-states.
 		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
 		StatusText->SetText(FText::GetEmpty());
-		StatusText->SetFont(MakeRodin(28));
+		StatusText->SetFont(MakeRodin(18));
 		StatusText->SetColorAndOpacity(FSlateColor(CreamDim));
-		StatusText->SetJustification(ETextJustify::Center);
+		StatusText->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 		{
 			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
@@ -855,8 +859,10 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 
 		UBorder* Panel = New<UBorder>(Tree, TEXT("MainMenuPanel"));
 		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 1.f)));
-		Panel->SetPadding(FMargin(0.f));
-		Panel->SetHorizontalAlignment(HAlign_Fill);
+		// Left-aligned column with a margin off the screen edge, rather
+		// than a full-width centred block.
+		Panel->SetPadding(FMargin(80.f, 0.f, 0.f, 0.f));
+		Panel->SetHorizontalAlignment(HAlign_Left);
 		Panel->SetVerticalAlignment(VAlign_Center);
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 		{
@@ -883,10 +889,13 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
-			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			// Fully transparent in every state — the menu reads as plain
+			// text, not buttons. The UButton is kept purely for click +
+			// hover handling; nothing about it is drawn.
+			BS.Normal   = SolidBrush(FLinearColor::Transparent);
+			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			Btn->SetStyle(BS);
 
 			UTextBlock* T = New<UTextBlock>(Tree,
@@ -909,9 +918,9 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 
 		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
 		StatusText->SetText(FText::GetEmpty());
-		StatusText->SetFont(MakeRodin(28));
+		StatusText->SetFont(MakeRodin(18));
 		StatusText->SetColorAndOpacity(FSlateColor(CreamDim));
-		StatusText->SetJustification(ETextJustify::Center);
+		StatusText->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 		{
 			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
@@ -1303,10 +1312,13 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
-			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			// Fully transparent in every state — the menu reads as plain
+			// text, not buttons. The UButton is kept purely for click +
+			// hover handling; nothing about it is drawn.
+			BS.Normal   = SolidBrush(FLinearColor::Transparent);
+			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			Btn->SetStyle(BS);
 
 			UTextBlock* T = New<UTextBlock>(Tree, FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
@@ -1467,10 +1479,13 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		UButton* CloseBtn = New<UButton>(Tree, TEXT("CloseBtn"));
 		{
 			FButtonStyle BS;
-			BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-			BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-			BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-			BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+			// Fully transparent in every state — the menu reads as plain
+			// text, not buttons. The UButton is kept purely for click +
+			// hover handling; nothing about it is drawn.
+			BS.Normal   = SolidBrush(FLinearColor::Transparent);
+			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			CloseBtn->SetStyle(BS);
 		}
 		UTextBlock* CloseLabel = New<UTextBlock>(Tree, TEXT("CloseBtn_Label"));
