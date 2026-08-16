@@ -201,46 +201,36 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 
 	// Skill-check resolution — every clicked check grinds its stat
 	// (learn-by-doing: use a skill in conversation, earn XP toward its next
-	// level). Passing grants the full SkillXPOnPass; a failed attempt still
-	// teaches at half rate but also pays the Heat failure tax. The
-	// dialogue widget no longer disables failed-skill buttons; players can
-	// attempt risky checks at a cost.
+	// level). Flat SkillXP whether the check passed or failed; a failed
+	// attempt is already priced by the Heat tax below, so it doesn't also
+	// earn less. The dialogue widget no longer disables failed-skill
+	// buttons; players can attempt risky checks at a cost.
 	//
 	// Two authoring forms both count as "using a skill", and both grind:
 	//   bIsSkillCheck        — an explicit "[STAT:N]" / "SKILLCHECK:" marker,
 	//                          which the player can attempt and FAIL.
 	//   bHasStatCheckLabel   — an Ink-native "{stat > N}" gate. Ink itself
-	//                          filters these, so any that reach the player
-	//                          already passed — always full XP, never the
-	//                          Heat tax. This is the form the shipped ink
-	//                          actually uses, so leaving it out meant no
-	//                          conversation was grinding anything.
+	//                          filters these, so they never reach the player
+	//                          in a failed state and never pay the Heat tax.
+	//                          This is the form the shipped ink actually
+	//                          uses, so leaving it out meant no conversation
+	//                          was grinding anything.
 	if (Chosen.bIsSkillCheck || Chosen.bHasStatCheckLabel)
 	{
 		if (UGameInstance* GI = GetGameInstance())
 		{
 			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
-				if (Chosen.bHasStatCheckLabel && !Chosen.bIsSkillCheck)
+				const bool bInkGate = Chosen.bHasStatCheckLabel && !Chosen.bIsSkillCheck;
+				GS->GrantStatXP(bInkGate ? Chosen.StatCheckLabelStat : Chosen.SkillCheckStat, SkillXP);
+
+				if (!bInkGate && !Chosen.bAvailable && Chosen.HeatDamageOnFail > 0)
 				{
-					GS->GrantStatXP(Chosen.StatCheckLabelStat,
-						Chosen.bStatCheckLabelIsPass ? SkillXPOnPass : SkillXPOnFail);
-				}
-				else if (Chosen.bAvailable)
-				{
-					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnPass);
-				}
-				else
-				{
-					GS->GrantStatXP(Chosen.SkillCheckStat, SkillXPOnFail);
-					if (Chosen.HeatDamageOnFail > 0)
-					{
-						UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Heat"),
-							*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
-							GS->GetStatValue(Chosen.SkillCheckStat), Chosen.HeatDamageOnFail);
-						// "Damage" = push Heat toward 0 (the death extreme).
-						GS->ChangeHeat(-Chosen.HeatDamageOnFail);
-					}
+					UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Heat"),
+						*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
+						GS->GetStatValue(Chosen.SkillCheckStat), Chosen.HeatDamageOnFail);
+					// "Damage" = push Heat toward 0 (the death extreme).
+					GS->ChangeHeat(-Chosen.HeatDamageOnFail);
 				}
 			}
 		}
