@@ -261,6 +261,14 @@ private:
 	// stale widget instead of the current one.
 	TArray<TObjectPtr<class UTextBlock>> ChoiceLabelWidgets;
 
+	// Parallel to ChoiceLabelWidgets — the separate, stat-coloured
+	// "Aesthetics [3]" / "[AESTHETICS 3]" prefix block that sits before the
+	// body text in the row. Null for choices with no stat-check label. Kept
+	// apart from the body so ONLY the stat name and its threshold take the
+	// hue; the colon and the choice's own wording stay neutral.
+	UPROPERTY()
+	TArray<TObjectPtr<class UTextBlock>> ChoicePrefixLabels;
+
 	// Phase driver for the subtle hover pulse (NativeTick's hover pass) —
 	// free-running seconds, not reset per node.
 	float ChoicePulseTime = 0.f;

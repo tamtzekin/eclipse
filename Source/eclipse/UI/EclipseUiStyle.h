@@ -51,6 +51,21 @@ namespace EclipseUI
 		return {};
 	}
 
+	// Same four stats, deep enough to read as body text on a WHITE ground —
+	// the dialogue choice cards. The StatHue pastels above are tuned for
+	// dark panels and wash out completely there. Written as sRGB hex and
+	// converted, because FLinearColor literals are LINEAR: a value that
+	// looks dark as a float gamma-lifts to a pastel on screen. Each of
+	// these clears WCAG AA (6.2:1 or better) against white.
+	inline TOptional<FLinearColor> StatHueDeep(FName Stat)
+	{
+		if (Stat == TEXT("aesthetics"))   return FLinearColor(FColor(0xB0, 0x15, 0x5F));  // deep rose
+		if (Stat == TEXT("rhythm"))       return FLinearColor(FColor(0x8A, 0x55, 0x00));  // bronze
+		if (Stat == TEXT("zen"))          return FLinearColor(FColor(0x0F, 0x5C, 0x99));  // deep blue
+		if (Stat == TEXT("psychedelics")) return FLinearColor(FColor(0x6A, 0x2B, 0xB5));  // violet
+		return {};
+	}
+
 	// ── Fonts ────────────────────────────────────────────────────────────────
 	// Loaded from /Game/Justin/UI/Fonts. UE 5.6's AssetImportTask creates the
 	// UFontFace .uasset, but Slate text widgets want a UFont composite that

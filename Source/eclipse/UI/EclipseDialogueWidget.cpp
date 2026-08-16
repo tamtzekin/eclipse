@@ -999,6 +999,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	ChoiceLabelWordCounts.Reset();
 	ChoiceRowBackgrounds.Reset();
 	ChoiceLabelWidgets.Reset();
+	ChoicePrefixLabels.Reset();
 
 	// Path A's ChoiceBtn_0..4 rows are persistent WBP widgets — never
 	// destroyed between dialogues — so each slot's WrapBox stays physically
@@ -1114,6 +1115,41 @@ namespace
 		return S;
 	}
 
+	// Same text as DisplayChoiceText, but cut into the part that gets the
+	// stat colour and the part that doesn't. OutPrefix is exactly the stat
+	// name + threshold ("Aesthetics [3]" or "[AESTHETICS 3]") — the colon
+	// and every following word stay in OutBody, neutral. OutPrefix is empty
+	// for choices with no stat-check label, in which case OutBody is the
+	// whole line.
+	void SplitChoiceLabel(const FEclipseDialogueChoice& Choice, FString& OutPrefix, FString& OutBody)
+	{
+		OutPrefix.Reset();
+		OutBody = Choice.Text.ToString();
+
+		if (Choice.bIsSkillCheck && OutBody.StartsWith(TEXT("[")))
+		{
+			int32 CloseIdx = INDEX_NONE;
+			if (OutBody.FindChar(TEXT(']'), CloseIdx))
+			{
+				OutBody.RemoveAt(0, CloseIdx + 1);
+				OutBody.TrimStartInline();
+			}
+			OutPrefix = FString::Printf(TEXT("[%s %d]"),
+				*Choice.SkillCheckStat.ToString().ToUpper(), Choice.SkillCheckValue);
+			OutBody = TEXT(" ") + OutBody;
+		}
+
+		if (Choice.bHasStatCheckLabel)
+		{
+			FString StatName = Choice.StatCheckLabelStat.ToString().ToLower();
+			if (StatName.Len() > 0) StatName = StatName.Left(1).ToUpper() + StatName.Mid(1);
+			// Colon deliberately on the body side — the player asked for the
+			// tag alone to carry the colour, punctuation included out.
+			OutPrefix = FString::Printf(TEXT("%s [%d]"), *StatName, Choice.StatCheckLabelValue);
+			OutBody = TEXT(": ") + OutBody.TrimStart();
+		}
+	}
+
 	// How many leading whitespace-split words of DisplayChoiceText's output
 	// are the stat-check label prefix, not the choice's own wording — both
 	// prefix shapes ("[AESTHETICS 3]" and "Aesthetics [3]:") are exactly 2
@@ -1148,17 +1184,18 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 	// ever take this stat-hue path, never the red "blocked" one above.
 	const FName Stat = Choice.bIsSkillCheck ? Choice.SkillCheckStat : Choice.StatCheckLabelStat;
 
-	// Per-stat hue. Deliberately distinct from the transcript palette
-	// (cream player / cyan NPC / orange effects / mint XP). Darkened,
-	// because the StatHue pastels are tuned for dark backgrounds and wash
-	// out completely on the white card.
-	const FLinearColor Raw = StatHue(Stat).Get(Cream);
-	const FLinearColor Hue(Raw.R * 0.55f, Raw.G * 0.55f, Raw.B * 0.55f, 1.f);
+	// Per-stat hue, in the deep variant that reads on the white card (see
+	// StatHueDeep — the StatHue pastels are for dark panels).
+	const FLinearColor Hue = StatHueDeep(Stat).Get(ChoiceBase);
 
-	// The colour EARNS its way in: levels 1-2 render plain black like any
-	// other option; from level 3 the text blends toward the stat hue,
-	// reaching full saturation around level 9. Levelling a stat visibly
-	// colours-in every dialogue option keyed to it.
+	// Colour-coding is the POINT of these rows — it's how the player reads
+	// at a glance which stat a check leans on — so every stat-check option
+	// shows its hue from level 1. Levelling only deepens it the last 15%,
+	// so growth still registers without the low levels being unreadable.
+	//
+	// (This used to blend in from level 3 and clamp to 0 below that. Stats
+	// start at 1, so in practice every check rendered plain black and
+	// nothing was ever colour-coded.)
 	int32 Level = 1;
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -1167,7 +1204,7 @@ FLinearColor UEclipseDialogueWidget::ChoiceTint(const FEclipseDialogueChoice& Ch
 			Level = GS->GetStatValue(Stat);
 		}
 	}
-	const float Blend = FMath::Clamp((static_cast<float>(Level) - 2.f) / 7.f, 0.f, 1.f);
+	const float Blend = FMath::Clamp(0.85f + (static_cast<float>(Level) - 1.f) * 0.017f, 0.f, 1.f);
 	return FMath::Lerp(ChoiceBase, Hue, Blend);
 }
 
@@ -1359,6 +1396,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoiceWordBoxes.Reset();
 	ChoiceRowBackgrounds.Reset();
 	ChoiceLabelWidgets.Reset();
+	ChoicePrefixLabels.Reset();
 
 	// Make sure the container itself is actually visible — an earlier turn
 	// (or Path A's Collapse-on-unused logic) can leave it hidden.
@@ -1425,14 +1463,18 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		}
 
 		// ── Text label ──
-		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), NAME_None);
-		// Stripped display text — see DisplayChoiceText. Gate hints stay.
-		FString LabelStr = DisplayChoiceText(Choice);
+		// Split in two so only the stat tag is tinted: a coloured prefix
+		// block ("Aesthetics [3]") followed by the neutral body (": I like
+		// the outfit."). See SplitChoiceLabel.
+		FString PrefixStr, LabelStr;
+		SplitChoiceLabel(Choice, PrefixStr, LabelStr);
 		if (!Choice.GateHint.IsEmpty())
 		{
 			LabelStr += TEXT("  ") + Choice.GateHint.ToString();
 		}
+
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), NAME_None);
 		Label->SetText(FText::FromString(LabelStr));
 		// Exactly the body text's typeface AND size — pulled off the
 		// WBP-bound BodyText, the same source StartBodyAnimation uses for
@@ -1444,12 +1486,14 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			ChoiceFont.Size = 18;
 			Label->SetFont(ChoiceFont);
 		}
-		// Resting colour: black for ordinary lines, the stat hue for
-		// skill-check rows (see ChoiceTint). NativeTick's hover pass swaps
-		// both the card and the text to the opposite scheme (black card /
-		// white text) on hover or keyboard select, so this is the at-rest
+		// Body stays neutral whenever a coloured prefix is carrying the
+		// stat identity; without a prefix the body itself takes ChoiceTint
+		// (which is just black, or the red hint for a blocked pick).
+		// NativeTick's hover pass swaps both the card and the text to the
+		// opposite scheme (black card / white text), so this is the at-rest
 		// value only.
-		const FLinearColor Tint = ChoiceTint(Choice);
+		const bool bHasPrefix = !PrefixStr.IsEmpty();
+		const FLinearColor Tint = bHasPrefix ? FLinearColor::Black : ChoiceTint(Choice);
 		ChoiceBaseTints.Add(Tint);
 		ChoiceLabelWidgets.Add(Label);
 		ChoiceLabelWordCounts.Add(ChoiceLabelWordCount(Choice));
@@ -1462,8 +1506,32 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			float MaxTextW = 340.f;
 			const float BoxW = ChoicesBox->GetCachedGeometry().GetLocalSize().X;
 			if (BoxW > 120.f) MaxTextW = BoxW - 60.f;
+			// The prefix shares the first line, so hand the body less room —
+			// rough char-width estimate is enough to stop it overflowing the
+			// card; exact metrics would need a laid-out geometry we don't
+			// have yet at construction time.
+			if (bHasPrefix) MaxTextW = FMath::Max(120.f, MaxTextW - PrefixStr.Len() * 8.f);
 			Label->SetWrapTextAt(MaxTextW);
 		}
+
+		UTextBlock* PrefixLabel = nullptr;
+		if (bHasPrefix)
+		{
+			PrefixLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), NAME_None);
+			PrefixLabel->SetText(FText::FromString(PrefixStr));
+			PrefixLabel->SetFont(Label->GetFont());
+			PrefixLabel->SetColorAndOpacity(FSlateColor(ChoiceTint(Choice)));
+			// Never wraps — the tag is short and should stay on one line so
+			// the body wraps beneath it as a hanging indent.
+			PrefixLabel->SetAutoWrapText(false);
+			if (UHorizontalBoxSlot* PS = Row->AddChildToHorizontalBox(PrefixLabel))
+			{
+				PS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				PS->SetVerticalAlignment(VAlign_Center);
+			}
+		}
+		ChoicePrefixLabels.Add(PrefixLabel);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
 		{
@@ -2108,6 +2176,24 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			if (L)
 			{
 				L->SetColorAndOpacity(FSlateColor(C));
+			}
+
+			// The stat tag keeps its hue in BOTH states — it's an identity
+			// marker, not a hover affordance — but swaps palette with the
+			// card underneath it: the deep variant reads on the white
+			// resting card, the pastel variant on the black hovered one.
+			// Using one palette for both would leave it near-invisible in
+			// one of the two states.
+			if (UTextBlock* P = ChoicePrefixLabels.IsValidIndex(i) ? ChoicePrefixLabels[i].Get() : nullptr)
+			{
+				const FEclipseDialogueChoice* Ch = CurrentChoices.IsValidIndex(i) ? &CurrentChoices[i] : nullptr;
+				const FName Stat = Ch
+					? (Ch->bIsSkillCheck ? Ch->SkillCheckStat : Ch->StatCheckLabelStat)
+					: NAME_None;
+				const TOptional<FLinearColor> Hue = bHot
+					? EclipseUI::StatHue(Stat)
+					: EclipseUI::StatHueDeep(Stat);
+				P->SetColorAndOpacity(FSlateColor(Hue.Get(C)));
 			}
 			// Word-cascade path — recolour every word block in the row,
 			// except the stat-check label prefix (if any), which keeps its
