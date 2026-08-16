@@ -40,10 +40,10 @@ public:
 	UPROPERTY() int32 Annoyance = 0;
 
 	// Meters — sweet-spot 0..10 ints. Defaults match the subsystem
-	// (Heat=3, Thirst=5). Old float-scale saves from prior
+	// (Heat=8, Thirst=5). Old float-scale saves from prior
 	// builds are migrated at load time in TryLoadCurrent / LoadFromSlot:
 	// any value > 10 is divided by 10 and clamped to [0, 10].
-	UPROPERTY() int32 Heat        = 3;
+	UPROPERTY() int32 Heat        = 8;
 	UPROPERTY() int32 Thirst      = 5;
 	UPROPERTY() TArray<FName> Inventory;
 	UPROPERTY() TArray<FName> EquippedClothing;

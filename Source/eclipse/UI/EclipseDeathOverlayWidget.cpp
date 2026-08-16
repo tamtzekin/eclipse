@@ -124,10 +124,14 @@ void UEclipseDeathOverlayWidget::OnTryAgainClicked()
 			if (!bLoaded)
 			{
 				// Mirror the subsystem defaults — sweet-spot middle for
-				// Thirst, slightly low for Heat. Heat must come back above
-				// 0 or the player would respawn already dead.
-				GS->Heat   = 3;
+				// Thirst, warm for Heat. Heat must come back above 0 or
+				// the player would respawn already dead.
+				GS->Heat   = 8;
 				GS->Thirst = 5;
+				// Rebase the Heat-bleed marker to now, or the next
+				// AdvanceGameTime would immediately re-apply every
+				// interval that elapsed before the player died.
+				GS->LastHeatDecayAtSeconds = GS->ChapterElapsedSeconds;
 			}
 		}
 	}
@@ -222,6 +226,6 @@ void UEclipseDeathOverlayWidget::BuildFallbackTree()
 		return Btn;
 	};
 
-	TryAgainBtn = MakeBtn(TEXT("TRY AGAIN"), TEXT("TryAgainBtn"));
-	QuitBtn     = MakeBtn(TEXT("QUIT"),      TEXT("QuitBtn"));
+	TryAgainBtn = MakeBtn(TEXT("RETRY"), TEXT("TryAgainBtn"));
+	QuitBtn     = MakeBtn(TEXT("END"),   TEXT("QuitBtn"));
 }

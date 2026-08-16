@@ -734,6 +734,48 @@ void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 		OnPlayerDeath.Broadcast();
 	}
 
+	// Overheating costs you water: hitting max Heat drains 1 Thirst, ONCE.
+	// The latch clears below when Heat drops back off max, so a later climb
+	// back to 10 charges again — but sitting at 10 doesn't drain repeatedly.
+	// Lives here rather than in AdvanceGameTime so it fires however Heat got
+	// to max (item, Ink effect, time), not just via the clock.
+	if (Field == &Heat)
+	{
+		if (*Field >= MeterMax && !bMaxHeatThirstPenaltyApplied)
+		{
+			bMaxHeatThirstPenaltyApplied = true;
+			UE_LOG(LogEclipse, Log, TEXT("Heat hit max — draining 1 Thirst (one-shot)"));
+			// Recurses one level into ChangeMeter for thirst; that call
+			// can't come back here (Field would be &Thirst), so no loop.
+			ChangeMeter(TEXT("thirst"), -1);
+		}
+		else if (*Field < MeterMax)
+		{
+			bMaxHeatThirstPenaltyApplied = false;
+		}
+	}
+
+	NotifyChanged();
+}
+
+void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
+{
+	if (Seconds <= 0.f) return;
+	ChapterElapsedSeconds += Seconds;
+
+	// Bleed Heat once per whole HeatDecayIntervalMinutes crossed. Loops
+	// rather than firing once so a big jump (a debug skip, a scripted
+	// time-of-night change) applies every interval it passed through.
+	const float IntervalSeconds = FMath::Max(1, HeatDecayIntervalMinutes) * 60.f;
+	while (ChapterElapsedSeconds - LastHeatDecayAtSeconds >= IntervalSeconds)
+	{
+		LastHeatDecayAtSeconds += IntervalSeconds;
+		// Routed through ChangeMeter so the Heat==0 death trigger and the
+		// OnStateChanged broadcast still happen — the clock is what kills
+		// you if you never warm back up.
+		ChangeMeter(TEXT("heat"), -1);
+	}
+
 	NotifyChanged();
 }
 
@@ -809,6 +851,9 @@ void UEclipseGameStateSubsystem::SkipChapter()
 	ShowChapterCard(GetChapterTitle());          // fades the chapter card in/out via the existing widget
 	OnChapterAdvanced.Broadcast(Chapter);        // v2+ hook (NPC shuffle, music swap, etc.)
 	ChapterElapsedSeconds = 0.f;                 // restart the clock at 0 for the new chapter
+	// Rebase the Heat bleed with it — leaving the old marker behind would
+	// make the next AdvanceGameTime think many intervals had elapsed.
+	LastHeatDecayAtSeconds = 0.f;
 }
 
 // ── Debug console command: `Eclipse.SkipChapter` ──

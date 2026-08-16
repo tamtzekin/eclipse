@@ -246,12 +246,11 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 			if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 			{
 				const float Before = GS->ChapterElapsedSeconds;
-				GS->ChapterElapsedSeconds += GS->DialogueChoiceSeconds;
 				// Talking is the ONLY thing that moves the clock now (the
-				// per-frame tick is a deliberate no-op), so this has to
-				// broadcast — without it the HUD readout would never
-				// refresh and the clock would look frozen all game.
-				GS->NotifyChanged();
+				// per-frame tick is a deliberate no-op). AdvanceGameTime
+				// also applies everything that keys off elapsed time — the
+				// Heat bleed — and broadcasts, so the HUD refreshes.
+				GS->AdvanceGameTime(GS->DialogueChoiceSeconds);
 				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +%.0fs  %.1f -> %.1f"),
 					GS->DialogueChoiceSeconds, Before, GS->ChapterElapsedSeconds);
 			}

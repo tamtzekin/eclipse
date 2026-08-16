@@ -127,7 +127,11 @@ private:
 	// immediately after a value change and decays to 0 over PulseDuration
 	// seconds; the fill colour lerps toward white by that amount so the
 	// change reads as a quick flash.
-	void ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse) const;
+	// bHighIsCritical: whether the TOP of the range should also tint red.
+	// False for Heat — only 0 is a fail state there — true for Thirst,
+	// where both dry and sloshing are bad.
+	void ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse,
+		bool bHighIsCritical) const;
 
 	// ── Pulse-on-change animation state ────────────────────────────────
 	// Last seen meter values, so UpdateBars can detect "changed since last

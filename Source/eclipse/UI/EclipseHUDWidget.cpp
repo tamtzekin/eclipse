@@ -310,22 +310,26 @@ void UEclipseHUDWidget::UpdateBars()
 	const float HeatPulseAlpha = HeatPulse        / PulseDuration;
 	const float ThirstPulseAlpha = ThirstPulse    / PulseDuration;
 
-	ApplyBarStyle(HeatBar,        GS->Heat,        HeatFill,   HeatPulseAlpha);
-	ApplyBarStyle(ThirstBar,      GS->Thirst,      ThirstFill, ThirstPulseAlpha);
+	ApplyBarStyle(HeatBar,   GS->Heat,   HeatFill,   HeatPulseAlpha,   /*bHighIsCritical=*/false);
+	ApplyBarStyle(ThirstBar, GS->Thirst, ThirstFill, ThirstPulseAlpha, /*bHighIsCritical=*/true);
 
 	const int32 Max = UEclipseGameStateSubsystem::MeterMax;
 	if (HeatValueText)        HeatValueText->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"), GS->Heat, Max)));
 	if (ThirstValueText)      ThirstValueText->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"), GS->Thirst, Max)));
 }
 
-void UEclipseHUDWidget::ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse) const
+void UEclipseHUDWidget::ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse, bool bHighIsCritical) const
 {
 	if (!Bar) return;
 
 	const FLinearColor CriticalTint(0.95f, 0.18f, 0.18f, 1.f);
+	// Heat passes bHighIsCritical=false: only 0 kills, so a hot player is
+	// fine and shouldn't read as an alarm. (It also starts at 8, which is
+	// exactly MeterCriticalHigh — without this the bar would be red from
+	// the first frame of a new game.) Thirst keeps both ends critical.
 	const bool bCritical =
 		(Value <= UEclipseGameStateSubsystem::MeterCriticalLow) ||
-		(Value >= UEclipseGameStateSubsystem::MeterCriticalHigh);
+		(bHighIsCritical && Value >= UEclipseGameStateSubsystem::MeterCriticalHigh);
 
 	FLinearColor T = bCritical ? CriticalTint : BaseTint;
 

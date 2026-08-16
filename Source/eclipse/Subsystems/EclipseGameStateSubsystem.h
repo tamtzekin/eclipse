@@ -258,7 +258,7 @@ public:
 	static constexpr int32 MeterCriticalLow  = 2;   // value ≤ this → critical
 	static constexpr int32 MeterCriticalHigh = 8;   // value ≥ this → critical
 
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Heat        = 3;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Heat        = 8;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Thirst      = 5;
 
 	// Adds Delta (signed) to the named meter (lowercase "heat" / "thirst"),
@@ -365,6 +365,32 @@ public:
 	// blocks reads as the night slipping away. Set to 1 for a live readout.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time", meta = (ClampMin = "1"))
 	int32 ClockDisplayStepMinutes = 5;
+
+	// Heat bleeds off with elapsed game time: -1 Heat per this many in-game
+	// minutes. Since time only moves when the player talks, this means the
+	// night itself is what cools you down — stand around and nothing
+	// happens; hold a long conversation and you're freezing by the end.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time", meta = (ClampMin = "1"))
+	int32 HeatDecayIntervalMinutes = 10;
+
+	// Game-time (seconds) at which Heat last bled off. Advances in whole
+	// intervals rather than being reset to "now", so a single large time
+	// jump applies every interval it crossed instead of only one.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
+	float LastHeatDecayAtSeconds = 0.f;
+
+	// Adds game-time and applies anything that keys off it (currently the
+	// Heat bleed). Callers should use this rather than writing
+	// ChapterElapsedSeconds directly, or the time-driven effects silently
+	// stop firing.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
+	void AdvanceGameTime(float Seconds);
+
+	// Set once Heat has hit max and already taken its one-time Thirst
+	// penalty; cleared when Heat drops back below max so the penalty can
+	// fire again on the next climb to 10.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters")
+	bool bMaxHeatThirstPenaltyApplied = false;
 
 	// True while the clock is ticking. Auto-paused during dialogue (the
 	// player character skips TickChapterClock when dialogue is open) and
