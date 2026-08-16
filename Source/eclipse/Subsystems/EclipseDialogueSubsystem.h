@@ -111,12 +111,6 @@ struct FEclipseDialogueChoice
 	UPROPERTY(BlueprintReadOnly) bool bIsSkillCheck = false;
 	UPROPERTY(BlueprintReadOnly) FName SkillCheckStat;   // "aesthetics" | "rhythm" | "zen" | "psychedelics"
 	UPROPERTY(BlueprintReadOnly) int32 SkillCheckValue = 0;
-	// Heat cost when this choice is a failed skill check that the player
-	// clicks anyway. Surfaced to the widget so it can render a
-	// "[-N HEAT]" risk hint, consumed in MakeChoice via the
-	// GameStateSubsystem ChangeHeat API. Heat is the meter that kills at
-	// 0, so botching checks is what puts the player in danger.
-	UPROPERTY(BlueprintReadOnly) int32 HeatDamageOnFail = 2;
 
 	// All stage directives parsed from this choice's Ink tags. Gates are
 	// evaluated when the choice is built (sets bAvailable + GateHint);
@@ -238,8 +232,13 @@ public:
 	// its skill-check choices (see UEclipseGameStateSubsystem::GrantStatXP;
 	// levels roll at StatXPToLevel=100). Flat rate: using a skill teaches you
 	// the same amount whether the check passed or failed. Failure is already
-	// priced in by the Heat tax, so it doesn't also slow the grind.
+	// priced in by the Thirst tax below, so it doesn't also slow the grind.
 	static constexpr int32 SkillXP = 20;
+
+	// Thirst lost when the player clicks a skill check they don't meet.
+	// Only the explicit "[STAT:N]" marker form can be failed this way —
+	// Ink-native "{stat > N}" gates never reach the player unmet.
+	static constexpr int32 ThirstDamageOnFail = 1;
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	void CloseDialogue();

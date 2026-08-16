@@ -224,13 +224,12 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 				const bool bInkGate = Chosen.bHasStatCheckLabel && !Chosen.bIsSkillCheck;
 				GS->GrantStatXP(bInkGate ? Chosen.StatCheckLabelStat : Chosen.SkillCheckStat, SkillXP);
 
-				if (!bInkGate && !Chosen.bAvailable && Chosen.HeatDamageOnFail > 0)
+				if (!bInkGate && !Chosen.bAvailable)
 				{
-					UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Heat"),
+					UE_LOG(LogEclipse, Log, TEXT("Choice: failed skill check '%s' (need %d, got %d) -> -%d Thirst"),
 						*Chosen.SkillCheckStat.ToString(), Chosen.SkillCheckValue,
-						GS->GetStatValue(Chosen.SkillCheckStat), Chosen.HeatDamageOnFail);
-					// "Damage" = push Heat toward 0 (the death extreme).
-					GS->ChangeHeat(-Chosen.HeatDamageOnFail);
+						GS->GetStatValue(Chosen.SkillCheckStat), ThirstDamageOnFail);
+					GS->ChangeThirst(-ThirstDamageOnFail);
 				}
 			}
 		}
