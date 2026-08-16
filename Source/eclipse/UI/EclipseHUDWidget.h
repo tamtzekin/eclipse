@@ -108,7 +108,56 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CurrencyText;
 
+	// ── Debug overlay (0 key) ──────────────────────────────────────────
+	// Bottom-anchored terminal-style readout of every gameplay variable:
+	// meters, stats + XP, hidden stats, currency, quest flags, inventory,
+	// clock, and all Ink globals from Globals.ink. Laid out as fixed-width
+	// columns grouped by variable type inside a translucent black panel.
+	// Runtime-injected like the clock — no WBP binding, because there's
+	// nothing here for a designer to style.
+	UPROPERTY()
+	TObjectPtr<UBorder> DebugPanel;
+
+	// One text block per column; each holds its group's header + lines
+	// joined by newlines. Indices match EDebugColumn below.
+	UPROPERTY()
+	TArray<TObjectPtr<UTextBlock>> DebugColumns;
+
+public:
+	// Flipped by AeclipsePlayerController's 0 binding.
+	void ToggleDebugOverlay();
+
 private:
+	bool bDebugVisible = false;
+
+	// Seconds until the next debug rebuild. The dump walks the whole Ink
+	// variable table and allocates a string per entry, so it refreshes on a
+	// timer rather than per frame — fast enough to watch values move, cheap
+	// enough not to distort the perf you're debugging.
+	float DebugRefreshCountdown = 0.f;
+	static constexpr float DebugRefreshInterval = 0.25f;
+
+	// Column order, left to right. Grouped so related values sit together
+	// and each column stays roughly the same height.
+	enum EDebugColumn : uint8
+	{
+		DC_Meters = 0,   // meters + clock
+		DC_Stats,        // stats/XP + hidden stats
+		DC_Quest,        // quest flags + currency
+		DC_Inventory,    // character + items + clothing
+		DC_Ink,          // Globals.ink
+		DC_Count
+	};
+
+	// Per-column width in slate units. Fixed rather than fill so the
+	// columns stay aligned as values change length.
+	static constexpr float DebugColumnWidth = 250.f;
+
+	// Builds DebugPanel + DebugColumns on first toggle. No-op afterwards.
+	void EnsureDebugWidgets();
+
+	void UpdateDebugOverlay();
+
 	UFUNCTION()
 	void HandleStateChanged();
 

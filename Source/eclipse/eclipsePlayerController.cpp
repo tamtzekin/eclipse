@@ -12,6 +12,8 @@
 #include "UI/EclipseInventoryWidget.h"
 #include "UI/EclipseStatsMenuWidget.h"
 #include "UI/EclipsePhoneWidget.h"
+#include "UI/EclipseHUD.h"
+#include "UI/EclipseHUDWidget.h"
 #include "UI/EclipseMainMenuActor.h"
 #include "UI/EclipseBlinkWipeWidget.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
@@ -157,7 +159,15 @@ void AeclipsePlayerController::SetupInputComponent()
 					this, &AeclipsePlayerController::TogglePhone);
 				InputComponent->KeyBindings.Add(B);
 			}
-			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I + C + P bindings installed on %s (InputComponent=%p)"),
+			// 0 → debug variable dump.
+			{
+				FInputKeyBinding B(FInputChord(EKeys::Zero, false, false, false, false), IE_Pressed);
+				B.bExecuteWhenPaused = true;
+				B.KeyDelegate.GetDelegateForManualSet().BindUObject(
+					this, &AeclipsePlayerController::ToggleDebugOverlay);
+				InputComponent->KeyBindings.Add(B);
+			}
+			UE_LOG(LogEclipse, Log, TEXT("PC: Esc + I + C + P + 0 bindings installed on %s (InputComponent=%p)"),
 				*GetName(), (void*)InputComponent);
 		}
 		else
@@ -329,4 +339,19 @@ void AeclipsePlayerController::TogglePhone()
 		return;
 	}
 	ActivePhone = UEclipsePhoneWidget::OpenForPlayer(this);
+}
+
+void AeclipsePlayerController::ToggleDebugOverlay()
+{
+	// No mutex guards like the other overlays — this one is read-only, takes
+	// no input mode, and is most useful while a dialogue is open.
+	if (AEclipseHUD* HUD = Cast<AEclipseHUD>(GetHUD()))
+	{
+		if (HUD->HUDWidget)
+		{
+			HUD->HUDWidget->ToggleDebugOverlay();
+			return;
+		}
+	}
+	UE_LOG(LogEclipse, Warning, TEXT("PC: ToggleDebugOverlay — no AEclipseHUD/HUDWidget"));
 }

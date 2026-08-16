@@ -6,6 +6,7 @@
 #include "EclipseDeathOverlayWidget.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
+#include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -249,6 +250,16 @@ void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSecon
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
 
+	if (bDebugVisible)
+	{
+		DebugRefreshCountdown -= DeltaSeconds;
+		if (DebugRefreshCountdown <= 0.f)
+		{
+			DebugRefreshCountdown = DebugRefreshInterval;
+			UpdateDebugOverlay();
+		}
+	}
+
 	// Per-meter pulse decay. Only repaint when at least one pulse is
 	// still alive — the static bar state doesn't change per frame.
 	const bool bAnyAlive =
@@ -385,5 +396,165 @@ void UEclipseHUDWidget::UpdateCurrency()
 	{
 		CurrencyText->SetText(FText::FromString(FString::Printf(
 			TEXT("C %d   N %d"), GS->Coins, GS->Notes)));
+	}
+}
+
+// ── Debug overlay (0 key) ───────────────────────────────────────────────
+
+void UEclipseHUDWidget::EnsureDebugWidgets()
+{
+	if (DebugPanel || !WidgetTree) return;
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+	if (!RootCanvas) return;
+
+	// Translucent black slab, terminal style. Auto-sized around the columns
+	// and pinned to the bottom-left corner, so it grows upward/rightward as
+	// content changes instead of clipping.
+	DebugPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DebugPanel_Runtime"));
+	{
+		FSlateBrush Slab;
+		Slab.DrawAs = ESlateBrushDrawType::Image;
+		Slab.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.78f));
+		DebugPanel->SetBrush(Slab);
+		DebugPanel->SetPadding(FMargin(14.f, 10.f));
+	}
+	if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(DebugPanel))
+	{
+		CS->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+		CS->SetAlignment(FVector2D(0.f, 1.f));
+		CS->SetAutoSize(true);
+		CS->SetPosition(FVector2D(16.f, -16.f));
+	}
+
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(), TEXT("DebugColumns_Runtime"));
+	DebugPanel->SetContent(Row);
+
+	DebugColumns.Reset();
+	for (int32 i = 0; i < DC_Count; ++i)
+	{
+		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), *FString::Printf(TEXT("DebugColumn_%d"), i));
+		T->SetFont(EclipseUI::MakeRodin(11));
+		T->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
+		// Fixed column width keeps the columns aligned as values change
+		// length; the slab is already opaque enough that no text outline
+		// is needed for legibility.
+		T->SetMinDesiredWidth(DebugColumnWidth);
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(T))
+		{
+			HS->SetPadding(FMargin(0.f, 0.f, i == DC_Count - 1 ? 0.f : 18.f, 0.f));
+			HS->SetVerticalAlignment(VAlign_Top);
+		}
+		DebugColumns.Add(T);
+	}
+}
+
+void UEclipseHUDWidget::ToggleDebugOverlay()
+{
+	bDebugVisible = !bDebugVisible;
+
+	// Built on first use rather than in NativeConstruct — no reason for a
+	// release session to carry the widgets at all if 0 is never pressed.
+	if (bDebugVisible) EnsureDebugWidgets();
+
+	if (DebugPanel)
+	{
+		DebugPanel->SetVisibility(bDebugVisible
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+	if (bDebugVisible)
+	{
+		DebugRefreshCountdown = DebugRefreshInterval;
+		UpdateDebugOverlay();
+	}
+}
+
+void UEclipseHUDWidget::UpdateDebugOverlay()
+{
+	if (DebugColumns.Num() != DC_Count) return;
+
+	UGameInstance* GI = GetGameInstance();
+	UEclipseGameStateSubsystem* GS = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+
+	TArray<FString> Col[DC_Count];
+	Col[DC_Meters]   .Add(TEXT("[ METERS / TIME ]"));
+	Col[DC_Stats]    .Add(TEXT("[ STATS ]"));
+	Col[DC_Quest]    .Add(TEXT("[ QUEST / MONEY ]"));
+	Col[DC_Inventory].Add(TEXT("[ INVENTORY ]"));
+	Col[DC_Ink]      .Add(TEXT("[ INK GLOBALS ]"));
+
+	if (!GS)
+	{
+		Col[DC_Meters].Add(TEXT("no game state"));
+	}
+	else
+	{
+		auto B = [](bool v) { return v ? TEXT("true") : TEXT("false"); };
+		auto JoinNames = [](const TArray<FName>& A)
+		{
+			if (A.Num() == 0) return FString(TEXT("  (empty)"));
+			TArray<FString> S;
+			for (const FName& N : A) S.Add(TEXT("  ") + N.ToString());
+			return FString::Join(S, TEXT("\n"));
+		};
+
+		TArray<FString>& M = Col[DC_Meters];
+		M.Add(FString::Printf(TEXT("heat            %d / %d"), GS->Heat,   UEclipseGameStateSubsystem::MeterMax));
+		M.Add(FString::Printf(TEXT("thirst          %d / %d"), GS->Thirst, UEclipseGameStateSubsystem::MeterMax));
+		M.Add(FString::Printf(TEXT("heat_penalty    %s"), B(GS->bMaxHeatThirstPenaltyApplied)));
+		M.Add(TEXT(""));
+		M.Add(FString::Printf(TEXT("clock           %s"), *GS->GetChapterClockText().ToString()));
+		M.Add(FString::Printf(TEXT("chapter         %d"), GS->Chapter));
+		M.Add(FString::Printf(TEXT("elapsed         %.1fs"), GS->ChapterElapsedSeconds));
+		M.Add(FString::Printf(TEXT("last_heat_decay %.1fs"), GS->LastHeatDecayAtSeconds));
+		M.Add(FString::Printf(TEXT("running         %s"), B(GS->bClockRunning)));
+
+		TArray<FString>& St = Col[DC_Stats];
+		St.Add(FString::Printf(TEXT("aesthetics      %d  (xp %d)"), GS->Aesthetics,   GS->AestheticsXP));
+		St.Add(FString::Printf(TEXT("rhythm          %d  (xp %d)"), GS->Rhythm,       GS->RhythmXP));
+		St.Add(FString::Printf(TEXT("zen             %d  (xp %d)"), GS->Zen,          GS->ZenXP));
+		St.Add(FString::Printf(TEXT("psychedelics    %d  (xp %d)"), GS->Psychedelics, GS->PsychedelicsXP));
+		St.Add(FString::Printf(TEXT("xp per level    %d"), UEclipseGameStateSubsystem::StatXPToLevel));
+		St.Add(TEXT(""));
+		St.Add(TEXT("-- hidden --"));
+		St.Add(FString::Printf(TEXT("gender          %s"), *GS->Gender.ToString()));
+		St.Add(FString::Printf(TEXT("race            %s"), *GS->Race.ToString()));
+		St.Add(FString::Printf(TEXT("annoyance       %d / %d"), GS->Annoyance,
+			UEclipseGameStateSubsystem::AnnoyanceMax));
+
+		TArray<FString>& Q = Col[DC_Quest];
+		Q.Add(FString::Printf(TEXT("stage           %s"), *GS->Quest.Stage.ToString()));
+		Q.Add(FString::Printf(TEXT("has_hair        %s"), B(GS->Quest.bHasHair)));
+		Q.Add(FString::Printf(TEXT("has_eye         %s"), B(GS->Quest.bHasEye)));
+		Q.Add(FString::Printf(TEXT("has_wristband   %s"), B(GS->bHasWristband)));
+		Q.Add(FString::Printf(TEXT("vip_access      %s"), B(GS->bVipAccessGranted)));
+		Q.Add(FString::Printf(TEXT("met_npcs        %d"), GS->MetNPCs.Num()));
+		Q.Add(FString::Printf(TEXT("failed_choices  %d"), GS->FailedChoicesThisChapter.Num()));
+		Q.Add(TEXT(""));
+		Q.Add(FString::Printf(TEXT("coins           %d"), GS->Coins));
+		Q.Add(FString::Printf(TEXT("notes           %d"), GS->Notes));
+
+		TArray<FString>& Inv = Col[DC_Inventory];
+		Inv.Add(FString::Printf(TEXT("character       %s"), *GS->SelectedCharacterId.ToString()));
+		Inv.Add(TEXT(""));
+		Inv.Add(FString::Printf(TEXT("items (%d)"), GS->Inventory.Num()));
+		Inv.Add(JoinNames(GS->Inventory));
+		Inv.Add(TEXT(""));
+		Inv.Add(FString::Printf(TEXT("clothing (%d)"), GS->EquippedClothing.Num()));
+		Inv.Add(JoinNames(GS->EquippedClothing));
+	}
+
+	if (UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr)
+	{
+		const TArray<FString> Ink = DS->GetInkVariableDump();
+		if (Ink.Num() == 0) Col[DC_Ink].Add(TEXT("(story not loaded)"));
+		else                Col[DC_Ink].Append(Ink);
+	}
+
+	for (int32 i = 0; i < DC_Count; ++i)
+	{
+		DebugColumns[i]->SetText(FText::FromString(FString::Join(Col[i], TEXT("\n"))));
 	}
 }

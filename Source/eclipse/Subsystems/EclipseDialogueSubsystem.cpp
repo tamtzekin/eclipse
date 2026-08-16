@@ -23,6 +23,7 @@
 #include "Inkpot/InkpotChoice.h"
 #include "Asset/InkpotStoryAsset.h"
 #include "Ink/StoryState.h"
+#include "Ink/Value.h"
 
 namespace
 {
@@ -1128,4 +1129,24 @@ void UEclipseDialogueSubsystem::EnterStallTransition()
 	{
 		AngelSeeker->StepAside();
 	}
+}
+
+TArray<FString> UEclipseDialogueSubsystem::GetInkVariableDump()
+{
+	TArray<FString> Out;
+	if (!Story) return Out;
+
+	TArray<FString> Keys;
+	Story->GetVariableKeys(Keys);
+	Keys.Sort();
+
+	for (const FString& Key : Keys)
+	{
+		// Every concrete Ink variable is an Ink::FValue subclass, and each
+		// one overrides ToString() — so one cast covers bool / int / float /
+		// string / list without a per-type switch.
+		TSharedPtr<Ink::FValue> Val = StaticCastSharedPtr<Ink::FValue>(Story->GetVariable(Key));
+		Out.Add(FString::Printf(TEXT("%s = %s"), *Key, Val.IsValid() ? *Val->ToString() : TEXT("<null>")));
+	}
+	return Out;
 }

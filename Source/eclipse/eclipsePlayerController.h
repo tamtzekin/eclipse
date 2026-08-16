@@ -59,6 +59,13 @@ protected:
 	/** P-key handler — toggles the phone overlay (clock + wallet + contacts/notes tabs). */
 	void TogglePhone();
 
+	/**
+	 *  0-key handler — toggles the HUD debug variable dump (meters, stats,
+	 *  XP, quest flags, inventory, clock, and every Ink global). Not on a
+	 *  WASD key, so it can't fire while moving.
+	 */
+	void ToggleDebugOverlay();
+
 	UPROPERTY()
 	TObjectPtr<class UEclipsePauseMenuWidget> ActivePauseMenu;
 

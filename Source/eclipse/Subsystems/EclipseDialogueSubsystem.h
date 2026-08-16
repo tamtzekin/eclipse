@@ -245,6 +245,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	const FEclipseDialogueNodeView& GetCurrentNodeView() const { return CurrentNode; }
 
+	// Every Ink global (everything declared VAR / LIST in Globals.ink) as
+	// "name = value" lines, sorted. Values go through Ink::FValue::ToString()
+	// so LISTs print their live contents rather than a numeric mask. Empty
+	// if the story asset failed to load. Debug-overlay only — not a save path.
+	TArray<FString> GetInkVariableDump();
+
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueOpened       OnDialogueOpened;
 
