@@ -9,7 +9,15 @@ Binaries/
 Build/
 DerivedDataCache/
 Intermediate/
-Saved/
+**/*/Saved/
+# The root Saved/ is ignored by its CONTENTS (Saved/*) rather than as a
+# directory, because git refuses to re-include anything under an excluded
+# directory — the parent has to stay visible for the exception below to work.
+Saved/*
+!Saved/UnrealBuildTool/
+Saved/UnrealBuildTool/*
+# The one exception: project-scope UBT settings, shared across the team.
+!Saved/UnrealBuildTool/BuildConfiguration.xml
 
 # ── PC / Visual Studio ──
 .vs/
