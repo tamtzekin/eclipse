@@ -146,6 +146,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Audio|Mumble")
 	float MumbleSliceFadeOutSeconds = 0.18f;
 
+	// How long a sentence's caption box gets to lay itself out before the
+	// first word inside it starts fading in. Needs to cover at least one
+	// frame — see StartBodyAnimation for why. Long enough to be reliable at
+	// low framerates, short enough to read as the same beat.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|Dialogue", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float SentenceBoxLayoutLead = 0.05f;
+
 	// Fire one slice every Nth word, not every word. 1 = chatter (per-word),
 	// 3 = phrase-feel (default — matches "mumble per few words" pacing), 5+
 	// would feel sparse. Counted across the global word stream (body + choices).
@@ -438,6 +445,22 @@ private:
 	float BodyAnimTotalTime = 0.f;
 
 	void StartBodyAnimation(const FString& BodyString);
+
+	// Mirrors bDialogueAnimating onto the dialogue subsystem so non-dialogue
+	// UI (the HUD quest checklist) can hold off until the line has finished
+	// printing. See UEclipseDialogueSubsystem::IsBodyPrinting.
+	void SetBodyPrintingFlag(bool bPrinting);
+
+	// One choice per node. Set the moment a choice is dispatched, cleared
+	// when the next node's choices are on screen. Without it, mashing E
+	// fires MakeChoice repeatedly against a CurrentChoices array that hasn't
+	// been replaced yet, and the same option gets taken twice.
+	bool bChoiceCommitted = false;
+
+	// "Quick skip": finish the current line instantly instead of waiting out
+	// the word cascade. Bound to a SECOND press of E/Enter/Space — the first
+	// press commits the choice, the second says "I've read it, move on".
+	void SkipToChoices();
 
 	// Adds word-by-word fade-in to a single choice row. Replaces the static
 	// PreText label with a UWrapBox of per-word UTextBlocks (or finds an

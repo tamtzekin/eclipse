@@ -814,6 +814,8 @@ void UEclipseDialogueWidget::HandleNodeChanged(FEclipseDialogueNodeView Node)
 
 void UEclipseDialogueWidget::ApplyNodeChanged(const FEclipseDialogueNodeView& Node)
 {
+	// New node, new options — the player may choose again.
+	bChoiceCommitted = false;
 	using namespace EclipseUI;
 
 	// SelfHitTestInvisible: the root canvas itself ignores hit-testing so only
@@ -1111,6 +1113,33 @@ namespace
 			FString StatName = Choice.StatCheckLabelStat.ToString().ToLower();
 			if (StatName.Len() > 0) StatName = StatName.Left(1).ToUpper() + StatName.Mid(1);
 			S = FString::Printf(TEXT("%s [%d]: %s"), *StatName, Choice.StatCheckLabelValue, *S);
+		}
+		return S;
+	}
+
+	// The choice's words WITHOUT any skill-check label — "Do the thing"
+	// rather than "Rhythm [1]: Do the thing".
+	//
+	// The check belongs on the button, where it tells you what you're
+	// risking before you commit. Once you've committed it's noise: the
+	// transcript is meant to read back as things people said, and nobody
+	// said "Rhythm [1]". So the choice row uses DisplayChoiceText and the
+	// echoed player line uses this.
+	FString PlainChoiceText(const FEclipseDialogueChoice& Choice)
+	{
+		FString S = Choice.Text.ToString();
+		// An explicit "[STAT:N] ..." marker is part of the raw text, so it
+		// has to be cut off the front. The Ink-native "{stat > N}" gate
+		// never appears in the text at all — DisplayChoiceText synthesises
+		// that prefix — so there's nothing to strip for it.
+		if (Choice.bIsSkillCheck && S.StartsWith(TEXT("[")))
+		{
+			int32 CloseIdx = INDEX_NONE;
+			if (S.FindChar(TEXT(']'), CloseIdx))
+			{
+				S.RemoveAt(0, CloseIdx + 1);
+				S.TrimStartInline();
+			}
 		}
 		return S;
 	}
@@ -1628,8 +1657,21 @@ FReply UEclipseDialogueWidget::NativeOnKeyDown(const FGeometry& InGeometry, cons
 	const FKey K = InKeyEvent.GetKey();
 	if (K == EKeys::W || K == EKeys::Up)         { NavigateChoice(-1); return FReply::Handled(); }
 	if (K == EKeys::S || K == EKeys::Down)       { NavigateChoice(+1); return FReply::Handled(); }
-	if (K == EKeys::E || K == EKeys::Enter ||
-	    K == EKeys::SpaceBar)                    { MakeChoice(SelectedIndex); return FReply::Handled(); }
+	if (K == EKeys::E || K == EKeys::Enter || K == EKeys::SpaceBar)
+	{
+		// While anything is still printing, E means "hurry up", not "pick".
+		// Choices aren't even visible yet at that point, so treating it as a
+		// selection would act on options the player can't see.
+		if (bDialogueAnimating || bPlayerLineAnimating || PendingNode.IsSet() || bChoiceCommitted)
+		{
+			SkipToChoices();
+		}
+		else
+		{
+			MakeChoice(SelectedIndex);
+		}
+		return FReply::Handled();
+	}
 	if (K == EKeys::Escape)                      { OnCloseClicked(); return FReply::Handled(); }
 	// Number keys 1-5 jump-select
 	for (int32 i = 0; i < ChoiceButtons.Num() && i < 5; ++i)
@@ -1679,9 +1721,79 @@ void UEclipseDialogueWidget::NativeOnFocusLost(const FFocusEvent& InFocusEvent)
 
 namespace { float WordHoldDuration(const FString& Word); FLinearColor Transparent(FLinearColor C); }
 
+void UEclipseDialogueWidget::SkipToChoices()
+{
+	// Reveal everything still mid-cascade, in both the NPC's line and the
+	// player's, then release the pending-node beat so the next node lands
+	// this frame instead of after its delay. NativeTick's own reveal loops
+	// then find nothing left to do and the choice-reveal gate opens.
+	auto RevealAll = [](TArray<TObjectPtr<UWidget>>& Blocks)
+	{
+		for (const TObjectPtr<UWidget>& Block : Blocks)
+		{
+			if (!Block) continue;
+			if (UTextBlock* T = Cast<UTextBlock>(Block))
+			{
+				FLinearColor C = T->GetColorAndOpacity().GetSpecifiedColor();
+				if (C.A < 1.f) { C.A = 1.f; T->SetColorAndOpacity(FSlateColor(C)); }
+			}
+			else if (Block->GetVisibility() == ESlateVisibility::Collapsed)
+			{
+				Block->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			}
+		}
+	};
+
+	RevealAll(AnimWordBlocks);
+	RevealAll(PlayerAnimWordBlocks);
+
+	bDialogueAnimating   = false;
+	bPlayerLineAnimating = false;
+	DialogueAnimTime     = BodyAnimTotalTime;
+
+	// Cut the mumble voice — the line it was narrating is already fully on
+	// screen, so letting it ring on would be a stray sound with no source.
+	for (TWeakObjectPtr<UAudioComponent>& Weak : ActiveMumbleSlices)
+	{
+		if (UAudioComponent* Live = Weak.Get()) Live->FadeOut(0.06f, 0.f);
+	}
+	ActiveMumbleSlices.Reset();
+
+	// Land the NPC's turn now rather than after PendingNodeDelay.
+	if (PendingNode.IsSet())
+	{
+		FEclipseDialogueNodeView Node = PendingNode.GetValue();
+		PendingNode.Reset();
+		ApplyNodeChanged(Node);
+		return;   // ApplyNodeChanged starts a fresh cascade; leave it running.
+	}
+
+	SetBodyPrintingFlag(false);
+	if (RightHistoryScroll) RightHistoryScroll->ScrollToEnd();
+}
+
 void UEclipseDialogueWidget::MakeChoice(int32 Index)
 {
 	using namespace EclipseUI;
+
+	// Second press on an already-committed node = quick skip, not a second
+	// choice. This is the fix for "mash E and the same option fires twice":
+	// the choice is dispatched asynchronously, so CurrentChoices still holds
+	// the OLD options for a few frames afterwards and a second press would
+	// happily pick from them again.
+	if (bChoiceCommitted)
+	{
+		SkipToChoices();
+		return;
+	}
+	bChoiceCommitted = true;
+
+	// Hold the HUD's side-quest checklist from here rather than from the
+	// start of the next body cascade. Ink runs the whole branch — including
+	// its `~ SideQuests += ...` — the instant the choice is dispatched, so
+	// the gap between "clicked" and "NPC starts talking" was exactly when a
+	// new quest used to pop on screen early.
+	SetBodyPrintingFlag(true);
 
 	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
@@ -1730,9 +1842,10 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 			/*bAlignRight=*/true);
 		if (Words && WidgetTree)
 		{
-			// Same stripped text the choice row showed (no "[STAT:N]" tag),
-			// grouped into sentence boxes the same way the NPC's body is.
-			TArray<TArray<FString>> Sentences = SplitIntoSentences(DisplayChoiceText(Picked));
+			// The line WITHOUT its check label — see PlainChoiceText. The
+			// choice button already showed "Rhythm [1]:"; repeating it in the
+			// transcript reads as the player having said it out loud.
+			TArray<TArray<FString>> Sentences = SplitIntoSentences(PlainChoiceText(Picked));
 			// Pull the designer's font FAMILY from BodyText (same source
 			// StartBodyAnimation uses for the NPC's lines) so "YOU" reads in
 			// the same typeface as the speaker, just forced to the shared
@@ -1893,6 +2006,17 @@ namespace
 	}
 }
 
+void UEclipseDialogueWidget::SetBodyPrintingFlag(bool bPrinting)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			DS->SetBodyPrinting(bPrinting);
+		}
+	}
+}
+
 void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 {
 	using namespace EclipseUI;
@@ -1960,12 +2084,24 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 			const FString& Word = Sentence[WordIdx];
 			if (bFirstWordInSentence)
 			{
-				// The box itself is a reveal target too — same delay as its
-				// first word. Marked "already fired" so it never triggers
-				// its own mumble slice (only real words do).
+				// The box itself is a reveal target too. Marked "already
+				// fired" so it never triggers its own mumble slice (only
+				// real words do).
+				//
+				// It gets a short HEAD START over its own first word rather
+				// than sharing that word's delay. The box reveals via
+				// Collapsed→Visible, and Slate doesn't lay out collapsed
+				// widgets — so on the frame the box appears, its contents can
+				// paint once against stale (zero) geometry before the
+				// re-arrange lands. That one frame is the "first word of the
+				// line flashes over on the right, then drops into the box"
+				// glitch. Letting the box get arranged first removes it.
+				// (Same class of bug as the trailing-word reflow the
+				// alpha-reveal below fixed, different trigger.)
 				AnimWordBlocks.Add(SBox.Box);
 				AnimWordDelays.Add(RunningDelay);
 				AnimWordMumbleFired.Add(true);
+				RunningDelay += SentenceBoxLayoutLead;
 				bFirstWordInSentence = false;
 			}
 
@@ -2003,6 +2139,7 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 
 	DialogueAnimTime  = 0.f;
 	bDialogueAnimating = AnimWordBlocks.Num() > 0;
+	SetBodyPrintingFlag(bDialogueAnimating);
 
 	UE_LOG(LogEclipse, Log, TEXT("Dlg: StartBodyAnimation — %d words, total=%.2fs, anim=%s"),
 		AnimWordBlocks.Num(), BodyAnimTotalTime, bDialogueAnimating ? TEXT("ON") : TEXT("OFF"));
@@ -2378,6 +2515,7 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 	if (bAllDone)
 	{
 		bDialogueAnimating = false;
+		SetBodyPrintingFlag(false);
 
 		// Cut the voice off the moment text animation finishes. Without this
 		// the last slice would keep ringing past the visible body. We use a

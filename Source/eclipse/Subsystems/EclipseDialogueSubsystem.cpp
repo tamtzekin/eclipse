@@ -101,6 +101,20 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 		Story->SetBool(TEXT("has_eye"), State && State->Quest.bHasEye, bOk);
 		Story->SetString(TEXT("quest_stage"), State ? State->Quest.Stage.ToString() : TEXT("intro"), bOk);
 		Story->SetBool(TEXT("met_npc"), State && State->HasMetNPC(Npc->NpcName), bOk);
+
+		// Stats + cigarettes. Without this push, Ink's own numeric gates
+		// ({rhythm > 3}, {cigarettes >= 20}) evaluate against the defaults
+		// declared in Globals.ink and never move — every such gate silently
+		// passes. The C++ "[STAT: N]" tag gates were unaffected because they
+		// read GameState directly; these are the *native Ink* ones.
+		if (State)
+		{
+			Story->SetInt(TEXT("aesthetics"),   State->Aesthetics,   bOk);
+			Story->SetInt(TEXT("rhythm"),       State->Rhythm,       bOk);
+			Story->SetInt(TEXT("zen"),          State->Zen,          bOk);
+			Story->SetInt(TEXT("psychedelics"), State->Psychedelics, bOk);
+			Story->SetInt(TEXT("cigarettes"),   State->Cigarettes,   bOk);
+		}
 	}
 
 	if (Npc->bIsAngelSeeker && State)
@@ -132,6 +146,41 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 	// "StartBodyAnimation" log pair.)
 	UE_LOG(LogEclipse, Log, TEXT("Opened dialogue '%s' with NPC '%s'"),
 		*CurrentDialogueId.ToString(), *Npc->NpcName.ToString());
+	return true;
+}
+
+bool UEclipseDialogueSubsystem::OpenKnot(FName Knot)
+{
+	if (Knot.IsNone() || !Story)
+	{
+		UE_LOG(LogEclipse, Warning, TEXT("OpenKnot: missing knot or Ink story"));
+		return false;
+	}
+
+	ActiveNpc = nullptr;
+	ActiveItem = nullptr;
+	CurrentDialogueId = Knot;
+	bDialogueOpen = true;
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			State->SetClockRunning(false);
+			bool bOk = false;
+			Story->SetInt(TEXT("aesthetics"),   State->Aesthetics,   bOk);
+			Story->SetInt(TEXT("rhythm"),       State->Rhythm,       bOk);
+			Story->SetInt(TEXT("zen"),          State->Zen,          bOk);
+			Story->SetInt(TEXT("psychedelics"), State->Psychedelics, bOk);
+			Story->SetInt(TEXT("cigarettes"),   State->Cigarettes,   bOk);
+		}
+	}
+
+	Story->ChoosePath(Knot.ToString());
+	BuildNodeFromStory();
+
+	OnDialogueOpened.Broadcast(nullptr);
+	UE_LOG(LogEclipse, Log, TEXT("Opened speaker-less dialogue '%s'"), *Knot.ToString());
 	return true;
 }
 
@@ -316,8 +365,12 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		return;
 	}
 
-	CurrentNode.SpeakerName = ActiveNpc ? ActiveNpc->NpcName
-		: (ActiveItem ? ActiveItem->ItemId : FName(TEXT("NPC")));
+	// Display name, not the identity key — see AEclipseNpcCharacter::GetDisplayName.
+	CurrentNode.SpeakerName = ActiveNpc
+		? FName(*ActiveNpc->GetDisplayName().ToString())
+		: (ActiveItem
+			? FName(*ActiveItem->ItemId.ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper())
+			: FName(TEXT("NPC")));
 
 	// Pull everything Ink has up to the next choice point / dead end, in one
 	// go. Pacing inside that block is NOT auto-inserted — no "# BEAT" tags,
@@ -326,6 +379,25 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 	// (e.g. `* [CONTINUE]`) in the .ink source. The only button this code
 	// still generates on its own is the [LEAVE] dead-end fallback below
 	// (see BuildChoicesFromStory).
+	// Cigarettes are the one counter Ink is allowed to WRITE. Trades are
+	// authored as plain Ink arithmetic (`~ cigarettes -= 20`), so the value
+	// has to come back out or the spend would evaporate on the next sync.
+	// Everything else stays one-directional (tags → ApplyStageEffect).
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* St = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			int32 InkCigs = 0; bool bGot = false;
+			Story->GetInt(TEXT("cigarettes"), InkCigs, bGot);
+			if (bGot && InkCigs != St->Cigarettes)
+			{
+				const int32 Delta = InkCigs - St->Cigarettes;
+				if (Delta > 0) St->AddCigarettes(Delta);
+				else           St->RemoveCigarettes(-Delta);
+			}
+		}
+	}
+
 	FString Body = Story->ContinueMaximally();
 
 	// An un-bracketed choice ("* Do you know how I can get in?", no "[...]")
@@ -496,6 +568,7 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	ActiveNpc = nullptr;
 	ActiveItem = nullptr;
 	CurrentDialogueId = NAME_None;
+	bBodyPrinting = false;   // widget is going away mid-cascade — don't strand the flag
 	CurrentNode = FEclipseDialogueNodeView{};
 	CurrentChoiceInkIndex.Reset();
 	CurrentChoiceMenuAction.Reset();

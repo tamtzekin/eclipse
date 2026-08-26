@@ -225,6 +225,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool OpenItemDialogue(AEclipseItemActor* Item);
 
+	// Speaker-less dialogue: jump straight to an Ink knot with no NPC and no
+	// item behind it. Used by the demo's ending, which plays over a black
+	// screen — there's nobody standing there to talk to. Broadcasts
+	// OnDialogueOpened with Npc=nullptr like OpenItemDialogue does.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
+	bool OpenKnot(FName Knot);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
 
@@ -245,6 +252,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	bool IsDialogueOpen() const { return bDialogueOpen; }
+
+	// True while the dialogue widget is still cascading the current node's
+	// body text in word by word. Ink runs a whole block the instant a choice
+	// is picked — the `~ SideQuests += ...` on the last line of a branch has
+	// already executed before the player has read the line that motivates
+	// it — so the HUD's quest checklist holds its refresh until this clears
+	// and the reveal lands with the writing instead of ahead of it.
+	// Set by UEclipseDialogueWidget; nothing else should write it.
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
+	bool IsBodyPrinting() const { return bBodyPrinting; }
+
+	void SetBodyPrinting(bool bPrinting) { bBodyPrinting = bPrinting; }
 
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	const FEclipseDialogueNodeView& GetCurrentNodeView() const { return CurrentNode; }
@@ -279,6 +298,7 @@ private:
 	UPROPERTY() TObjectPtr<UInkpotStory> Story;
 	UPROPERTY() FEclipseDialogueNodeView CurrentNode;
 	bool bDialogueOpen = false;
+	bool bBodyPrinting = false;   // see IsBodyPrinting
 	FName CurrentDialogueId = NAME_None;
 
 	// Parallel to CurrentNode.Choices — maps each *displayed* choice index
