@@ -57,6 +57,16 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateInventoryWBP(const FString& WBPAssetPath);
 
+	/** Swap prompt — the modal that opens when you reach for a pickup with
+	 *  nothing free to put it in. Frame only: title, the incoming item's
+	 *  name, an empty CandidateRow, and LEAVE IT. The side-by-side
+	 *  "SWAP X FOR Y" boxes are built at runtime into CandidateRow, because
+	 *  how many there are depends on what the player is carrying — see
+	 *  UEclipseSwapPromptWidget::BuildCandidateBoxes. */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateSwapPromptWBP(const FString& WBPAssetPath);
+
 	/** Stats panel (C key) — modal centred overlay built in the HUD's visual
 	 *  language: navy PanelBg / cream-border RoundedBrush, BMSPA caps, cyan
 	 *  highlights. Layout:

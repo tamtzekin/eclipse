@@ -142,6 +142,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Eclipse|Slot")
 	EEclipseSlotType SlotType = EEclipseSlotType::Head;
 
+	// Which cell within a multi-capacity carrier this widget draws. Pockets
+	// hold two, so two widgets share SlotType=Pockets with CellIndex 0 and 1.
+	// Always 0 for the one-garment body slots.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Eclipse|Slot")
+	int32 CellIndex = 0;
+
+	// Hands / Pockets carry loose inventory items (via ItemPlacements)
+	// rather than worn clothing (via EquippedSlots). The two paths differ
+	// in what they accept and what dropping does, so every handler branches
+	// on this.
+	bool IsCarrier() const;
+
+	// The item this specific cell currently shows, or NAME_None if empty.
+	FName GetOccupant() const;
+
 	// Back-pointer so drop handlers can call into the inventory widget
 	// to do the actual equip/unequip.
 	UPROPERTY()
@@ -161,6 +176,11 @@ public:
 protected:
 	virtual bool Initialize() override;
 
+	// Clicking an occupied slot selects its item, which is what lights up
+	// USE / DROP in the detail panel below. Without this the only way to act
+	// on something you're wearing would be to drag it somewhere first.
+	virtual FReply NativeOnMouseButtonUp(const FGeometry&, const FPointerEvent&) override;
+
 	virtual bool NativeOnDragOver(const FGeometry&, const FDragDropEvent&, UDragDropOperation*) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent&, UDragDropOperation*) override;
 	virtual bool NativeOnDrop(const FGeometry&, const FDragDropEvent&, UDragDropOperation*) override;
@@ -177,25 +197,32 @@ protected:
 };
 
 /**
- * Disco Elysium-style inventory overlay. Toggled with `I`, freezes input
- * while open, two-column layout:
+ * The inventory. Toggled with `I`, freezes input while open. One screen —
+ * the paper doll — with no tabs, no chip grid and no "available" list:
  *
- *   ┌────────────────────── INVENTORY ──────────────────────┐
- *   │                                                        │
- *   │   HELD                       EQUIPPED                  │
- *   │   ┌──┐ ┌──┐ ┌──┐             ┌──── HEAD ────┐          │
- *   │   │  │ │  │ │  │             ├──── JACKET ──┤          │
- *   │   └──┘ └──┘ └──┘             └──── NECK ────┘          │
- *   │                                                        │
- *   │   ───────────────  selected item  ──────────────────   │
- *   │   <NAME>                                                │
- *   │   <description text>                                    │
- *   │   [ USE ]  [ EQUIP ]  [ DROP ]  [ CLOSE ]              │
- *   └────────────────────────────────────────────────────────┘
+ *   ┌──────────────────── INVENTORY ─────────────────────┐
+ *   │   ┌─ HEAD ─┐                       ┌─ EYES ──┐     │
+ *   │   ┌─ NECK ─┐        ▟█▙            ┌─ TOP ───┐     │
+ *   │   ┌─ HANDS ┐        ███            ┌─ BOTTOM ┐     │
+ *   │   ┌─ PKT 0 ┐        █ █            ┌─ SHOES ─┐     │
+ *   │   ┌─ PKT 1 ┐                                       │
+ *   │   ──────────────  selected item  ───────────────   │
+ *   │   <NAME>                                            │
+ *   │   <description text>                                │
+ *   │   [ USE ]                        [ CLOSE ]         │
+ *   └─────────────────────────────────────────────────────┘
  *
- * Items + clothing are looked up from UEclipseGameStateSubsystem's
- * ItemTable / ClothingTable DataTables. Click a chip to select; use the
- * action row at the bottom to operate on it.
+ * Everything you own is worn, in your hands, or in a pocket. Anything else
+ * is on the floor or in a locker — see UEclipseGameStateSubsystem's
+ * ItemPlacements / GetSlotCapacity for the carry rules.
+ *
+ * Click a slot to select what's in it, then USE. There is no EQUIP button:
+ * wearing something means dragging it onto the body slot, and taking it off
+ * means dragging it into a hand or pocket. There is no DROP button either —
+ * you give something up by swapping it for a pickup you can't carry
+ * (UEclipseSwapPromptWidget), never by discarding it into nothing.
+ *
+ * Styled as hyperlink blue on white in the dialogue font (MakeRodin).
  */
 UCLASS()
 class ECLIPSE_API UEclipseInventoryWidget : public UUserWidget, public IEclipseChipOwner
@@ -228,24 +255,14 @@ protected:
 	UEclipseClothingSlotWidget* SlotUnderPoint(const FVector2D& ScreenPos) const;
 	void ResetSlotHovers();
 
-	// New tabbed layout: 3 tab buttons + a 6×3 ItemGrid + detail row.
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabConsumables;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabWearables;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           TabKey;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UUniformGridPanel> ItemGrid;
-
-	// ConsumablesPanel / WearablesPanel / WearablePool live inside the
-	// populator-built widget tree as named children — SetActiveTab and
-	// Rebuild look them up via WidgetTree->FindWidget at call time. We
-	// avoid UPROPERTY BindWidgetOptional here on purpose: adding new
-	// reflected fields requires a full UBT rebuild (Live Coding can't
-	// patch them in), and the lookup is cheap enough at panel-open time.
+	// Single-screen layout: the paper doll IS the inventory. There are no
+	// tabs, no chip grid, and no "available" pool — every item you have is
+	// worn, in your hands, or in a pocket, and anything else is on the floor
+	// or in a locker.
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>        SelectedNameText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock>        SelectedDescText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           UseBtn;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           EquipBtn;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           DropBtn;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton>           CloseBtn;
 
 	// Legacy bind names — left for back-compat with older WBPs that
@@ -265,6 +282,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> BottomSlot;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> ShoesSlot;
 
+	// ── Carrier slots ──────────────────────────────────────────────────
+	// Hands takes one item of any size; the two pocket cells take one
+	// Small item each. Both share the slot widget with the clothing slots —
+	// see UEclipseClothingSlotWidget::IsCarrier for where behaviour forks.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> HandsSlot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> Pocket0Slot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseClothingSlotWidget> Pocket1Slot;
+
 public:
 	// Called by UEclipseClothingSlotWidget::NativeOnDrop after a valid
 	// chip-on-slot drop. Forwards to GameState's EquipClothingToSlot
@@ -278,21 +303,13 @@ public:
 
 private:
 	UFUNCTION() void OnUse();
-	UFUNCTION() void OnEquip();
-	UFUNCTION() void OnDropItem();
 	UFUNCTION() void OnCloseClicked();
-
-	UFUNCTION() void OnTabConsumables();
-	UFUNCTION() void OnTabWearables();
-	UFUNCTION() void OnTabKey();
 
 	UFUNCTION() void HandleStateChanged();
 
 	void Rebuild();
 	void RefreshDetailPanel();
-	void RefreshTabStyling();
 	void RefreshChipSelectionStyling();
-	void SetActiveTab(int32 TabIndex);
 
 	void BuildFallbackTree();
 
@@ -300,9 +317,6 @@ private:
 	// row (drives EQUIP vs USE button visibility / behaviour).
 	FName SelectedItemId;
 	bool  bSelectedIsClothing = false;
-
-	// Active tab. 0=Consumables (Usable), 1=Wearables (Equippable), 2=Key.
-	int32 ActiveTab = 0;
 
 	// Slate's drag-trigger distance is global; we lower it on open so chips
 	// snap to the cursor on the slightest motion (basically "click-and-hold
