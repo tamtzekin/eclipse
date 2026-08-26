@@ -22,8 +22,12 @@ VAR psychedelics = 10
 // Money system
 VAR euros = 15
 
+// Cigarettes
+VAR cigarettes = 2
+
 // Inventory system
-LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, (bottle_vodka), (cup_empty), cup_beer, thick_book, ticket
+LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, (bottle_vodka), (cup_empty), cup_beer, thick_book, ticket, gum, baggie_half, bottle_water_empty, bottle_water_full
+
 === function get(x)
     ~ Inventory += x
 
@@ -38,7 +42,7 @@ LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle
 
 
 // Side Quests
-LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_get_inside, cold_tomas_wants_a_jacket, you_need_a_drink
+LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_go_in, cold_tomas_wants_a_jacket, you_need_a_drink
 
 === function new_quest(x)
     ~ SideQuests += x
@@ -54,8 +58,7 @@ LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_get_inside, cold_
 === function quest_text(q)
     { q:
     - "alina_needs_a_cigarette":       ~ return "Alina needs a smoke"
-    - "cold_tomas_wants_to_get_inside": ~ return "Tomas wants to go in"
-    - "cold_tomas_wants_to_go_inside":  ~ return "Tomas wants to go in"
+    - "cold_tomas_wants_to_go_in":  ~ return "Tomas wants to go in"
     - "cold_tomas_wants_a_jacket":     ~ return "Tomas needs a jacket"
     - "you_need_a_drink":              ~ return "You're thirsty, find something to drink"
     }

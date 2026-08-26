@@ -37,6 +37,9 @@ INCLUDE Characters/Bouncer_Outside.ink
 INCLUDE Characters/GuestlistGirl.ink
 INCLUDE Characters/Figure4.ink
 INCLUDE Characters/Figure5.ink
+INCLUDE Characters/DoorGirl.ink
+INCLUDE Characters/Ending.ink
+
 
 INCLUDE Items/Items.ink
 
@@ -46,13 +49,14 @@ INCLUDE Items/Items.ink
 Pick a character to start their dialogue.
 
 // OUTSIDE THE CLUB
-+ [Alina] -> quinn_2
++ [Alina] -> alina
 + [Tomas] -> tomas
 
 + [Glamorous Dealer] -> glamorous_dealer
 + [Chainsmoker] -> chainsmoker
 + [Guestlist Girl] -> guestlist_girl
 + [Bouncer Outside (bouncer_outside)] -> bouncer_outside
++ [Door Girl] -> door_girl
 
 // BATHROOM
 + [Angel Seeker (angel_seeker)] -> angel_seeker_setup
