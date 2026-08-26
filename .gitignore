@@ -73,3 +73,24 @@ CLAUDE.md
 # reimporting after every pull.
 Content/ArticyContent/Generated/All_objects.csv
 Content/L10N/*/ArticyContent/Generated/All_objects.csv
+
+# ── Agent / working notes ──
+# CLAUDE.md is ignored above for the same reason: these are scratch context
+# for AI sessions and running task lists, not project history.
+TODO.md
+
+# ── Local tool config ──
+# Points at a localhost MCP endpoint, so it's per-machine rather than shared.
+.mcp.json
+
+# ── Screenshots dropped in the project root ──
+# macOS names these per-locale, hence the two spellings.
+Captura de pantalla*.png
+Screenshot*.png
+Screen Shot*.png
+
+# ── Prototypes living inside the project folder ──
+# Neither belongs to the UE project. dungeon-prototype/ is its own git repo —
+# committing it would add a gitlink that clones as an empty directory.
+ClubDungeon/
+dungeon-prototype/
