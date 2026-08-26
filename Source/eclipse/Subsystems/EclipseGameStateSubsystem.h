@@ -308,12 +308,30 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Currency") int32 Coins = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Currency") int32 Notes = 0;
 
-	// Per-item preferred slot index inside the inventory overlay's 6×3 grid
-	// (0..17). Drives sparse "place where I dropped it" layout — items don't
-	// re-pack to the left when neighbours are removed. Cleared on removal /
-	// unequip. Auto-assigned on add when not already set.
+	// Cigarettes are a currency, not a chip — they're spent in bulk (20 for a
+	// favour) so a stack of them in the carry model would be nonsense. The
+	// individual smokeables (slim_cigarette, pack_cigarettes) are still real
+	// inventory items; this is the loose-count you trade with. Synced into
+	// Ink as `cigarettes` (Globals.ink) before every ChoosePath.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Currency") int32 Cigarettes = 0;
+
+	// Cigarettes are carried, not abstract: while you have any, a single
+	// `cigarettes` chip sits in a pocket and displays the count. The counter
+	// above stays the source of truth for HOW MANY; the inventory entry only
+	// says "this is on your person and takes a pocket". They arrive and
+	// leave together — see SyncCigaretteChip.
+	static const FName CigaretteItemId;
+
+	// Where each carried item physically is: Hands or Pockets. This replaced
+	// the old 6×3 grid-index map — there is no grid and no backpack any
+	// more, so an item's "position" is just which carrier it's in.
+	//
+	// Inventory stays the flat list of everything you're carrying (all the
+	// existing gates and dialogue checks read it); this map says where each
+	// entry sits, and GetSlotCapacity caps how many can share a carrier.
+	// Worn clothing is NOT in here — that's EquippedSlots.
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory")
-	TMap<FName, int32> ItemSlotPositions;
+	TMap<FName, EEclipseSlotType> ItemPlacements;
 
 	// Item / clothing tables — resolved on subsystem init via the soft paths
 	// /Game/Justin/Data/DT_Items and /Game/Justin/Data/DT_Clothing if they
@@ -378,6 +396,15 @@ public:
 	// jump applies every interval it crossed instead of only one.
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
 	float LastHeatDecayAtSeconds = 0.f;
+
+	// Thirst bleeds the same way Heat does, just slower: -1 per this many
+	// in-game minutes. Same "time only moves when you talk" rule, so a long
+	// conversation leaves you dry.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time", meta = (ClampMin = "1"))
+	int32 ThirstDecayIntervalMinutes = 20;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
+	float LastThirstDecayAtSeconds = 0.f;
 
 	// Adds game-time and applies anything that keys off it (currently the
 	// Heat bleed). Callers should use this rather than writing
@@ -461,6 +488,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
 	bool RemoveNotes(int32 Amount);
 
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	void AddCigarettes(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Currency")
+	bool RemoveCigarettes(int32 Amount);
+
 	// Move an item to a new position inside the Inventory array. Used by the
 	// inventory UI's drag-to-reorder. NewIdx is clamped to [0, Inventory.Num()-1].
 	// Returns true if anything actually moved (false for no-op or unknown id).
@@ -471,16 +504,91 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
 	bool ReorderEquippedClothing(FName ClothingId, int32 NewIdx);
 
-	// Set an item's preferred inventory-grid slot. Persists across open/close
-	// so manual layouts stick. Broadcasts OnStateChanged.
+	// ── Carry model ────────────────────────────────────────────────────
+	// How many items a carrier holds. Hands 1, Pockets 2, worn clothing
+	// slots 1 each. The single place to change capacity — a Bumbag that
+	// grants +3 becomes a case here, not a new system.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
-	void SetItemSlot(FName ItemId, int32 SlotIndex);
+	int32 GetSlotCapacity(EEclipseSlotType Slot) const;
 
-	// Swap the slot positions of two items. SlotA/SlotB are the slots they
-	// currently occupy (used to seed positions for items that don't yet
-	// have an entry in ItemSlotPositions).
+	// Items currently in a carrier, in insertion order.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
-	void SwapItemSlots(FName ItemA, int32 SlotA, FName ItemB, int32 SlotB);
+	TArray<FName> GetItemsInSlot(EEclipseSlotType Slot) const;
+
+	// Can this item go there? False when the carrier is full, or when a
+	// Large item is aimed at a pocket. Ignores the item's current placement,
+	// so re-checking an item against its own carrier reports honestly.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool CanPlaceInSlot(FName ItemId, EEclipseSlotType Slot) const;
+
+	// Move a carried item into a carrier. Fails (returns false, changes
+	// nothing) when CanPlaceInSlot says no. Broadcasts OnStateChanged.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool PlaceItemInSlot(FName ItemId, EEclipseSlotType Slot);
+
+	// Size of an item, resolved from DT_Items or DT_Clothing (whichever has
+	// the row). Unknown ids are treated as Small.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	EEclipseItemSize GetItemSize(FName ItemId) const;
+
+	// Remove the item from the player and spawn it as a pickup actor in
+	// front of the pawn. Not player-facing any more — there is no DROP
+	// button. It survives as the mechanism *behind* a swap (the thing you
+	// give up has to physically land back in the room so you can change
+	// your mind) and for the save-load overflow migration.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool DropItemToWorld(FName ItemId);
+
+	// Find a carrier for a freshly-added item: pockets if it's small and
+	// there's room, else the hands. False when you're full — which tells
+	// AddItem to refuse the pickup, and the item actor to offer a swap
+	// instead. It deliberately does NOT silently drop what you're holding:
+	// giving something up is the player's decision to make, not a side
+	// effect of walking into a pickup.
+	bool AutoPlace(FName ItemId);
+
+	// See the definition — keeps the carried cigarette chip in step with
+	// the Cigarettes count.
+	void SyncCigaretteChip();
+
+	// What you could give up to make room for `IncomingId`. Only carried
+	// loose items — worn clothing isn't in the running, and neither is
+	// anything already in a carrier that has space. Pocket-sized incoming
+	// items can't be swapped for a hands-only occupant if a pocket would
+	// have taken them, so the list is exactly "things whose carrier is the
+	// one that's blocking you".
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	TArray<FName> GetSwapCandidates(FName IncomingId) const;
+
+	// Give up `OutgoingId` (it lands in the room) and take `IncomingId` in
+	// its place. False if the outgoing item isn't held or the incoming one
+	// still won't fit afterward — in which case nothing changed.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool SwapCarriedItem(FName OutgoingId, FName IncomingId);
+
+	// Row DisplayName for an item or clothing id, falling back to the id
+	// itself in caps. Shared by the swap prompt and the inventory panel so
+	// one item never reads two different ways.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	FText GetItemDisplayName(FName ItemId) const;
+
+	// Reconcile ItemPlacements with Inventory: forget stale entries, seat
+	// anything unplaced, and drop whatever no longer fits. Safe to call
+	// repeatedly — the inventory panel runs it on open so a load that
+	// happened before the pawn existed still gets its overflow dropped.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	void MigrateCarryPlacements();
+
+	// Move an item into Hands / Pockets, taking it off the body first if
+	// it's being worn. This is how a garment gets stowed rather than worn —
+	// dragging Shades from the EYES slot into a pocket.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	bool MoveItemToCarrier(FName ItemId, EEclipseSlotType Carrier);
+
+	// Take an item that just left the body and find it a carrier. Drops it
+	// in the room when there's no room left, because the alternative is an
+	// item sitting in Inventory with no carrier — invisible and unreachable.
+	bool ReturnToCarryOrDrop(FName ItemId);
 
 	// Consume an item — applies its row's effect (currently: drink restores
 	// thirst, hair triggers Quest.bHasHair, eye triggers Quest.bHasEye), then

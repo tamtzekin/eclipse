@@ -140,48 +140,19 @@ void UEclipseInventoryStripWidget::Rebuild()
 	SlotColumn->ClearChildren();
 	ActiveChips.Reset();
 
-	// Sparse layout: each item lives in the slot it most recently occupied
-	// (ItemSlotPositions). Items without a recorded slot get the first free
-	// one. Empty slots render as drop-target placeholders.
+	// The strip mirrors the carriers on the paper doll: hands first, then
+	// pockets, then any worn clothing. There's no free-form arrangement any
+	// more: an item's position IS which carrier it's in, so this just lists
+	// them in that order and pads the rest with empty drop targets.
 	struct FStripEntry { FName Id; bool bEquipped = false; };
-	TArray<FStripEntry> AllItems;
-	for (const FName& Id : GS->Inventory)         AllItems.Add({Id, false});
-	for (const FName& Id : GS->EquippedClothing)  AllItems.Add({Id, true});
-
-	// Map slot index → item (or NAME_None if empty).
 	TArray<FStripEntry> SlotMap;
-	SlotMap.Init({NAME_None, false}, NumSlots);
+	for (const FName& Id : GS->GetItemsInSlot(EEclipseSlotType::Hands))   SlotMap.Add({Id, false});
+	for (const FName& Id : GS->GetItemsInSlot(EEclipseSlotType::Pockets)) SlotMap.Add({Id, false});
+	for (const FName& Id : GS->EquippedClothing)                          SlotMap.Add({Id, true});
+	while (SlotMap.Num() < NumSlots) SlotMap.Add({NAME_None, false});
 
-	// First pass: items with a remembered slot in range.
-	TArray<FStripEntry> Pending;
-	for (const FStripEntry& E : AllItems)
-	{
-		const int32* Pref = GS->ItemSlotPositions.Find(E.Id);
-		if (Pref && *Pref >= 0 && *Pref < NumSlots && SlotMap[*Pref].Id.IsNone())
-		{
-			SlotMap[*Pref] = E;
-		}
-		else
-		{
-			Pending.Add(E);
-		}
-	}
-	// Second pass: anything else fills the leftmost free slot.
-	for (const FStripEntry& E : Pending)
-	{
-		for (int32 i = 0; i < NumSlots; ++i)
-		{
-			if (SlotMap[i].Id.IsNone())
-			{
-				SlotMap[i] = E;
-				GS->SetItemSlot(E.Id, i);
-				break;
-			}
-		}
-	}
-
-	// Build the 6 cells.
-	for (int32 i = 0; i < NumSlots; ++i)
+	// Build the cells.
+	for (int32 i = 0; i < SlotMap.Num(); ++i)
 	{
 		USizeBox* Cell = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 		Cell->SetWidthOverride(80.f);
@@ -206,6 +177,16 @@ void UEclipseInventoryStripWidget::Rebuild()
 				if (!Row.Icon.IsEmpty())        Icon = Row.Icon;
 				if (!Row.DisplayName.IsEmpty()) Name = Row.DisplayName.ToString();
 				Tint = Row.TintColor;
+			}
+
+			// Stacked items show how many. Cigarettes are the only stack in
+			// the game — one chip, a count that moves — so the quantity is
+			// read from the counter rather than from a per-chip field that
+			// every other item would leave at 1.
+			if (UEclipseGameStateSubsystem::GetBaseItemId(E.Id) == UEclipseGameStateSubsystem::CigaretteItemId)
+			{
+				Icon = FString::Printf(TEXT("%d"), GS->Cigarettes);
+				Name = FString::Printf(TEXT("%s  x%d"), *Name, GS->Cigarettes);
 			}
 			Chip->InitChip(this, E.Id, E.bEquipped, Icon, Name, Tint, i);
 		}
@@ -235,92 +216,16 @@ void UEclipseInventoryStripWidget::SelectItem(FName ItemId, bool bIsClothing)
 
 void UEclipseInventoryStripWidget::HandleChipDroppedOnSlot(FName SourceItemId, bool bSourceIsClothing, int32 TargetSlotIndex)
 {
-	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	if (!GS || TargetSlotIndex < 0 || TargetSlotIndex >= NumSlots) return;
-
-	UEclipseInventoryChipWidget* TargetChip =
-		ActiveChips.IsValidIndex(TargetSlotIndex) ? ActiveChips[TargetSlotIndex].Get() : nullptr;
-
-	if (!TargetChip) return;
-
-	if (TargetChip->IsEmptySlot())
-	{
-		// Drop into an empty slot — just record the new preferred position.
-		UE_LOG(LogEclipse, Log, TEXT("Strip: '%s' → empty slot %d"),
-			*SourceItemId.ToString(), TargetSlotIndex);
-		GS->SetItemSlot(SourceItemId, TargetSlotIndex);
-		return;
-	}
-
-	// Drop onto an occupied slot — swap the two items.
-	const FName TgtId = TargetChip->GetItemId();
-	UE_LOG(LogEclipse, Log, TEXT("Strip: swap '%s' ↔ '%s' (slot %d ↔ source slot)"),
-		*SourceItemId.ToString(), *TgtId.ToString(), TargetSlotIndex);
-
-	// Source's current slot — look it up via ActiveChips.
-	int32 SourceSlot = INDEX_NONE;
-	for (int32 i = 0; i < ActiveChips.Num(); ++i)
-	{
-		if (ActiveChips[i] && ActiveChips[i]->GetItemId() == SourceItemId)
-		{
-			SourceSlot = i;
-			break;
-		}
-	}
-	GS->SwapItemSlots(SourceItemId, SourceSlot, TgtId, TargetSlotIndex);
+	// No-op: the strip no longer stores per-item positions, so there is
+	// nothing to reorder. An item's place is decided by which carrier holds
+	// it, and that's changed on the paper doll, not here.
 }
 
 void UEclipseInventoryStripWidget::HandleChipDroppedOutside(FName ItemId, bool bIsClothing)
 {
-	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	if (!GS) return;
-
-	UWorld* World = GetWorld();
-	APlayerController* PC = GetOwningPlayer();
-	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-
-	// Spawn a fresh pickup actor at the player's feet so the player can grab
-	// the item back. Mesh + tint match the rest of the consumables (cylinder
-	// + dark-blue MIC); designers can swap per-item meshes later.
-	if (World && Pawn)
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
-		const FVector PawnLoc  = Pawn->GetActorLocation();
-		const FVector Forward  = Pawn->GetActorForwardVector();
-		// 80 cm in front of the pawn, slightly raised. OnConstruction will
-		// floor-snap once the trace fires.
-		const FVector SpawnLoc = PawnLoc + Forward * 80.f + FVector(0.f, 0.f, 30.f);
-
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AEclipseItemActor* Pickup = World->SpawnActor<AEclipseItemActor>(
-			AEclipseItemActor::StaticClass(), SpawnLoc, FRotator::ZeroRotator, Params);
-
-		if (Pickup)
-		{
-			Pickup->ItemId = ItemId;
-
-			// Cylinder placeholder + dark-blue MIC for the visual. Soft-loads
-			// so missing-asset cases just render as engine grey.
-			if (UStaticMesh* Cyl = Cast<UStaticMesh>(StaticLoadObject(
-				UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"))))
-			{
-				if (Pickup->Mesh) Pickup->Mesh->SetStaticMesh(Cyl);
-			}
-			if (UMaterialInterface* Mat = Cast<UMaterialInterface>(StaticLoadObject(
-				UMaterialInterface::StaticClass(), nullptr,
-				TEXT("/Game/Justin/Materials/MI_ItemDarkBlue.MI_ItemDarkBlue"))))
-			{
-				if (Pickup->Mesh) Pickup->Mesh->SetMaterial(0, Mat);
-			}
-			Pickup->SetActorScale3D(FVector(0.30f, 0.30f, 0.50f));
-			Pickup->SetActorLabel(FString::Printf(TEXT("Item_%s_dropped"), *ItemId.ToString()));
-			UE_LOG(LogEclipse, Log, TEXT("Strip: dropped '%s' at %s"),
-				*ItemId.ToString(), *SpawnLoc.ToString());
-		}
+		GS->DropItemToWorld(ItemId);
 	}
-
-	// Remove from inventory + free the slot. Broadcasts OnStateChanged →
-	// Rebuild fires → strip re-renders without this item.
-	if (bIsClothing) GS->UnequipClothing(ItemId);
-	else             GS->RemoveItem(ItemId);
 }

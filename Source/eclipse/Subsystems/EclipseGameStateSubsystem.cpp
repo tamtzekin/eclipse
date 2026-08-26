@@ -15,6 +15,10 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Items/EclipseItemActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 
 void UEclipseGameStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -103,24 +107,11 @@ void UEclipseGameStateSubsystem::ApplyDefaultOutfitIfEmpty()
 	AutoEquip(TEXT("jeans"), EEclipseSlotType::Bottom);
 	AutoEquip(TEXT("shoes"), EEclipseSlotType::Shoes);
 
-	// Test wardrobe: drop a handful of unequipped wearables into the
-	// inventory so the Wearables tab's AVAILABLE grid has chips to drag.
-	// TODO(design): remove once real pickups populate the wardrobe.
-	auto GiveUnequipped = [this](FName Id)
-	{
-		FEclipseClothingRow Row;
-		if (!GetClothingRow(Id, Row)) return;
-		if (!Inventory.Contains(Id)) Inventory.Add(Id);
-	};
-	GiveUnequipped(TEXT("jacket"));
-	GiveUnequipped(TEXT("hoodie"));
-	GiveUnequipped(TEXT("beret"));
-	GiveUnequipped(TEXT("cap"));
-	GiveUnequipped(TEXT("chain"));
-	GiveUnequipped(TEXT("scarf"));
-	GiveUnequipped(TEXT("sunglasses"));
-
-	UE_LOG(LogEclipse, Log, TEXT("GS: applied default outfit + test wardrobe (empty slot map)"));
+	// (There used to be a "test wardrobe" here that pushed seven unequipped
+	// garments into Inventory to give the old AVAILABLE grid chips to drag.
+	// That grid is gone, and the carry limit is three, so spare clothes now
+	// have to be found in the world, worn, or left behind.)
+	UE_LOG(LogEclipse, Log, TEXT("GS: applied default outfit (empty slot map)"));
 }
 
 void UEclipseGameStateSubsystem::Deinitialize()
@@ -158,6 +149,18 @@ bool UEclipseGameStateSubsystem::AddItem(FName ItemId)
 	}
 
 	Inventory.Add(UniqueId);
+
+	// Everything carried must live in a carrier — there's no backpack to
+	// fall back on. If we can't find room even after dropping what's in
+	// hand, undo the pickup so the item stays in the world rather than
+	// becoming an invisible orphan.
+	if (!AutoPlace(UniqueId))
+	{
+		Inventory.Remove(UniqueId);
+		UE_LOG(LogEclipse, Log, TEXT("AddItem: '%s' refused — nowhere to put it"), *UniqueId.ToString());
+		return false;
+	}
+
 	// Quest flag check uses the base id so a runtime id like
 	// "wristband__Item_Wristband" still flips bHasWristband on pickup.
 	if (GetBaseItemId(UniqueId) == TEXT("wristband")) bHasWristband = true;
@@ -165,12 +168,199 @@ bool UEclipseGameStateSubsystem::AddItem(FName ItemId)
 	return true;
 }
 
+bool UEclipseGameStateSubsystem::AutoPlace(FName ItemId)
+{
+	// Pockets first for small things, so the hands stay free for whatever
+	// you pick up next.
+	if (CanPlaceInSlot(ItemId, EEclipseSlotType::Pockets))
+	{
+		ItemPlacements.Add(ItemId, EEclipseSlotType::Pockets);
+		return true;
+	}
+	if (CanPlaceInSlot(ItemId, EEclipseSlotType::Hands))
+	{
+		ItemPlacements.Add(ItemId, EEclipseSlotType::Hands);
+		return true;
+	}
+
+	// Full. This used to quietly drop whatever was in your hands and take
+	// the new thing regardless — you'd walk past a pickup and lose what you
+	// were carrying without ever agreeing to it. Now it just refuses, and
+	// the caller (AEclipseItemActor::Pickup) offers an explicit swap.
+	return false;
+}
+
+TArray<FName> UEclipseGameStateSubsystem::GetSwapCandidates(FName IncomingId) const
+{
+	TArray<FName> Out;
+
+	// Anything Large needs the hands, so only what's in the hands can free
+	// up room for it. Something Small could go in either, so everything
+	// carried is a fair trade.
+	const bool bNeedsHands = (GetItemSize(IncomingId) == EEclipseItemSize::Large);
+
+	for (const FName& Held : GetItemsInSlot(EEclipseSlotType::Hands))
+	{
+		if (Held != IncomingId) Out.Add(Held);
+	}
+	if (!bNeedsHands)
+	{
+		for (const FName& Held : GetItemsInSlot(EEclipseSlotType::Pockets))
+		{
+			if (Held != IncomingId) Out.Add(Held);
+		}
+	}
+	return Out;
+}
+
+bool UEclipseGameStateSubsystem::SwapCarriedItem(FName OutgoingId, FName IncomingId)
+{
+	if (!Inventory.Contains(OutgoingId)) return false;
+
+	// Remember where the outgoing item sat: if the incoming one turns out
+	// not to fit after all, we've already put the old one on the floor and
+	// the player would be left with neither. Checking first is cheaper than
+	// unwinding a spawned pickup actor.
+	const EEclipseSlotType* Carrier = ItemPlacements.Find(OutgoingId);
+	if (!Carrier) return false;
+
+	const bool bIncomingFits =
+		(*Carrier == EEclipseSlotType::Hands) ||
+		(GetItemSize(IncomingId) != EEclipseItemSize::Large);
+	if (!bIncomingFits)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Swap refused: '%s' is too big for the %s slot '%s' frees up"),
+			*IncomingId.ToString(),
+			(*Carrier == EEclipseSlotType::Hands) ? TEXT("hands") : TEXT("pocket"),
+			*OutgoingId.ToString());
+		return false;
+	}
+
+	if (!DropItemToWorld(OutgoingId)) return false;   // no pawn — keep holding it
+
+	if (!AddItem(IncomingId))
+	{
+		UE_LOG(LogEclipse, Warning,
+			TEXT("Swap: dropped '%s' but couldn't take '%s' — both are now in the room"),
+			*OutgoingId.ToString(), *IncomingId.ToString());
+		return false;
+	}
+
+	UE_LOG(LogEclipse, Log, TEXT("Swapped '%s' for '%s'"), *OutgoingId.ToString(), *IncomingId.ToString());
+	return true;
+}
+
+FText UEclipseGameStateSubsystem::GetItemDisplayName(FName ItemId) const
+{
+	FEclipseItemRow IRow;
+	if (GetItemRow(ItemId, IRow) && !IRow.DisplayName.IsEmpty()) return IRow.DisplayName;
+
+	FEclipseClothingRow CRow;
+	if (GetClothingRow(ItemId, CRow) && !CRow.DisplayName.IsEmpty()) return CRow.DisplayName;
+
+	// No row (or a row with no wording yet) — show the base id in caps so
+	// the prompt still names something the player can recognise on the
+	// floor, rather than going blank.
+	return FText::FromString(GetBaseItemId(ItemId).ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper());
+}
+
+bool UEclipseGameStateSubsystem::MoveItemToCarrier(FName ItemId, EEclipseSlotType Carrier)
+{
+	if (!CanPlaceInSlot(ItemId, Carrier)) return false;
+
+	// Coming off the body: clear both the flat list and the slot map, or the
+	// garment would show as worn AND carried.
+	if (EquippedClothing.Contains(ItemId))
+	{
+		EquippedClothing.Remove(ItemId);
+		for (auto It = EquippedSlots.CreateIterator(); It; ++It)
+		{
+			if (It.Value() == ItemId) It.RemoveCurrent();
+		}
+	}
+	if (!Inventory.Contains(ItemId)) Inventory.Add(ItemId);
+
+	ItemPlacements.Add(ItemId, Carrier);
+	NotifyChanged();
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::ReturnToCarryOrDrop(FName ItemId)
+{
+	if (!Inventory.Contains(ItemId)) Inventory.Add(ItemId);
+	if (AutoPlace(ItemId)) return true;
+
+	// Hands and pockets are both full and we couldn't free the hands, so the
+	// item goes on the floor. Never leave it carried-but-unplaced: with no
+	// backpack in this design, that's the same as deleting it.
+	UE_LOG(LogEclipse, Log, TEXT("ReturnToCarryOrDrop: no room for '%s' — dropping it"),
+		*ItemId.ToString());
+	DropItemToWorld(ItemId);
+	return false;
+}
+
+void UEclipseGameStateSubsystem::MigrateCarryPlacements()
+{
+	// Drop stale entries first: anything placed that isn't carried any more,
+	// and anything whose recorded carrier isn't a carrier at all (a save
+	// written when this map held 0..17 grid indices deserialises its ints
+	// into arbitrary enum values).
+	for (auto It = ItemPlacements.CreateIterator(); It; ++It)
+	{
+		const bool bStillHeld = Inventory.Contains(It.Key());
+		const bool bRealSlot  = It.Value() == EEclipseSlotType::Hands
+		                     || It.Value() == EEclipseSlotType::Pockets;
+		if (!bStillHeld || !bRealSlot) It.RemoveCurrent();
+	}
+
+	// Re-seat anything unplaced, in inventory order so the player's first
+	// items win the space. Overflow goes on the floor rather than being
+	// deleted — losing a quest item to a silent migration is unforgivable.
+	TArray<FName> Overflow;
+	for (const FName& Id : Inventory)
+	{
+		if (ItemPlacements.Contains(Id)) continue;
+
+		if (CanPlaceInSlot(Id, EEclipseSlotType::Pockets))
+		{
+			ItemPlacements.Add(Id, EEclipseSlotType::Pockets);
+		}
+		else if (CanPlaceInSlot(Id, EEclipseSlotType::Hands))
+		{
+			ItemPlacements.Add(Id, EEclipseSlotType::Hands);
+		}
+		else
+		{
+			Overflow.Add(Id);
+		}
+	}
+
+	for (const FName& Id : Overflow)
+	{
+		if (!DropItemToWorld(Id))
+		{
+			// No pawn yet (cross-level load). Leave it carried-but-unplaced;
+			// this runs again from the inventory panel, by which point there
+			// is a pawn to drop it in front of.
+			UE_LOG(LogEclipse, Warning,
+				TEXT("MigrateCarryPlacements: '%s' has no room and can't be dropped yet"),
+				*Id.ToString());
+		}
+	}
+
+	if (Overflow.Num() > 0)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("MigrateCarryPlacements: %d item(s) overflowed the carry limit"),
+			Overflow.Num());
+	}
+}
+
 bool UEclipseGameStateSubsystem::RemoveItem(FName ItemId)
 {
 	const int32 Idx = Inventory.IndexOfByKey(ItemId);
 	if (Idx == INDEX_NONE) return false;
 	Inventory.RemoveAt(Idx);
-	ItemSlotPositions.Remove(ItemId);   // free the grid slot
+	ItemPlacements.Remove(ItemId);   // no longer carried anywhere
 	// Wristband-flag bookkeeping: only flip bHasWristband off if NO other
 	// inventory entry resolves to base id "wristband" (defensive — the
 	// player almost never holds two, but the check is cheap and makes the
@@ -198,7 +388,7 @@ bool UEclipseGameStateSubsystem::UnequipClothing(FName ClothingId)
 	const int32 N = EquippedClothing.Remove(ClothingId);
 	if (N > 0)
 	{
-		ItemSlotPositions.Remove(ClothingId);
+		ItemPlacements.Remove(ClothingId);   // worn now, not carried
 		NotifyChanged();
 	}
 	return N > 0;
@@ -235,17 +425,20 @@ bool UEclipseGameStateSubsystem::EquipClothingToSlot(FName ClothingId)
 	{
 		if (!Existing->IsNone() && *Existing != ClothingId)
 		{
-			Inventory.Add(*Existing);
-			EquippedClothing.Remove(*Existing);
+			const FName Displaced = *Existing;
+			EquippedClothing.Remove(Displaced);
+			// Same rule as UnequipSlot: the garment you just took off needs a
+			// hand, a pocket, or the floor.
+			ReturnToCarryOrDrop(Displaced);
 			UE_LOG(LogEclipse, Log,
-				TEXT("EquipClothingToSlot: slot %d previously had '%s' → back to inventory"),
-				(int32)Slot, *Existing->ToString());
+				TEXT("EquipClothingToSlot: slot %d previously had '%s' -> stowed or dropped"),
+				(int32)Slot, *Displaced.ToString());
 		}
 	}
 
 	// Move ClothingId out of the inventory grid into the slot.
 	Inventory.RemoveAt(InvIdx);
-	ItemSlotPositions.Remove(ClothingId);
+	ItemPlacements.Remove(ClothingId);   // worn now, not carried
 	EquippedSlots.Add(Slot, ClothingId);
 	if (!EquippedClothing.Contains(ClothingId))
 	{
@@ -267,10 +460,14 @@ bool UEclipseGameStateSubsystem::UnequipSlot(EEclipseSlotType Slot)
 	const FName ClothingId = *Existing;
 	EquippedSlots.Remove(Slot);
 	EquippedClothing.Remove(ClothingId);
-	Inventory.Add(ClothingId);
+
+	// Taking something off has to put it somewhere real — a hand, a pocket,
+	// or the floor. Adding it straight to Inventory with no carrier would
+	// make it vanish from the only screen that shows it.
+	ReturnToCarryOrDrop(ClothingId);
 
 	UE_LOG(LogEclipse, Log,
-		TEXT("UnequipSlot: slot %d → '%s' back to inventory"),
+		TEXT("UnequipSlot: slot %d -> '%s' taken off"),
 		(int32)Slot, *ClothingId.ToString());
 	NotifyChanged();
 	return true;
@@ -331,29 +528,209 @@ bool UEclipseGameStateSubsystem::RemoveNotes(int32 Amount)
 	return true;
 }
 
-void UEclipseGameStateSubsystem::SetItemSlot(FName ItemId, int32 SlotIndex)
+const FName UEclipseGameStateSubsystem::CigaretteItemId(TEXT("cigarettes"));
+
+// Keep the carried chip in step with the count: present while you have any,
+// gone once you don't. Called from both cigarette mutators so the two can't
+// drift apart.
+void UEclipseGameStateSubsystem::SyncCigaretteChip()
 {
-	if (ItemId.IsNone() || SlotIndex < 0) return;
-	const int32* Existing = ItemSlotPositions.Find(ItemId);
-	if (Existing && *Existing == SlotIndex) return;   // no-op
-	ItemSlotPositions.Add(ItemId, SlotIndex);
+	const bool bHeld = Inventory.Contains(CigaretteItemId);
+	if (Cigarettes > 0 && !bHeld)
+	{
+		// Straight into a pocket rather than through AddItem: a pack of
+		// smokes shouldn't be refused for a full inventory when it merges
+		// into a chip you may already be carrying, and it must never be
+		// given a "__actor" runtime id — the id IS the stack key.
+		Inventory.Add(CigaretteItemId);
+		if (!AutoPlace(CigaretteItemId))
+		{
+			// Genuinely nowhere to put it. Keep the count (they're in your
+			// hand, conceptually) but don't leave an unplaced entry, which
+			// the carry model treats as corrupt.
+			Inventory.Remove(CigaretteItemId);
+		}
+	}
+	else if (Cigarettes <= 0 && bHeld)
+	{
+		Inventory.Remove(CigaretteItemId);
+		ItemPlacements.Remove(CigaretteItemId);
+	}
+}
+
+void UEclipseGameStateSubsystem::AddCigarettes(int32 Amount)
+{
+	if (Amount <= 0) return;
+	Cigarettes += Amount;
+	SyncCigaretteChip();
+	UE_LOG(LogEclipse, Log, TEXT("Currency: +%d cigarettes → %d total"), Amount, Cigarettes);
 	NotifyChanged();
 }
 
-void UEclipseGameStateSubsystem::SwapItemSlots(FName ItemA, int32 SlotA, FName ItemB, int32 SlotB)
+bool UEclipseGameStateSubsystem::RemoveCigarettes(int32 Amount)
 {
-	if (ItemA.IsNone() || ItemB.IsNone() || ItemA == ItemB) return;
-	// Seed missing entries from the visual slots that the inventory UI
-	// passed in — that way swapping items the player has never moved still
-	// produces a stable map (instead of one item snapping back to slot 0).
-	if (!ItemSlotPositions.Contains(ItemA) && SlotA >= 0) ItemSlotPositions.Add(ItemA, SlotA);
-	if (!ItemSlotPositions.Contains(ItemB) && SlotB >= 0) ItemSlotPositions.Add(ItemB, SlotB);
-
-	const int32 PrevA = ItemSlotPositions.FindRef(ItemA);
-	const int32 PrevB = ItemSlotPositions.FindRef(ItemB);
-	ItemSlotPositions.Add(ItemA, PrevB);
-	ItemSlotPositions.Add(ItemB, PrevA);
+	if (Amount <= 0) return true;
+	if (Cigarettes < Amount)
+	{
+		UE_LOG(LogEclipse, Log, TEXT("Currency: cannot spend %d cigarettes (have %d)"), Amount, Cigarettes);
+		return false;
+	}
+	Cigarettes -= Amount;
+	SyncCigaretteChip();
+	UE_LOG(LogEclipse, Log, TEXT("Currency: -%d cigarettes → %d total"), Amount, Cigarettes);
 	NotifyChanged();
+	return true;
+}
+
+// ── Carry model ────────────────────────────────────────────────────────────
+//
+// The player carries very little on purpose: one thing in the hands, two
+// small things in the pockets. Everything else is worn, on the floor, or in
+// a locker. Capacity lives in this one function so the Bumbag (+3) is a
+// case here rather than a parallel system.
+
+int32 UEclipseGameStateSubsystem::GetSlotCapacity(EEclipseSlotType Slot) const
+{
+	switch (Slot)
+	{
+	case EEclipseSlotType::Hands:   return 1;
+	case EEclipseSlotType::Pockets: return 2;
+	// Worn clothing — one garment per body slot.
+	default:                        return 1;
+	}
+}
+
+EEclipseItemSize UEclipseGameStateSubsystem::GetItemSize(FName ItemId) const
+{
+	// An id can name either table; clothing wins only if DT_Items misses,
+	// since a row present in both is authored as an item first.
+	FEclipseItemRow IRow;
+	if (GetItemRow(ItemId, IRow)) return IRow.Size;
+
+	FEclipseClothingRow CRow;
+	if (GetClothingRow(ItemId, CRow)) return CRow.Size;
+
+	// Unknown id — assume it pockets, so a missing DT row can't make an
+	// item uncarryable.
+	return EEclipseItemSize::Small;
+}
+
+TArray<FName> UEclipseGameStateSubsystem::GetItemsInSlot(EEclipseSlotType Slot) const
+{
+	// Walk Inventory rather than the placement map so the result keeps
+	// inventory order, which is what the UI draws left-to-right.
+	TArray<FName> Out;
+	for (const FName& Id : Inventory)
+	{
+		const EEclipseSlotType* Where = ItemPlacements.Find(Id);
+		if (Where && *Where == Slot) Out.Add(Id);
+	}
+	return Out;
+}
+
+bool UEclipseGameStateSubsystem::CanPlaceInSlot(FName ItemId, EEclipseSlotType Slot) const
+{
+	if (ItemId.IsNone()) return false;
+
+	// Only the two carriers hold loose items; body slots go through
+	// EquipClothingToSlot instead.
+	if (Slot != EEclipseSlotType::Hands && Slot != EEclipseSlotType::Pockets) return false;
+
+	// A pocket won't take something Large.
+	if (Slot == EEclipseSlotType::Pockets && GetItemSize(ItemId) == EEclipseItemSize::Large)
+	{
+		return false;
+	}
+
+	// Count occupants, discounting the item itself so "move it where it
+	// already is" doesn't read as full.
+	int32 Used = 0;
+	for (const FName& Id : GetItemsInSlot(Slot))
+	{
+		if (Id != ItemId) ++Used;
+	}
+	return Used < GetSlotCapacity(Slot);
+}
+
+bool UEclipseGameStateSubsystem::PlaceItemInSlot(FName ItemId, EEclipseSlotType Slot)
+{
+	if (!Inventory.Contains(ItemId))    return false;
+	if (!CanPlaceInSlot(ItemId, Slot))  return false;
+
+	const EEclipseSlotType* Existing = ItemPlacements.Find(ItemId);
+	if (Existing && *Existing == Slot) return true;   // already there
+
+	ItemPlacements.Add(ItemId, Slot);
+	NotifyChanged();
+	return true;
+}
+
+bool UEclipseGameStateSubsystem::DropItemToWorld(FName ItemId)
+{
+	const bool bIsClothing = !Inventory.Contains(ItemId) && EquippedClothing.Contains(ItemId);
+	if (!bIsClothing && !Inventory.Contains(ItemId)) return false;
+
+	// Spawn a pickup where the player is standing so the item physically
+	// re-enters the world and can be collected again. Cylinder + dark-blue
+	// MIC placeholder, matching the loose items already scattered around the
+	// levels; per-item meshes are a later polish pass.
+	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (World && Pawn)
+	{
+		const FVector SpawnLoc = Pawn->GetActorLocation()
+			+ Pawn->GetActorForwardVector() * 80.f + FVector(0.f, 0.f, 30.f);
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (AEclipseItemActor* Pickup = World->SpawnActor<AEclipseItemActor>(
+				AEclipseItemActor::StaticClass(), SpawnLoc, FRotator::ZeroRotator, Params))
+		{
+			// BASE id on the actor: Pickup_Implementation mints a fresh
+			// runtime id on re-collection, so handing it the old one would
+			// double-suffix.
+			Pickup->ItemId = GetBaseItemId(ItemId);
+
+			// Row-driven mesh + scale (DT_Items). A swapped-out item has to
+			// look like the thing you just gave up, or you can't find it
+			// again on the floor.
+			Pickup->ApplyMeshFromRow();
+
+			// Only fall back to the placeholder cylinder when the row has no
+			// mesh authored yet.
+			if (Pickup->Mesh && !Pickup->Mesh->GetStaticMesh())
+			{
+				if (UStaticMesh* Cyl = Cast<UStaticMesh>(StaticLoadObject(
+					UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"))))
+				{
+					Pickup->Mesh->SetStaticMesh(Cyl);
+				}
+				if (UMaterialInterface* Mat = Cast<UMaterialInterface>(StaticLoadObject(
+					UMaterialInterface::StaticClass(), nullptr,
+					TEXT("/Game/Justin/Materials/MI_ItemDarkBlue.MI_ItemDarkBlue"))))
+				{
+					Pickup->Mesh->SetMaterial(0, Mat);
+				}
+				Pickup->SetActorScale3D(FVector(0.30f, 0.30f, 0.50f));
+			}
+#if WITH_EDITOR
+			Pickup->SetActorLabel(FString::Printf(TEXT("Item_%s_dropped"), *Pickup->ItemId.ToString()));
+#endif
+		}
+	}
+	else
+	{
+		// No pawn to drop at (loading before the level is up, headless
+		// tests). Removing without spawning would silently destroy the item,
+		// so refuse instead and let the caller keep holding it.
+		UE_LOG(LogEclipse, Warning, TEXT("DropItemToWorld('%s'): no pawn — keeping the item"),
+			*ItemId.ToString());
+		return false;
+	}
+
+	UE_LOG(LogEclipse, Log, TEXT("Dropped '%s' to the world"), *ItemId.ToString());
+	return bIsClothing ? UnequipClothing(ItemId) : RemoveItem(ItemId);
 }
 
 // Shared helper — pull `ItemId` out of `Array` and re-insert at NewIdx.
@@ -787,6 +1164,15 @@ void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
 		ChangeMeter(TEXT("heat"), -1);
 	}
 
+	// Same shape for Thirst on its own, slower interval. Separate accumulator
+	// so the two never have to share a period.
+	const float ThirstIntervalSeconds = FMath::Max(1, ThirstDecayIntervalMinutes) * 60.f;
+	while (ChapterElapsedSeconds - LastThirstDecayAtSeconds >= ThirstIntervalSeconds)
+	{
+		LastThirstDecayAtSeconds += ThirstIntervalSeconds;
+		ChangeMeter(TEXT("thirst"), -1);
+	}
+
 	NotifyChanged();
 }
 
@@ -945,7 +1331,8 @@ namespace
 		Save->bHasWristband            = GS.bHasWristband;
 		Save->Coins                    = GS.Coins;
 		Save->Notes                    = GS.Notes;
-		Save->ItemSlotPositions        = GS.ItemSlotPositions;
+		Save->Cigarettes               = GS.Cigarettes;
+		Save->ItemPlacements           = GS.ItemPlacements;
 		Save->Quest                    = GS.Quest;
 		Save->MetNPCs                  = GS.MetNPCs;
 		Save->FailedChoicesThisChapter = GS.FailedChoicesThisChapter;
@@ -1027,7 +1414,8 @@ namespace
 		GS.bHasWristband            = Save->bHasWristband;
 		GS.Coins                    = Save->Coins;
 		GS.Notes                    = Save->Notes;
-		GS.ItemSlotPositions        = Save->ItemSlotPositions;
+		GS.Cigarettes               = Save->Cigarettes;
+		GS.ItemPlacements           = Save->ItemPlacements;
 		GS.Quest                    = Save->Quest;
 		GS.MetNPCs                  = Save->MetNPCs;
 		GS.FailedChoicesThisChapter = Save->FailedChoicesThisChapter;
@@ -1039,6 +1427,11 @@ namespace
 		// EquippedSlots map. Re-apply baseline outfit so old saves get
 		// the same fresh-game wardrobe instead of an empty paperdoll.
 		GS.ApplyDefaultOutfitIfEmpty();
+
+		// Saves from before the carry model have no placements, and old ones
+		// routinely hold far more than hands+pockets can take. Fit what fits,
+		// drop the rest at the player's feet.
+		GS.MigrateCarryPlacements();
 
 		if (W)
 		{

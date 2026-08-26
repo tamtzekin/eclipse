@@ -54,11 +54,12 @@ public:
 	// Currency counters (separate from Inventory chips).
 	UPROPERTY() int32 Coins = 0;
 	UPROPERTY() int32 Notes = 0;
+	UPROPERTY() int32 Cigarettes = 0;
 
-	// Per-item preferred slot inside the 6×3 inventory grid. Without this
-	// the player's hand-arranged layout resets to top-left packing on load,
-	// which feels wrong in a "your stuff is yours" RPG inventory.
-	UPROPERTY() TMap<FName, int32> ItemSlotPositions;
+	// Which carrier (Hands / Pockets) each carried item is in. Saves written
+	// before the carry model existed have this empty; ApplySnapshot rebuilds
+	// placements for those and drops whatever no longer fits.
+	UPROPERTY() TMap<FName, EEclipseSlotType> ItemPlacements;
 
 	UPROPERTY() FEclipseQuestState Quest;
 	UPROPERTY() TArray<FEclipseMetNpc> MetNPCs;
