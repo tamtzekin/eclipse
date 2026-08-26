@@ -24,6 +24,15 @@ namespace EclipseUI
 	inline const FLinearColor CyanDim     = FLinearColor(0.318f, 0.933f, 0.988f, 0.5f);
 	inline const FLinearColor Cream       = FLinearColor(0.945f, 0.929f, 0.851f, 1.f); // #f1ecd9 chalk
 	inline const FLinearColor CreamDim    = FLinearColor(0.945f, 0.929f, 0.851f, 0.85f);
+
+	// ── Inventory palette: hyperlink blue on white ─────────────────────
+	// Authored from sRGB hex via FLinearColor(FColor) — writing these as
+	// raw floats would gamma-lift them into pastels on screen.
+	// LinkBlue on PaperWhite is ~9.7:1, so body text at small sizes holds up.
+	inline const FLinearColor LinkBlue    = FLinearColor(FColor(0x0B, 0x3F, 0xC4)); // #0b3fc4
+	inline const FLinearColor LinkBlueDim = FLinearColor(FColor(0x0B, 0x3F, 0xC4)).CopyWithNewOpacity(0.55f);
+	inline const FLinearColor PaperWhite  = FLinearColor(FColor(0xF7, 0xF7, 0xFA)); // panel ground
+	inline const FLinearColor InkWhite    = FLinearColor::White;                    // text ON blue
 	inline const FLinearColor Slate       = FLinearColor(0.055f, 0.059f, 0.071f, 1.f); // #0e0f12
 	inline const FLinearColor SlateDeep   = FLinearColor(0.031f, 0.035f, 0.047f, 1.f); // #08090c
 	inline const FLinearColor PanelBg     = FLinearColor(0.024f, 0.055f, 0.141f, 0.6f); // rgba(6,14,36,0.6)

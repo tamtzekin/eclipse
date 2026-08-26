@@ -91,7 +91,7 @@ protected:
 	int32 ClockGlowSize = 3;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Clock")
-	FLinearColor ClockGlowColor = FLinearColor(0.42f, 0.24f, 0.95f, 0.65f);
+	FLinearColor ClockGlowColor = FLinearColor(0.90f, 0.16f, 0.16f, 0.65f); // #e62a2a stall-door red
 
 	// Plays whenever the DISPLAYED time changes — i.e. once per
 	// ClockDisplayStepMinutes worth of choices, not on every choice.
@@ -119,7 +119,11 @@ protected:
 	TObjectPtr<UVerticalBox> QuestList;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Quests", meta = (ClampMin = "8"))
-	int32 QuestFontSize = 15;
+	int32 QuestFontSize = 18;   // matches the dialogue body (StartBodyAnimation)
+
+	// Diameter of the drawn circle bullet on each quest row.
+	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Quests", meta = (ClampMin = "4"))
+	float QuestBulletSize = 9.f;
 
 	// ── Debug overlay (0 key) ──────────────────────────────────────────
 	// Bottom-anchored terminal-style readout of every gameplay variable:

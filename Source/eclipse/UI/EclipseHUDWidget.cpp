@@ -340,8 +340,8 @@ void UEclipseHUDWidget::UpdateBars()
 	// Per-meter base tints. Critical-zone bars override to red via
 	// ApplyBarStyle so designers don't have to pick a separate critical
 	// colour.
-	const FLinearColor HeatFill  (1.00f, 1.00f, 1.00f, 1.f);  // white
-	const FLinearColor ThirstFill(0.00f, 0.40f, 0.80f, 1.f);  // hyperlink blue (#0066cc)
+	const FLinearColor HeatFill  (0.902f, 0.165f, 0.165f, 1.f); // #e62a2a red
+	const FLinearColor ThirstFill(0.545f, 0.267f, 0.902f, 1.f); // #8b44e6 purple
 
 	// Pulse value passed to ApplyBarStyle: 0..1, peaking at full timer.
 	const float HeatPulseAlpha = HeatPulse        / PulseDuration;
@@ -433,6 +433,12 @@ void UEclipseHUDWidget::UpdateQuestList()
 	UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
 	if (!DS) return;
 
+	// Hold while the current dialogue line is still printing — Ink has
+	// already run the whole branch (including its `~ SideQuests += ...`)
+	// by the time the first word appears, so refreshing now would pop the
+	// quest on screen before the player has read the line that gives it.
+	if (DS->IsBodyPrinting()) return;
+
 	const TArray<FString> Lines = DS->GetActiveSideQuests();
 	if (Lines == LastQuestLines) return;   // nothing gained or completed
 	LastQuestLines = Lines;
@@ -444,16 +450,56 @@ void UEclipseHUDWidget::UpdateQuestList()
 
 	for (const FString& Line : Lines)
 	{
+		// A row is [circle] [text]. The bullet is a DRAWN circle, not the
+		// "●" character — Rodin has no glyph for it, so the character
+		// rendered as nothing at all. A rounded Border with equal width and
+		// height is always a circle regardless of typeface.
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), NAME_None);
+
+		UBorder* Dot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), NAME_None);
+		{
+			FSlateBrush B;
+			B.DrawAs = ESlateBrushDrawType::RoundedBox;
+			B.TintColor = FSlateColor(EclipseUI::DialogueRed);
+			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::HalfHeightRadius;
+			B.OutlineSettings.Width = 0.f;
+			B.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
+			B.ImageSize = FVector2D(QuestBulletSize, QuestBulletSize);
+			Dot->SetBrush(B);
+		}
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(Dot))
+		{
+			HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			HS->SetPadding(FMargin(0.f, 4.f, 8.f, 0.f));
+			HS->SetVerticalAlignment(VAlign_Top);
+		}
+
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), NAME_None);
-		T->SetText(FText::FromString(TEXT("- ") + Line));
-		T->SetFont(EclipseUI::MakeRodin(QuestFontSize));
-		T->SetColorAndOpacity(FSlateColor(EclipseUI::CreamDim));
-		T->SetAutoWrapText(true);
-		T->SetWrapTextAt(ColumnWidth);
-		if (UVerticalBoxSlot* VS = QuestList->AddChildToVerticalBox(T))
+		T->SetText(FText::FromString(Line));
+		// Dialogue body typeface, and the clock's outline treatment so the
+		// text stays readable over a bright floor instead of washing out.
 		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
+			FSlateFontInfo F = EclipseUI::MakeRodin(QuestFontSize);
+			F.OutlineSettings.OutlineSize = 2;
+			F.OutlineSettings.OutlineColor = FLinearColor(0.f, 0.f, 0.f, 0.9f);
+			F.OutlineSettings.bApplyOutlineToDropShadows = true;
+			T->SetFont(F);
+		}
+		T->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
+		T->SetShadowOffset(FVector2D::ZeroVector);
+		T->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.9f));
+		T->SetAutoWrapText(true);
+		T->SetWrapTextAt(ColumnWidth - QuestBulletSize - 8.f);
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(T))
+		{
+			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
+		if (UVerticalBoxSlot* VS = QuestList->AddChildToVerticalBox(Row))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 5.f));
 		}
 	}
 }

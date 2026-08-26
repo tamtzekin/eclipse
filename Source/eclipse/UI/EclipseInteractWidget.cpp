@@ -45,14 +45,24 @@ bool UEclipseInteractWidget::Initialize()
 		}
 
 		// Font: BMSPA, large, with letter-spacing (CSS letter-spacing: 2px)
-		PromptText->SetFont(EclipseUI::MakeBMSPA(/*Size=*/28, /*LetterSpacingPx=*/2.f));
-		PromptText->SetColorAndOpacity(FSlateColor(EclipseUI::Cyan));
+		// Same treatment as the corner clock: cream glyphs, red outline
+		// hugging the edges, plus a zero-offset shadow in the same red so
+		// the halo thickens evenly instead of reading as a drop shadow.
+		// Keeps the two pieces of world-facing HUD text in one voice.
+		{
+			FSlateFontInfo F = EclipseUI::MakeBMSPA(/*Size=*/28, /*LetterSpacingPx=*/2.f);
+			F.OutlineSettings.OutlineSize = 3;
+			F.OutlineSettings.OutlineColor = EclipseUI::DialogueRed.CopyWithNewOpacity(0.85f);
+			F.OutlineSettings.bApplyOutlineToDropShadows = true;
+			PromptText->SetFont(F);
+		}
+		PromptText->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
 		PromptText->SetJustification(ETextJustify::Center);
 
 		// Glow text-shadow: rgba(81,238,252,0.5) at 8px blur — Slate single-shadow
 		// approximation: cyan-tinted shadow with a small offset.
-		PromptText->SetShadowOffset(FVector2D(0.f, 2.f));
-		PromptText->SetShadowColorAndOpacity(FLinearColor(0.318f, 0.933f, 0.988f, 0.55f));
+		PromptText->SetShadowOffset(FVector2D::ZeroVector);
+		PromptText->SetShadowColorAndOpacity(EclipseUI::DialogueRed.CopyWithNewOpacity(0.85f));
 	}
 
 	return Super::Initialize();
@@ -141,7 +151,7 @@ void UEclipseInteractWidget::RefreshPrompt()
 	// Talkable NPC takes priority over item
 	if (CachedNpc.IsValid())
 	{
-		const FString Label = FString::Printf(TEXT("[E]  TALK TO %s"), *CachedNpc->NpcName.ToString().ToUpper());
+		const FString Label = FString::Printf(TEXT("[E]  TALK TO %s"), *CachedNpc->GetDisplayName().ToString());
 		PromptText->SetText(FText::FromString(Label));
 		SetVisibility(ESlateVisibility::HitTestInvisible);
 		return;
