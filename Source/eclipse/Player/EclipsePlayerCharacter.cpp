@@ -36,6 +36,17 @@ AEclipsePlayerCharacter::AEclipsePlayerCharacter()
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
 
+	// Motion blur down from UE's 0.5 default. At 0.5 ordinary walking smears,
+	// and the post-dialogue camera swing — which moves fast by design — turns
+	// into a streak that reads as a rendering fault rather than a movement.
+	// Trimming the max distortion too so a fast swing can't smear across a
+	// big slice of the frame. Overridden on the camera itself so it applies
+	// wherever the player goes, no per-level PP volume needed.
+	Camera->PostProcessSettings.bOverride_MotionBlurAmount = true;
+	Camera->PostProcessSettings.MotionBlurAmount           = 0.15f;
+	Camera->PostProcessSettings.bOverride_MotionBlurMax    = true;
+	Camera->PostProcessSettings.MotionBlurMax              = 1.5f;
+
 	// ── Character rotation: faces movement direction, ignores controller ──
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw   = false;
@@ -263,8 +274,10 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 	// camera starts gradually reacting as you approach, not just the
 	// instant you cross into official talk range. Ramp speed is
 	// deliberately asymmetric: slow while the target is INCREASING
-	// (approaching should read as gradual noticing), fast while DECREASING
-	// (walking away should let go promptly, not linger mid-swing).
+	// (approaching should read as gradual noticing), a little quicker while
+	// DECREASING so walking away doesn't linger mid-swing — but only a
+	// little. The release used to run at 12 and snapped the camera back hard
+	// enough to read as a glitch rather than a movement.
 	const float RawTargetAlpha = bFacingTarget ? 1.f : ApproachAlpha;
 	if (bFacingTarget)
 	{
@@ -281,7 +294,7 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 	}
 	const float TargetAlpha    = bReleasing ? 0.f : RawTargetAlpha;
 	const FVector TargetLoc    = bFacingTarget ? FaceTargetLocation : ApproachLocation;
-	const float RampSpeed      = (TargetAlpha > DialogueCameraAlpha) ? 1.6f : 12.f;
+	const float RampSpeed      = (TargetAlpha > DialogueCameraAlpha) ? 1.6f : 2.2f;
 	DialogueCameraAlpha = FMath::FInterpTo(DialogueCameraAlpha, TargetAlpha, DeltaTime, RampSpeed);
 	if (bReleasing && DialogueCameraAlpha <= 0.001f)
 	{

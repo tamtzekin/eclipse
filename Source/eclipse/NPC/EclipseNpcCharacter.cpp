@@ -130,6 +130,13 @@ void AEclipseNpcCharacter::HandleHighlightToggled(bool bActive)
 //  to OriginalLocation + StepAsideOffset over ~1/StepAsideSpeed seconds.
 // ─────────────────────────────────────────────────────────────────────────────
 
+FText AEclipseNpcCharacter::GetDisplayName() const
+{
+	const FName Source = (DialogueId != NAME_None) ? DialogueId : NpcName;
+	if (Source.IsNone()) return FText::GetEmpty();
+	return FText::FromString(Source.ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper());
+}
+
 void AEclipseNpcCharacter::StepAside()
 {
 	if (bSteppingAside) return;
@@ -141,6 +148,7 @@ void AEclipseNpcCharacter::StepAside()
 
 void AEclipseNpcCharacter::StartFacePlayer(AActor* PlayerActor)
 {
+	if (!bTurnToFacePlayer) return;
 	bFacingPlayer = true;
 	FacePlayerTarget = PlayerActor;
 }
@@ -152,6 +160,7 @@ void AEclipseNpcCharacter::StopFacePlayer()
 
 void AEclipseNpcCharacter::UpdateApproachTurn(float Alpha, AActor* PlayerActor)
 {
+	if (!bTurnToFacePlayer) { ApproachTurnAlpha = 0.f; ApproachTurnTarget = nullptr; return; }
 	ApproachTurnAlpha = FMath::Clamp(Alpha, 0.f, 1.f);
 	ApproachTurnTarget = PlayerActor;
 }

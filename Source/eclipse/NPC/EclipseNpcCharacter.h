@@ -42,6 +42,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	FName DialogueId = NAME_None;
 
+	// The name players actually see (dialogue caption, "[E] TALK TO ..."),
+	// derived from DialogueId — which is always the snake_case of the
+	// character's .ink filename (Bouncer_Outside.ink -> bouncer_outside ->
+	// "BOUNCER OUTSIDE"). Deriving it means the UI follows the writing
+	// rather than whatever the level actor or its skeletal mesh is called;
+	// NpcName stays the internal identity key (save data, Angel lookup).
+	// Falls back to NpcName for set-dressing NPCs with no dialogue.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
+	FText GetDisplayName() const;
+
 	// ── Behavior flags ──
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	bool bTalkable = true;
@@ -55,10 +65,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	bool bStationary = true;
 
+	// When false this NPC never turns toward the player — no approach lean,
+	// no dialogue lock-on. For characters who are meant to read as fixed in
+	// place (GuestlistGirl at her podium); a swivelling body makes them look
+	// like they're tracking you. Guarded in the NPC itself rather than at the
+	// InteractSubsystem call sites so both turn paths are covered at once.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
-	float TalkRadius = 150.f; // 1.5 m default — must be at arm's length.
-	                          // Bump per-instance for KEY NPCs that need
-	                          // friendlier reach (bartender etc.).
+	bool bTurnToFacePlayer = true;
+
+	// THE LEVER for how close you must stand to talk. Per-instance: select
+	// the NPC in the World Outliner and edit "Talk Radius" under Eclipse|NPC
+	// in the Details panel — it's live-editable during PIE, so you can drag
+	// it while walking up to someone and feel the change immediately. This
+	// value is only the default for newly placed NPCs.
+	// ~0.9 m — deliberately tight; anything wider and you get "caught" by
+	// NPCs you were only walking past.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC",
+		meta = (ClampMin = "40.0", ClampMax = "600.0"))
+	float TalkRadius = 90.f;
 
 	// When true, skip the BeginPlay floor-snap line-trace entirely and keep
 	// the actor exactly where it was placed. Use when the actor sits above
