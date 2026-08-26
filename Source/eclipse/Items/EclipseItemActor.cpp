@@ -6,6 +6,10 @@
 #include "Components/MeshComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Data/EclipseItemDefinition.h"
+#include "Engine/DataTable.h"
+#include "UI/EclipseSwapPromptWidget.h"
+#include "GameFramework/PlayerController.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
 #include "UI/EclipseUiStyle.h"
@@ -43,16 +47,97 @@ namespace
 			return false;
 		}
 
+		// Snap by the RENDERED BOUNDS, not the actor origin. Imported prefabs
+		// put their pivot wherever the artist left it — the beer bottle's
+		// mesh sits 60 cm BELOW its origin, the lollipop 5 cm above — so
+		// moving the origin to the floor leaves the visible mesh buried or
+		// floating by that offset. Measuring the gap between the origin and
+		// the bottom of the bounds and correcting for it lands every prefab
+		// on the floor regardless of where its pivot is.
+		FVector BoundsOrigin, BoundsExtent;
+		InActor->GetActorBounds(/*bOnlyCollidingComponents=*/false, BoundsOrigin, BoundsExtent);
+		const float BottomToOrigin = Origin.Z - (BoundsOrigin.Z - BoundsExtent.Z);
+
 		OutNewLocation = Origin;
-		// +5 cm so the mesh visually rests on the floor, not buried in it.
-		OutNewLocation.Z = Hit.ImpactPoint.Z + 5.f;
+		// +1 cm so it rests on the floor rather than z-fighting with it.
+		OutNewLocation.Z = Hit.ImpactPoint.Z + BottomToOrigin + 1.f;
 		return true;
+	}
+}
+
+void AEclipseItemActor::ApplyMeshFromRow()
+{
+	if (!bUseRowMesh || !Mesh || ItemId.IsNone()) return;
+
+	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UEclipseGameStateSubsystem* State = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+
+	FEclipseItemRow Row;
+	bool bGotRow = false;
+	if (State)
+	{
+		bGotRow = State->GetItemRow(ItemId, Row);
+	}
+#if WITH_EDITOR
+	else
+	{
+		// Editor placement: there's no GameInstance in the editor world, so
+		// the subsystem lookup above is unavailable. Read DT_Items directly
+		// so a designer dragging an item in sees the right model at once.
+		if (UDataTable* DT = LoadObject<UDataTable>(nullptr,
+				TEXT("/Game/Justin/Data/DT_Items.DT_Items")))
+		{
+			const FName Base = UEclipseGameStateSubsystem::GetBaseItemId(ItemId);
+			if (const FEclipseItemRow* Found =
+					DT->FindRow<FEclipseItemRow>(Base, TEXT("ApplyMeshFromRow"), /*bWarnIfMissing=*/false))
+			{
+				Row = *Found;
+				bGotRow = true;
+			}
+		}
+	}
+#endif
+	if (!bGotRow || Row.Mesh.IsNull()) return;
+
+	// Synchronous load: this runs on placement / BeginPlay, not per frame,
+	// and the actor has nothing to show until the mesh is resident.
+	if (UStaticMesh* SM = Row.Mesh.LoadSynchronous())
+	{
+		if (Mesh->GetStaticMesh() != SM)
+		{
+			Mesh->SetStaticMesh(SM);
+			// Component material OVERRIDES survive a SetStaticMesh, so the
+			// placeholder cylinder's MI_ItemDarkBlue would keep painting the
+			// real prefab solid blue. Clear them and let the mesh use the
+			// materials it shipped with.
+			Mesh->EmptyOverrideMaterials();
+		}
+		const float S = FMath::Max(0.0001f, Row.MeshScale);
+		SetActorScale3D(FVector(S));
+
+		// How the thing rests. Authored per row because it's a property of
+		// the model's own axes, not of where it was dropped — a baggie that
+		// imports standing on its edge should lie flat everywhere, including
+		// when it's dropped from a swap.
+		Mesh->SetRelativeRotation(Row.MeshRotation);
+
+		if (UMaterialInterface* Mat = Row.MeshMaterial.IsNull() ? nullptr : Row.MeshMaterial.LoadSynchronous())
+		{
+			for (int32 i = 0; i < Mesh->GetNumMaterials(); ++i)
+			{
+				Mesh->SetMaterial(i, Mat);
+			}
+		}
 	}
 }
 
 void AEclipseItemActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+
+	// Row-driven visuals first: the floor snap below traces from the actor's
+	// origin, and swapping the mesh can change where that sits.
+	ApplyMeshFromRow();
 
 	// Only auto-snap in the editor world. PIE / packaged builds rely on
 	// BeginPlay's snap so items can't be missed if a designer placed them
@@ -86,6 +171,8 @@ void AEclipseItemActor::OnConstruction(const FTransform& Transform)
 void AEclipseItemActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	ApplyMeshFromRow();
 
 	// ── Floor snap ──
 	// Runtime safety net: if a designer placed an item floating, or it was
@@ -164,16 +251,21 @@ void AEclipseItemActor::Pickup_Implementation()
 	{
 		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
-			// Currency special-case: "coins" / "notes" don't take inventory
-			// slots, they bump a counter. Designer-set CurrencyAmount lets
-			// a single coin actor represent a stack (default 1).
+			// Currency special-case: "coins" / "notes" / "cigarettes" don't
+			// take inventory slots, they bump a counter. Designer-set
+			// CurrencyAmount lets a single actor represent a stack
+			// (default 1) — a dropped pack is `cigarettes` with Amount 20.
+			// Note this is the loose-count currency, NOT the carryable
+			// `pack_cigarettes` / `slim_cigarette` items.
 			const bool bIsCoins = (ItemId == TEXT("coins"));
 			const bool bIsNotes = (ItemId == TEXT("notes"));
-			if (bIsCoins || bIsNotes)
+			const bool bIsCigs  = (ItemId == TEXT("cigarettes"));
+			if (bIsCoins || bIsNotes || bIsCigs)
 			{
 				const int32 Amt = FMath::Max(1, CurrencyAmount);
-				if (bIsCoins) State->AddCoins(Amt);
-				else          State->AddNotes(Amt);
+				if      (bIsCoins) State->AddCoins(Amt);
+				else if (bIsNotes) State->AddNotes(Amt);
+				else               State->AddCigarettes(Amt);
 			}
 			// All other items go through AddItem so they appear in the
 			// inventory. To keep duplicated actors (Alt-drag in the editor)
@@ -186,19 +278,73 @@ void AEclipseItemActor::Pickup_Implementation()
 			// AddItem itself special-cases the BASE id (e.g. "wristband") for
 			// quest-flag side effects (bHasWristband).
 			//
-			// AddItem fails when the inventory is full — bail out here without
-			// hiding/consuming the actor, so a full inventory just blocks the
-			// pickup instead of silently destroying the item.
+			// AddItem fails when you're full. The actor is left alone in that
+			// case — OfferSwap takes over below.
 			else if (ItemId != NAME_None)
 			{
-				const FName RuntimeId = FName(*FString::Printf(
-					TEXT("%s__%s"), *ItemId.ToString(), *GetName()));
-				if (!State->AddItem(RuntimeId))
+				if (!State->AddItem(MakeRuntimeId()))
 				{
+					// Full. Rather than refusing in silence, offer the trade:
+					// this item beside what you're already carrying, pick one
+					// to leave behind. The actor stays in the world and
+					// untouched until the prompt calls TakeAfterSwap.
+					OfferSwap();
 					return;
 				}
 			}
 
+			ConsumePickup();
+		}
+	}
+}
+
+FName AEclipseItemActor::MakeRuntimeId() const
+{
+	// Per-instance id so two duplicated actors (Alt-drag in the editor) read
+	// as distinct chips. The lookup helpers (GetItemRow / GetClothingRow)
+	// strip the "__<actor>" suffix, so row data stays template-keyed.
+	return FName(*FString::Printf(TEXT("%s__%s"), *ItemId.ToString(), *GetName()));
+}
+
+void AEclipseItemActor::OfferSwap()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	if (!PC) return;
+
+	if (!UEclipseSwapPromptWidget::OpenForPickup(PC, this))
+	{
+		// Nothing tradeable — the pickup just doesn't happen. Logged rather
+		// than silent so a genuinely stuck player shows up in the log.
+		UE_LOG(LogEclipse, Log, TEXT("ItemActor '%s': full, and nothing to swap for it"),
+			*ItemId.ToString());
+	}
+}
+
+bool AEclipseItemActor::TakeAfterSwap(FName OutgoingId)
+{
+	if (bPickedUp) return false;
+
+	UWorld* World = GetWorld();
+	UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+	UEclipseGameStateSubsystem* State = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!State) return false;
+
+	if (!State->SwapCarriedItem(OutgoingId, MakeRuntimeId())) return false;
+
+	ConsumePickup();
+	return true;
+}
+
+void AEclipseItemActor::ConsumePickup()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	if (UGameInstance* GI = World->GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* State = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
 			bPickedUp = true;
 
 			// Apply the configured QuestFlag onto the quest state. Names match

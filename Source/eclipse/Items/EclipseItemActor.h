@@ -65,6 +65,27 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|Item")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
+	// Pull Mesh/MeshScale/MeshMaterial off this actor's DT_Items row and
+	// apply them. Runs on editor placement (so a dropped-in actor shows its
+	// real model immediately in the viewport), on BeginPlay, and after a
+	// runtime spawn. Safe to call repeatedly.
+	//
+	// Set bUseRowMesh=false on an instance a level artist has dressed by
+	// hand, and the row's mesh is left alone.
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Eclipse|Item")
+	void ApplyMeshFromRow();
+
+	// When false this actor keeps whatever mesh is set on it in the level
+	// and ignores the DataTable. For one-off set dressing.
+	//
+	// NOT named bApplyMeshFromRow: UE strips the leading 'b' when exposing a
+	// bool to Python/Blueprint, so that name resolves to the same symbol as
+	// the ApplyMeshFromRow() function above and silently shadows it —
+	// `actor.apply_mesh_from_row()` then fails with "'bool' object is not
+	// callable".
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
+	bool bUseRowMesh = true;
+
 	// ── State ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Item")
 	bool bPickedUp = false;
@@ -75,11 +96,31 @@ public:
 	void Pickup();
 	virtual void Pickup_Implementation();
 
+	// "<ItemId>__<actor-name>" — the per-instance id this actor occupies in
+	// the inventory. Public because the swap prompt needs to name it.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Items")
+	FName MakeRuntimeId() const;
+
+	// Give up `OutgoingId` (it lands back in the room) and take this item in
+	// its place, then consume the actor exactly as a normal pickup would.
+	// Called by UEclipseSwapPromptWidget. False leaves everything untouched.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Items")
+	bool TakeAfterSwap(FName OutgoingId);
+
 	// Sound played at the item's location on Pickup. Null-safe — no-op if unset.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
 	TObjectPtr<class USoundBase> PickupSound;
 
 protected:
+	// Opens the swap prompt for this pickup. No-op when there's no player
+	// controller or nothing worth trading.
+	void OfferSwap();
+
+	// The tail of a successful pickup: quest flags, sound, hide the actor.
+	// Shared by the normal path and the post-swap path so a swapped-in item
+	// behaves identically to one picked up with room to spare.
+	void ConsumePickup();
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
