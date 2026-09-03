@@ -1,26 +1,3 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!--
-  Project-scope UnrealBuildTool settings. UBT reads this from
-  <ProjectRoot>/Saved/UnrealBuildTool/BuildConfiguration.xml whenever it runs
-  with -project= (see Engine/Source/Programs/UnrealBuildTool/System/XmlConfig.cs).
-  Saved/ is otherwise gitignored — this one file is un-ignored so the setting
-  travels with the repo instead of every teammate hitting it locally.
-
-  bIncludeDotNetPrograms=false keeps the engine's C# program projects
-  (AutomationTool, UnrealBuildTool, AutomationUtils, ...) OUT of the generated
-  solution. Nobody on this project modifies the engine, and the engine ships
-  those already built at Engine/Binaries/DotNET/, so compiling them from source
-  buys us nothing and costs a build failure: AutomationUtils.Automation.csproj
-  sets TreatWarningsAsErrors, so NuGet advisory NU1902 on its Magick.NET
-  dependency turns into an error, that project never emits its DLL, and every
-  project referencing it then fails with a CS0006 "metadata file could not be
-  found" pointing at .../AutomationUtils/bin/Development/ref/.
-
-  Takes effect on the next "Generate project files" — it changes what goes
-  into the .sln, not how an existing one builds.
--->
 <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
-	<ProjectFileGenerator>
-		<bIncludeDotNetPrograms>false</bIncludeDotNetPrograms>
-	</ProjectFileGenerator>
 </Configuration>
