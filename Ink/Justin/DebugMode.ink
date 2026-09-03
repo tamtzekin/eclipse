@@ -25,19 +25,19 @@
 INCLUDE Globals.ink
 
 INCLUDE Characters/AngelSeeker.ink
-INCLUDE Characters/Chainsmoker.ink
+INCLUDE Characters/Kauzlarich.ink
 INCLUDE Characters/StallVoiceCalm.ink
 INCLUDE Characters/StallVoiceErratic.ink
 INCLUDE Characters/EnlightenedRaver.ink
 INCLUDE Characters/Daesung.ink
-INCLUDE Characters/GlamorousDealer.ink
+INCLUDE Characters/Nuria.ink
 INCLUDE Characters/Alina.ink
 INCLUDE Characters/Tomas.ink
-INCLUDE Characters/Bouncer_Outside.ink
-INCLUDE Characters/GuestlistGirl.ink
+INCLUDE Characters/Florin.ink
+INCLUDE Characters/Maja.ink
 INCLUDE Characters/Figure4.ink
 INCLUDE Characters/Figure5.ink
-INCLUDE Characters/DoorGirl.ink
+INCLUDE Characters/Zbigniewa.ink
 INCLUDE Characters/Ending.ink
 
 
@@ -52,11 +52,11 @@ Pick a character to start their dialogue.
 + [Alina] -> alina
 + [Tomas] -> tomas
 
-+ [Glamorous Dealer] -> glamorous_dealer
-+ [Chainsmoker] -> chainsmoker
-+ [Guestlist Girl] -> guestlist_girl
-+ [Bouncer Outside (bouncer_outside)] -> bouncer_outside
-+ [Door Girl] -> door_girl
++ [Nuria] -> nuria
++ [Kauzlarich] -> kauzlarich
++ [Maja] -> maja
++ [Florin] -> florin
++ [Zbigniewa] -> zbigniewa
 
 // BATHROOM
 + [Angel Seeker (angel_seeker)] -> angel_seeker_setup
@@ -67,6 +67,7 @@ Pick a character to start their dialogue.
 + [Figure 4 (figure_4)] -> figure_4
 + [Figure 5 (figure_5)] -> figure_5
 + [Red Wristband (red_wristband)] -> red_wristband
++ [Lost Phone (lost_phone)] -> lost_phone
 
 + [quit] -> END
 

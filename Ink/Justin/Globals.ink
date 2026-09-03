@@ -14,19 +14,19 @@ VAR quest_stage = "intro"
 VAR met_npc = false
 
 // Stats
-VAR aesthetics = 10
-VAR rhythm = 10
-VAR zen = 10
-VAR psychedelics = 10
+VAR aesthetics = 1
+VAR rhythm = 1
+VAR zen = 1
+VAR psychedelics = 1
 
 // Money system
-VAR euros = 15
+VAR euros = 5
 
 // Cigarettes
-VAR cigarettes = 2
+VAR cigarettes = 0
 
 // Inventory system
-LIST Inventory = none, phone, (lighter), slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, (bottle_vodka), (cup_empty), cup_beer, thick_book, ticket, gum, baggie_half, bottle_water_empty, bottle_water_full
+LIST Inventory = none, phone, lighter, slim_cigarette, pack_cigarettes, bottle_empty, bottle_beer, (bottle_vodka), cup_empty, cup_beer, thick_book, ticket, gum, baggie_half, bottle_water_empty, bottle_water_full
 
 === function get(x)
     ~ Inventory += x
@@ -57,7 +57,7 @@ LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_go_in, cold_tomas
 // name, which is the visible reminder that the text is still missing.
 === function quest_text(q)
     { q:
-    - "alina_needs_a_cigarette":       ~ return "Alina needs a smoke"
+    - "alina_needs_a_cigarette":       ~ return "Alina needs a cigarette"
     - "cold_tomas_wants_to_go_in":  ~ return "Tomas wants to go in"
     - "cold_tomas_wants_a_jacket":     ~ return "Tomas needs a jacket"
     - "you_need_a_drink":              ~ return "You're thirsty, find something to drink"

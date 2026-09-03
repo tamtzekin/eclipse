@@ -66,6 +66,12 @@ public:
 
 	void SetSelectedVisual(bool bSelected);
 
+	// Hover and selection both write the same frame brush, so they share one
+	// applier — otherwise leaving a hovered chip restores the resting look
+	// and silently drops the selection outline.
+	void ApplyChipVisual();
+	bool bIsHovered = false;
+
 	FName GetItemId() const { return ItemId; }
 	bool  IsEquipped() const { return bIsEquipped; }
 	int32 GetSlotIndex() const { return SlotIndex; }
@@ -194,6 +200,28 @@ protected:
 
 	// Frame border — tint flashes briefly on a valid drop accept.
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder>    SlotFrame;
+
+	// Baked render of the occupant's prefab. Overlays the same cell as
+	// SlotIcon: whichever of the two has something to show is visible and
+	// the other is collapsed, so a row without an IconTexture still reads.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UImage> SlotThumb;
+
+public:
+	/** Flash the frame — the receipt for USE, before the item leaves. */
+	void FlashUse();
+
+protected:
+	virtual void NativeTick(const FGeometry& G, float DeltaTime) override;
+	virtual void NativeOnMouseEnter(const FGeometry& G, const FPointerEvent& E) override;
+	virtual void NativeOnMouseLeave(const FPointerEvent& E) override;
+
+private:
+	float UseFlashAlpha = 0.f;
+	bool  bSlotHovered  = false;
+
+	// How long the USE flare takes to fall off. Long enough to actually be
+	// seen — the first pass at 0.3s was over before the eye found it.
+	static constexpr float UseFlashSeconds = 0.9f;
 };
 
 /**
@@ -244,6 +272,7 @@ public:
 protected:
 	virtual bool Initialize() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& G, float DeltaTime) override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
@@ -304,6 +333,16 @@ public:
 private:
 	UFUNCTION() void OnUse();
 	UFUNCTION() void OnCloseClicked();
+
+	// USE flashes the carrier slot for a beat before the item is consumed;
+	// this counts that beat down. Ticked, not timed — the panel is modal
+	// and the world under it may be paused.
+	void TickPendingUse(float DeltaTime);
+	FName PendingUseId;
+	float PendingUseTimer = 0.f;
+
+	void TickButtonHovers(float DeltaTime);
+	TArray<float> ButtonHoverAlphas;
 
 	UFUNCTION() void HandleStateChanged();
 

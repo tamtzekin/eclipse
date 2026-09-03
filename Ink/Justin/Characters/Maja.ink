@@ -3,10 +3,10 @@
 // WEAKNESSES: RHYTHM
 // SUPER WEAKNESS: ZEN
 
-=== guestlist_girl ===
+=== maja ===
 'Please, I need to get in.' She's not paying attention to you. 'You don't know what I've been through to get here tonight.'
 * Is there a problem?
-BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no soul that goes by your name. You're one of many, and in this moment, you weren't meant to be here.
+FLORIN: Friend, you are not important. Tonight, on the list, there's no soul that goes by your name. You're one of many, and in this moment, you weren't meant to be here.
 -> shes_on_the_list
 
 * {aesthetics > 3} You're trying to get in too?
@@ -20,7 +20,7 @@ BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no
         *** What list?
         I am one of DJ Crisis' group. He takes us everywhere with him. To the empire and every little shithole country on its flight path.
         ~ Connections += dj_crisis
-        -> guestlist_girl
+        -> maja
         
         *** {rhythm > 3} What did you say?
             ~ Patience--
@@ -28,10 +28,10 @@ BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no
             -> DONE
             
         *** {rhythm > 2} He can't help being a wage slave.
-        BOUNCER_OUTSIDE: 'Every world has its system that must be obeyed, or the world frays and we collapse with it.'
-        GUESTLIST_GIRL: 'I don't have time for philosophy!! My mother's in the Party and she'll ruin your life and your family and your dumb girlfriend too. My mum will bleed you dry.'
-        BOUNCER_OUTSIDE: 'I don't subscribe to the Party.'
-            -> guestlist_girl
+        FLORIN: 'Every world has its system that must be obeyed, or the world frays and we collapse with it.'
+        MAJA: 'I don't have time for philosophy!! My mother's in the Party and she'll ruin your life and your family and your dumb girlfriend too. My mum will bleed you dry.'
+        FLORIN: 'I don't subscribe to the Party.'
+            -> maja
         
         *** {zen > 3} Let me help you. I'm trying to get in too.
             'I'm going to miss his set. Oh my god, if I miss this set I'm going to ... I don't know what I'll do, listen, babe, can you just talk to the peasant in front of me here? Tell him I'm with DJ Crisis.'
@@ -47,7 +47,7 @@ BOUNCER_OUTSIDE: Friend, you are not important. Tonight, on the list, there's no
             -> DONE
 
     ** Could you just let us in?
-        BOUNCER_OUTSIDE: 'This is not about you, or her. It's about the List.'
+        FLORIN: 'This is not about you, or her. It's about the List.'
         
         *** {zen > 4} I'd like to attune myself to the inner workings of the List.
         'The List is the law of our reality. The List decides the collisions of forces that exist in this moment. We are here only because the List allows us to share this space.'

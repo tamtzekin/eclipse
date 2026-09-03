@@ -179,6 +179,9 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		if (AEclipsePlayerCharacter* PlayerChar = Cast<AEclipsePlayerCharacter>(Pawn))
 		{
 			PlayerChar->StartFaceTarget(NearTalkable->GetActorLocation());
+			// The lock-on framing is the same shot the dialogue uses, so it
+			// takes the same per-NPC lift.
+			PlayerChar->SetDialogueCameraPitch(NearTalkable->DialogueCameraPitch);
 		}
 	}
 	}

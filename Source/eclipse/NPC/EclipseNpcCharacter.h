@@ -66,12 +66,14 @@ public:
 	bool bStationary = true;
 
 	// When false this NPC never turns toward the player — no approach lean,
-	// no dialogue lock-on. For characters who are meant to read as fixed in
-	// place (GuestlistGirl at her podium); a swivelling body makes them look
-	// like they're tracking you. Guarded in the NPC itself rather than at the
+	// no dialogue lock-on. Guarded in the NPC itself rather than at the
 	// InteractSubsystem call sites so both turn paths are covered at once.
+	//
+	// Defaults OFF: the swivel reads as tracking rather than noticing, and
+	// the rigs have no turn animation to sell it. This only governs the
+	// BODY — the talk radius and its lock-on for dialogue are unaffected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
-	bool bTurnToFacePlayer = true;
+	bool bTurnToFacePlayer = false;
 
 	// THE LEVER for how close you must stand to talk. Per-instance: select
 	// the NPC in the World Outliner and edit "Talk Radius" under Eclipse|NPC
@@ -82,7 +84,13 @@ public:
 	// NPCs you were only walking past.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC",
 		meta = (ClampMin = "40.0", ClampMax = "600.0"))
-	float TalkRadius = 90.f;
+	float TalkRadius = 220.f;
+
+	// Extra camera pitch, in degrees, while this NPC is being talked to.
+	// Positive raises the camera and looks down — for characters the default
+	// eyeline can't see cleanly (Zbigniewa is behind a wall).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
+	float DialogueCameraPitch = 0.f;
 
 	// When true, skip the BeginPlay floor-snap line-trace entirely and keep
 	// the actor exactly where it was placed. Use when the actor sits above

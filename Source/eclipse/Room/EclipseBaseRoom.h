@@ -42,6 +42,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Audio")
 	float MusicFadeInSeconds = 1.5f;
 
+	// Seconds to skip at the head of MusicCue. A club track that opens on a
+	// long ambient build lands flat when the room does — start it where the
+	// beat already is.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room")
+	float MusicStartSeconds = 0.f;
+
 	// Whether this room blocks NPC talk-while-frozen (heat=0). Default true.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Behavior")
 	bool bAllowTalkWhenFrozen = false;

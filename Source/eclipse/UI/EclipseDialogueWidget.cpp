@@ -23,6 +23,8 @@
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "NPC/EclipseNpcCharacter.h"
+#include "Player/EclipsePlayerCharacter.h"
+#include "EngineUtils.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
@@ -840,19 +842,18 @@ void UEclipseDialogueWidget::ApplyNodeChanged(const FEclipseDialogueNodeView& No
 	// box) with its chips intact — the history accumulates.
 	if (RightHistoryScroll)
 	{
-		UTextBlock* BubbleEffects = nullptr;
-		UWrapBox* BubbleWords = AppendBubble(
-			RightHistoryScroll,
-			FText::FromName(Node.SpeakerName),
-			DialogueRed,                   // NPC caption tint (red accent)
-			&BubbleEffects);
-
-		if (BubbleWords)
-		{
-			BodyWords        = BubbleWords;
-			EffectsLineText  = BubbleEffects;
-			StartBodyAnimation(Node.Body.ToString());
-		}
+		// A node's body can change speaker partway ("FLORIN: ..." /
+		// "MAJA: ..."), so it becomes one captioned bubble per speaker
+		// rather than one bubble attributed entirely to whoever you walked
+		// up to. Single-speaker nodes parse to exactly one segment, which
+		// is the old behaviour.
+		// SpeakerName is the display form of the NPC's DialogueId
+		// (GetDisplayName: underscores to spaces, uppercased). Fold it back
+		// so the default segment carries the same key the "NAME:" tags
+		// produce, and FindNpcByDialogueId can resolve either.
+		const FName Default(*Node.SpeakerName.ToString().ToLower()
+			.Replace(TEXT(" "), TEXT("_")));
+		StartBodySegments(ParseSpeechSegments(Node.Body.ToString(), Default));
 	}
 	else if (BodyWords)
 	{
@@ -1018,6 +1019,8 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 		if (WB) WB->RemoveFromParent();
 	}
 	ChoiceWordBoxes.Reset();
+	ChoiceDiamonds.Reset();
+	ChoiceHoverAlphas.Reset();
 	PendingNode.Reset();
 
 	// Tear down the per-word animation state so we don't keep ticking dead
@@ -1029,6 +1032,7 @@ void UEclipseDialogueWidget::HandleDialogueClosed()
 	AnimWordDelays.Reset();
 	AnimWordMumbleFired.Reset();
 	ChoiceRevealButtons.Reset();
+	ChoiceRevealDiamonds.Reset();
 	ChoiceRevealDelays.Reset();
 
 	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
@@ -1163,7 +1167,7 @@ namespace
 				OutBody.RemoveAt(0, CloseIdx + 1);
 				OutBody.TrimStartInline();
 			}
-			OutPrefix = FString::Printf(TEXT("[%s %d]"),
+			OutPrefix = FString::Printf(TEXT("[%s: %d]"),
 				*Choice.SkillCheckStat.ToString().ToUpper(), Choice.SkillCheckValue);
 			OutBody = TEXT(" ") + OutBody;
 		}
@@ -1172,10 +1176,11 @@ namespace
 		{
 			FString StatName = Choice.StatCheckLabelStat.ToString().ToLower();
 			if (StatName.Len() > 0) StatName = StatName.Left(1).ToUpper() + StatName.Mid(1);
-			// Colon deliberately on the body side — the player asked for the
-			// tag alone to carry the colour, punctuation included out.
-			OutPrefix = FString::Printf(TEXT("%s [%d]"), *StatName, Choice.StatCheckLabelValue);
-			OutBody = TEXT(": ") + OutBody.TrimStart();
+			// Everything inside the brackets, colon included: "[Rhythm: 1]"
+			// reads as one token the eye can skip, where "Rhythm [1]:" left
+			// a bare colon stranded at the head of the sentence.
+			OutPrefix = FString::Printf(TEXT("[%s: %d]"), *StatName, Choice.StatCheckLabelValue);
+			OutBody = TEXT(" ") + OutBody.TrimStart();
 		}
 	}
 
@@ -1270,6 +1275,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		ChoiceRowBackgrounds.Reset();
 		ChoiceLabelWidgets.Reset();
 		ChoiceRevealButtons.Reset();
+		ChoiceRevealDiamonds.Reset();
 		ChoiceRevealDelays.Reset();
 
 		for (int32 i = 0; i < MaxSlots; ++i)
@@ -1423,6 +1429,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoiceBaseTints.Reset();
 	ChoiceLabelWordCounts.Reset();
 	ChoiceWordBoxes.Reset();
+	ChoiceDiamonds.Reset();
+	ChoiceHoverAlphas.Reset();
 	ChoiceRowBackgrounds.Reset();
 	ChoiceLabelWidgets.Reset();
 	ChoicePrefixLabels.Reset();
@@ -1456,47 +1464,62 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(), NAME_None);
 
-		// ── Circle number node (24x24) ──
-		UBorder* CircleBg = WidgetTree->ConstructWidget<UBorder>(
+		// ── Diamond bullet ──
+		// Same mark as the sidequest log, so "a thing you can act on" reads
+		// the same everywhere. A square turned 45°; Slate lays a rotated
+		// widget out by its unrotated bounds, hence the modest box size.
+		constexpr float DiamondSide = 9.f;
+		// Resolved here rather than beside the label below, because the
+		// bullet's vertical centring is measured from this exact font.
+		FSlateFontInfo ChoiceFont = BodyText ? BodyText->GetFont() : MakeRodin(/*Size=*/18);
+		ChoiceFont.Size = 18;
+
+		UBorder* Diamond = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), NAME_None);
-		CircleBg->SetBrush(RoundedBrush(
-			FLinearColor(0.945f, 0.929f, 0.851f, 0.04f),  // bg
-			FLinearColor(0.945f, 0.929f, 0.851f, 0.85f),  // chalk outline
-			1.f, 12.f));
-		CircleBg->SetPadding(FMargin(0.f));
-		CircleBg->SetHorizontalAlignment(HAlign_Center);
-		CircleBg->SetVerticalAlignment(VAlign_Center);
+		Diamond->SetBrush(DiamondBrush(FLinearColor::Transparent, FLinearColor::Black, 1.5f));
+		Diamond->SetRenderTransformAngle(45.f);
+		Diamond->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 
-		UTextBlock* CircleNum = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), NAME_None);
-		CircleNum->SetText(FText::AsNumber(i + 1));
-		CircleNum->SetFont(MakeBMSPA(11));
-		CircleNum->SetColorAndOpacity(FSlateColor(Cream));
-		CircleNum->SetJustification(ETextJustify::Center);
-		CircleBg->SetContent(CircleNum);
-
-		// Wrap the circle in a SizeBox to enforce 24×24 footprint.
 		USizeBox* CircleSize = WidgetTree->ConstructWidget<USizeBox>(
 			USizeBox::StaticClass(), NAME_None);
-		CircleSize->SetWidthOverride(24.f);
-		CircleSize->SetHeightOverride(24.f);
-		CircleSize->AddChild(CircleBg);
-		// Plain-text rows: number-circle chrome retired (kept in the tree
-		// for WBP-name compatibility, but never shown).
-		CircleSize->SetVisibility(ESlateVisibility::Collapsed);
+		CircleSize->SetWidthOverride(DiamondSide);
+		CircleSize->SetHeightOverride(DiamondSide);
+		CircleSize->AddChild(Diamond);
+		ChoiceDiamonds.Add(Diamond);
 
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(CircleSize))
 		{
-			S->SetPadding(FMargin(0.f, 1.f, 10.f, 0.f));
+			// Same measure as the quest log's bullet: the first line's
+			// optical centre, not the middle of a wrapped block and not the
+			// top of the line box.
+			S->SetPadding(FMargin(0.f, BulletTopPadding(ChoiceFont, DiamondSide), 12.f, 0.f));
 			S->SetVerticalAlignment(VAlign_Top);
 		}
+
+		// Hidden until the row itself is revealed. The button's own
+		// RenderOpacity ramp does not reach a child that sets its own render
+		// transform, so the diamond was drawing over the NPC's line while
+		// the choices were still held back.
+		CircleSize->SetRenderOpacity(0.f);
+		ChoiceRevealDiamonds.Add(CircleSize);
 
 		// ── Text label ──
 		// Split in two so only the stat tag is tinted: a coloured prefix
 		// block ("Aesthetics [3]") followed by the neutral body (": I like
 		// the outfit."). See SplitChoiceLabel.
+		// ONE text block, not a tag beside a body. The two-widget split put
+		// the check in its own column and forced the sentence to wrap in a
+		// narrow gutter next to it; merged, "[Rhythm: 1] I like the outfit."
+		// wraps as ordinary prose. The check keeps its identity through
+		// colour instead of through layout — the whole line carries the
+		// stat's hue (see ChoiceTint).
 		FString PrefixStr, LabelStr;
 		SplitChoiceLabel(Choice, PrefixStr, LabelStr);
+		if (!PrefixStr.IsEmpty())
+		{
+			LabelStr = PrefixStr + LabelStr;
+			PrefixStr.Reset();
+		}
 		if (!Choice.GateHint.IsEmpty())
 		{
 			LabelStr += TEXT("  ") + Choice.GateHint.ToString();
@@ -1510,11 +1533,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		// the NPC's lines, then forced to the shared dialogue text size.
 		// Choices and narration read as one system this way instead of the
 		// choices having their own (previously hardcoded 20pt Rodin) look.
-		{
-			FSlateFontInfo ChoiceFont = BodyText ? BodyText->GetFont() : MakeRodin(/*Size=*/18);
-			ChoiceFont.Size = 18;
-			Label->SetFont(ChoiceFont);
-		}
+		Label->SetFont(ChoiceFont);
 		// Body stays neutral whenever a coloured prefix is carrying the
 		// stat identity; without a prefix the body itself takes ChoiceTint
 		// (which is just black, or the red hint for a blocked pick).
@@ -1522,7 +1541,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		// opposite scheme (black card / white text), so this is the at-rest
 		// value only.
 		const bool bHasPrefix = !PrefixStr.IsEmpty();
-		const FLinearColor Tint = bHasPrefix ? FLinearColor::Black : ChoiceTint(Choice);
+		const FLinearColor Tint = ChoiceTint(Choice);
 		ChoiceBaseTints.Add(Tint);
 		ChoiceLabelWidgets.Add(Label);
 		ChoiceLabelWordCounts.Add(ChoiceLabelWordCount(Choice));
@@ -1535,11 +1554,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			float MaxTextW = 340.f;
 			const float BoxW = ChoicesBox->GetCachedGeometry().GetLocalSize().X;
 			if (BoxW > 120.f) MaxTextW = BoxW - 60.f;
-			// The prefix shares the first line, so hand the body less room —
-			// rough char-width estimate is enough to stop it overflowing the
-			// card; exact metrics would need a laid-out geometry we don't
-			// have yet at construction time.
-			if (bHasPrefix) MaxTextW = FMath::Max(120.f, MaxTextW - PrefixStr.Len() * 8.f);
+			// No width reserved for a tag any more — it lives inside this
+			// same block and wraps with everything else.
 			Label->SetWrapTextAt(MaxTextW);
 		}
 
@@ -1557,7 +1573,11 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			if (UHorizontalBoxSlot* PS = Row->AddChildToHorizontalBox(PrefixLabel))
 			{
 				PS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-				PS->SetVerticalAlignment(VAlign_Center);
+				// Top, not centre. Against a body that wraps to two lines a
+				// centred tag floats between them and reads as its own
+				// column; aligned to the top it sits on the first line, as
+				// the opening words of the sentence.
+				PS->SetVerticalAlignment(VAlign_Top);
 			}
 		}
 		ChoicePrefixLabels.Add(PrefixLabel);
@@ -1567,7 +1587,7 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 			// Auto (not Fill) so the row is only as wide as the text —
 			// Fill would stretch it to the full column width.
 			S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			S->SetVerticalAlignment(VAlign_Center);
+			S->SetVerticalAlignment(VAlign_Top);   // matches the tag beside it
 		}
 
 		// Wrap the row in a white card — NativeTick flips this brush to
@@ -2017,6 +2037,152 @@ void UEclipseDialogueWidget::SetBodyPrintingFlag(bool bPrinting)
 	}
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Multi-speaker nodes
+//
+//  A knot can hand back a block where the speaker changes partway, written
+//  in the .ink as a line prefix:
+//
+//      FLORIN: Friend, you are not important.
+//      MAJA: I don't have time for philosophy!
+//
+//  The prefix is an Ink knot name in caps, so it maps straight onto an NPC's
+//  DialogueId. Anything before the first prefix belongs to the NPC you
+//  actually walked up to.
+// ─────────────────────────────────────────────────────────────────────────────
+
+TArray<FEclipseSpeechSegment> UEclipseDialogueWidget::ParseSpeechSegments(
+	const FString& Body, FName DefaultSpeaker)
+{
+	TArray<FEclipseSpeechSegment> Out;
+
+	TArray<FString> Lines;
+	Body.ParseIntoArray(Lines, TEXT("\n"), /*CullEmpty=*/false);
+
+	auto Push = [&Out](FName Who, const FString& Text)
+	{
+		FString Trimmed = Text;
+		Trimmed.TrimStartAndEndInline();
+		if (Trimmed.IsEmpty()) return;
+		Out.Add(FEclipseSpeechSegment{ Who, Trimmed });
+	};
+
+	FName Current = DefaultSpeaker;
+	FString Buffer;
+	for (const FString& Line : Lines)
+	{
+		// "NAME: rest" — the tag must be leading, all-caps, and followed by
+		// a colon. Ordinary prose with a colon in it ("The List: the law")
+		// fails the all-caps test and is left alone.
+		int32 Colon = INDEX_NONE;
+		bool bTagged = false;
+		if (Line.FindChar(TEXT(':'), Colon) && Colon > 0 && Colon <= 32)
+		{
+			const FString Tag = Line.Left(Colon).TrimStartAndEnd();
+			bTagged = !Tag.IsEmpty() && Tag == Tag.ToUpper();
+			for (const TCHAR C : Tag)
+			{
+				if (!FChar::IsAlpha(C) && C != TEXT('_') && !FChar::IsDigit(C))
+				{
+					bTagged = false; break;
+				}
+			}
+			if (bTagged)
+			{
+				Push(Current, Buffer);
+				Buffer.Reset();
+				Current = FName(*Tag.ToLower());
+				Buffer  = Line.Mid(Colon + 1).TrimStart();
+				continue;
+			}
+		}
+		if (!Buffer.IsEmpty()) Buffer += TEXT(" ");
+		Buffer += Line.TrimStartAndEnd();
+	}
+	Push(Current, Buffer);
+
+	return Out;
+}
+
+AEclipseNpcCharacter* UEclipseDialogueWidget::FindNpcByDialogueId(FName Id) const
+{
+	UWorld* W = GetWorld();
+	if (!W || Id.IsNone()) return nullptr;
+	for (TActorIterator<AEclipseNpcCharacter> It(W); It; ++It)
+	{
+		if (It->DialogueId == Id) return *It;
+	}
+	return nullptr;
+}
+
+// One bubble per speaker, one continuous cascade across all of them.
+void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegment>& Segments)
+{
+	using namespace EclipseUI;
+
+	if (!RightHistoryScroll || Segments.Num() == 0) return;
+
+	SegmentStartDelays.Reset();
+	SegmentSpeakerLocations.Reset();
+	NextSegmentFocus = 0;
+
+	AnimWordBlocks.Reset();
+	AnimWordDelays.Reset();
+	AnimWordMumbleFired.Reset();
+	for (TWeakObjectPtr<UAudioComponent>& Weak : ActiveMumbleSlices)
+	{
+		if (UAudioComponent* Live = Weak.Get()) Live->FadeOut(0.06f, 0.f);
+	}
+	ActiveMumbleSlices.Reset();
+
+	// One tick per line, not per bubble — a node that changes speaker is
+	// still a single beat of conversation.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseAudioSubsystem* A = GI->GetSubsystem<UEclipseAudioSubsystem>())
+		{
+			A->PlayCue(EEclipseUiCue::DialogueLine);
+		}
+	}
+
+	// Drop the oldest bubbles instead of letting them hang half-clipped off
+	// the top of the scroll box. A partially visible caption reads as a
+	// rendering fault, and nobody re-reads four lines back mid-conversation.
+	while (RightHistoryScroll->GetChildrenCount() + Segments.Num() > MaxHistoryBubbles)
+	{
+		// Never the choices row: it shares this scroll box and is the one
+		// thing the player has to be able to click.
+		if (RightHistoryScroll->GetChildAt(0) == ChoicesBox) break;
+		RightHistoryScroll->RemoveChildAt(0);
+	}
+
+	float RunningDelay = 0.f;
+	for (const FEclipseSpeechSegment& Seg : Segments)
+	{
+		UTextBlock* BubbleEffects = nullptr;
+		UWrapBox* Words = AppendBubble(
+			RightHistoryScroll,
+			FText::FromString(Seg.Speaker.ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper()),
+			DialogueRed,
+			&BubbleEffects);
+		if (!Words) continue;
+
+		// Note where this speaker's words begin so the camera can swing to
+		// them as they start printing rather than all at once up front —
+		// the cascade is built in one pass but revealed over time.
+		if (AEclipseNpcCharacter* Who = FindNpcByDialogueId(Seg.Speaker))
+		{
+			SegmentStartDelays.Add(RunningDelay);
+			SegmentSpeakerLocations.Add(Who->GetActorLocation());
+		}
+
+		BodyWords       = Words;
+		EffectsLineText = BubbleEffects;
+		BuildBodyWords(Seg.Text, RunningDelay);
+	}
+	FinishBodyAnimation();
+}
+
 void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 {
 	using namespace EclipseUI;
@@ -2039,6 +2205,23 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 		}
 	}
 	ActiveMumbleSlices.Reset();
+
+	float RunningDelay = 0.f;
+	BuildBodyWords(BodyString, RunningDelay);
+	FinishBodyAnimation();
+}
+
+// Build the sentence boxes and word blocks for ONE stretch of speech into
+// whatever BodyWords currently points at, continuing the caller's delay
+// clock. Split out of StartBodyAnimation so a node containing several
+// speakers can lay down a bubble each and still read as one uninterrupted
+// cascade — the delays keep running across the bubble boundary instead of
+// every speaker restarting from zero.
+void UEclipseDialogueWidget::BuildBodyWords(const FString& BodyString, float& RunningDelay)
+{
+	using namespace EclipseUI;
+
+	if (!BodyWords || !WidgetTree) return;
 
 	// Group into sentences — one closed-caption black box per sentence,
 	// not per word (BeginSentenceBox / SplitIntoSentences).
@@ -2068,7 +2251,6 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	// sentence's box shares the FIRST word's delay (Collapsed until then),
 	// so it pops in exactly as its first word does and grows in place as
 	// the rest of the sentence reveals.
-	float RunningDelay = 0.f;
 	int32 SentenceIndex = 0;
 	for (const TArray<FString>& Sentence : Sentences)
 	{
@@ -2130,6 +2312,11 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 		}
 	}
 
+}
+
+// Close out a cascade: work out how long it runs for and arm the tick.
+void UEclipseDialogueWidget::FinishBodyAnimation()
+{
 	// Total time the body takes to fully resolve = last word's reveal time
 	// + a short breathing pause before the choice rows start cascading in.
 	constexpr float PostBodyPause = 0.15f;
@@ -2240,9 +2427,44 @@ void UEclipseDialogueWidget::AnimateChoiceText(UTextBlock* Label, int32 ChoiceIn
 	bDialogueAnimating = true;
 }
 
+void UEclipseDialogueWidget::TrimHistoryToFit()
+{
+	if (!RightHistoryScroll) return;
+
+	const float ViewHeight = RightHistoryScroll->GetCachedGeometry().GetLocalSize().Y;
+	if (ViewHeight <= 1.f) return;   // not laid out yet — nothing to measure against
+
+	auto ContentHeight = [this]()
+	{
+		float H = 0.f;
+		for (int32 i = 0; i < RightHistoryScroll->GetChildrenCount(); ++i)
+		{
+			if (const UWidget* C = RightHistoryScroll->GetChildAt(i))
+			{
+				H += C->GetDesiredSize().Y;
+			}
+		}
+		return H;
+	};
+
+	// Desired sizes read zero until the first layout pass; trimming off that
+	// would empty the transcript on the frame it appears.
+	if (ContentHeight() <= 0.f) return;
+
+	while (RightHistoryScroll->GetChildrenCount() > 1 && ContentHeight() > ViewHeight)
+	{
+		const UWidget* First = RightHistoryScroll->GetChildAt(0);
+		if (!First || First == ChoicesBox) break;   // the choices always stay
+		RightHistoryScroll->RemoveChildAt(0);
+	}
+}
+
 void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
 	Super::NativeTick(InGeometry, DeltaSeconds);
+
+	// Whole bubbles only — drop the oldest until the transcript fits.
+	TrimHistoryToFit();
 
 	// ── Wheel-scroll easing ───────────────────────────────────────────────
 	// The scrollbox never handles wheel itself (see SetConsumeMouseWheel),
@@ -2280,24 +2502,39 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 				? ChoiceBaseTints[i] : FLinearColor::Black;
 			const bool bHot = B->IsHovered() || (bKeyboardSelectionActive && i == SelectedIndex);
 
-			FLinearColor C = Base;
-			if (bHot)
-			{
-				// White at rest, breathing toward a pink-red accent and back
-				// — a pulse, not a blink, and never fully saturating to red.
-				const float Blend = 0.5f + 0.5f * FMath::Sin(ChoicePulseTime * 3.2f);
-				C = FMath::Lerp(FLinearColor::White, EclipseUI::DialogueRed, Blend * 0.5f);
-			}
+			// White at rest, breathing toward a pink-red accent and back —
+			// a pulse, not a blink, and never fully saturating to red.
+			const float Pulse = 0.5f + 0.5f * FMath::Sin(ChoicePulseTime * 3.2f);
+			const FLinearColor HotColor =
+				FMath::Lerp(FLinearColor::White, EclipseUI::DialogueRed, Pulse * 0.5f);
+
+			// Cross-fade rather than snap. The card used to flip white to
+			// black on the frame the cursor crossed the edge, which made a
+			// list of choices flicker as the mouse travelled over it.
+			if (!ChoiceHoverAlphas.IsValidIndex(i)) ChoiceHoverAlphas.SetNum(i + 1);
+			float& HA = ChoiceHoverAlphas[i];
+			HA = FMath::FInterpConstantTo(HA, bHot ? 1.f : 0.f, DeltaSeconds, 6.f);
 
 			if (ChoiceRowBackgrounds.IsValidIndex(i) && ChoiceRowBackgrounds[i])
 			{
 				// Hot state matches the NPC caption boxes' own card exactly —
 				// same black, same 80% alpha, not fully opaque.
-				const FLinearColor CardColor = bHot
-					? FLinearColor(0.f, 0.f, 0.f, 0.80f)
-					: FLinearColor::White;
+				const FLinearColor CardColor = FMath::Lerp(
+					FLinearColor::White, FLinearColor(0.f, 0.f, 0.f, 0.80f), HA);
 				ChoiceRowBackgrounds[i]->SetBrush(EclipseUI::RoundedBrush(CardColor, FLinearColor::Transparent, 0.f, 8.f));
 			}
+
+			// The bullet has to invert with the card under it or it vanishes.
+			if (UBorder* D = ChoiceDiamonds.IsValidIndex(i) ? ChoiceDiamonds[i].Get() : nullptr)
+			{
+				const FLinearColor Edge = FMath::Lerp(FLinearColor::Black, FLinearColor::White, HA);
+				D->SetBrush(EclipseUI::DiamondBrush(
+					FLinearColor(Edge.R, Edge.G, Edge.B, HA), Edge, 1.5f));
+			}
+
+			// Text rides the same curve in BOTH directions, so fading out is
+			// as smooth as fading in and it never sits black-on-black.
+			const FLinearColor C = FMath::Lerp(Base, HotColor, HA);
 
 			// Path A tracks its label directly (ChoiceLabelWidgets — see
 			// RebuildChoices for why this isn't a by-name FindWidget lookup
@@ -2428,28 +2665,55 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 	if (ChoiceRevealButtons.Num() > 0)
 	{
 		const bool bBodyDone = !bDialogueAnimating || DialogueAnimTime >= BodyAnimTotalTime;
-		if (bBodyDone)
+
+		// Asserted EVERY frame in BOTH directions, rather than latched once
+		// when the body finishes. A one-shot reveal is only correct if the
+		// rows are always built before bDialogueAnimating goes true; when
+		// that ordering slipped, a row (and its bullet) that had already
+		// been forced visible stayed visible over the NPC's next line, with
+		// nothing to put it back. Re-deriving it from the gate makes the
+		// stray bullet impossible instead of merely unlikely.
+		const float RevealAlpha = bBodyDone ? 1.f : 0.f;
+
+		bool bRevealedAny = false;
+		for (UButton* B : ChoiceRevealButtons)
 		{
-			bool bRevealedAny = false;
-			for (UButton* B : ChoiceRevealButtons)
-			{
-				if (!B || B->GetRenderOpacity() >= 1.f) continue;
-				B->SetRenderOpacity(1.f);
-				bRevealedAny = true;
-			}
-			// Rows appearing grows the scrollable content — keep the view
-			// pinned to the newest row.
-			if (bRevealedAny && RightHistoryScroll)
-			{
-				RightHistoryScroll->ScrollToEnd();
-				bDialogueScrollTargetActive = false;
-			}
+			if (!B || B->GetRenderOpacity() == RevealAlpha) continue;
+			bRevealedAny = bRevealedAny || RevealAlpha > 0.f;
+			B->SetRenderOpacity(RevealAlpha);
+		}
+		// The bullets come up with their rows, never before them.
+		for (const TWeakObjectPtr<UWidget>& D : ChoiceRevealDiamonds)
+		{
+			if (UWidget* W = D.Get()) W->SetRenderOpacity(RevealAlpha);
+		}
+		// Rows appearing grows the scrollable content — keep the view
+		// pinned to the newest row.
+		if (bRevealedAny && RightHistoryScroll)
+		{
+			RightHistoryScroll->ScrollToEnd();
+			bDialogueScrollTargetActive = false;
 		}
 	}
 
 	if (!bDialogueAnimating) return;
 
 	DialogueAnimTime += DeltaSeconds;
+
+	// Hand the camera to whoever is speaking now. Only ever moves forward,
+	// so a re-entrant tick can't swing it backwards mid-line.
+	while (NextSegmentFocus < SegmentStartDelays.Num()
+		&& DialogueAnimTime >= SegmentStartDelays[NextSegmentFocus])
+	{
+		if (APawn* P = GetOwningPlayerPawn())
+		{
+			if (AEclipsePlayerCharacter* PC = Cast<AEclipsePlayerCharacter>(P))
+			{
+				PC->StartFaceTarget(SegmentSpeakerLocations[NextSegmentFocus]);
+			}
+		}
+		++NextSegmentFocus;
+	}
 
 	bool bAllDone = true;
 

@@ -119,11 +119,15 @@ protected:
 	TObjectPtr<UVerticalBox> QuestList;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Quests", meta = (ClampMin = "8"))
-	int32 QuestFontSize = 18;   // matches the dialogue body (StartBodyAnimation)
+	int32 QuestFontSize = 18;   // FragmentMono, matching the dialogue
 
 	// Diameter of the drawn circle bullet on each quest row.
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|HUD|Quests", meta = (ClampMin = "4"))
-	float QuestBulletSize = 9.f;
+	float QuestBulletSize = 14.f;
+
+	// Gap between the diamond and the quest text. Was 8 and read cramped.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
+	float QuestBulletGapPx = 14.f;
 
 	// ── Debug overlay (0 key) ──────────────────────────────────────────
 	// Bottom-anchored terminal-style readout of every gameplay variable:
@@ -178,6 +182,28 @@ private:
 	static constexpr float QuestRefreshInterval = 0.4f;
 	TArray<FString> LastQuestLines;
 
+	// A quest that leaves the active list has been COMPLETED — Ink just
+	// stops reporting it. Rather than let the line vanish mid-glance, the
+	// row is kept, ticked, struck through, and faded out over these
+	// seconds so the player sees what they finished.
+	struct FQuestRow
+	{
+		FString                    Line;
+		TWeakObjectPtr<class UWidget>    Diamond;    // fill flips on completion
+		TWeakObjectPtr<class UTextBlock> Text;
+		TWeakObjectPtr<class UWidget>    Strike;     // collapsed until completed
+		TWeakObjectPtr<class UWidget>    Row;
+		float                      CompletedFor = -1.f;   // <0 = still active
+	};
+	TArray<FQuestRow> QuestRows;
+	void TickQuestCompletions(float DeltaTime);
+	void BuildQuestRow(const FString& Line);
+
+	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
+	float QuestCompleteHoldSeconds = 1.1f;
+	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
+	float QuestCompleteFadeSeconds = 1.4f;
+
 	void UpdateQuestList();
 
 	// Builds DebugPanel + DebugColumns on first toggle. No-op afterwards.
@@ -223,11 +249,62 @@ private:
 
 	// Time the flash takes to fade back to normal. Short enough to feel
 	// like instant feedback, long enough that the eye catches it.
-	static constexpr float PulseDuration = 0.4f;
+	static constexpr float PulseDuration = 0.9f;
 
 	// (Kept for back-compat — formats the chapter clock from the shared
 	// subsystem helper. HUD instance is collapsed so this is dormant
 	// today.)
 	void UpdateChapterClock();
 	void UpdateCurrency();
+
+	// ── Tutorial prompts ──────────────────────────────────────────────────
+	// One line at a time, faded in when the game reaches a moment the tip is
+	// about and faded back out the instant the player does the thing. Each
+	// tip fires once ever; the seen-set lives on the game state subsystem so
+	// it survives a level change rather than resetting with this widget.
+	//
+	// Deliberately polled rather than event-driven: every condition here is
+	// already readable from a subsystem this widget can see, and six
+	// delegate subscriptions to say "the player pressed I" would be more
+	// moving parts than the feature is worth.
+	enum class ETip : uint8
+	{
+		Walk,        // WSAD to walk           — at start
+		Look,        // mouse to look          — once walking is done
+		Interact,    // E to interact          — standing near an item
+		Inventory,   // I to open inventory    — after the first pickup
+		Talk,        // E to talk              — near an NPC for the first time
+		Stats,       // C to check your stats  — after the first conversation
+		Count
+	};
+
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> TutorialText;
+	// Gradient plate behind the line. Cream on a bright club floor was
+	// unreadable; the wash gives it something to sit on without drawing a
+	// hard-edged box.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UBorder> TutorialPlate;
+
+	UFUNCTION()
+	void HandleTutorialPickup(FName ItemId);
+
+	void TickTutorial(float DeltaTime);
+	// The tip that wants the screen right now, or Count for none.
+	ETip PickTip() const;
+	bool IsTipDone(ETip T) const;
+	void MarkTipDone(ETip T);
+
+	ETip  ActiveTip      = ETip::Count;
+	float TipAlpha       = 0.f;   // 0..1 fade
+	float TipHoldTime    = 0.f;   // seconds the current tip has been up
+	bool  bSeenFirstPickup   = false;
+	bool  bSeenFirstDialogue = false;
+	// Baseline for the "have they moved / looked yet" tests.
+	FVector  TipStartLocation = FVector::ZeroVector;
+	FRotator TipStartRotation = FRotator::ZeroRotator;
+	bool     bTipBaselineSet  = false;
+
+	static constexpr float TipFadeSeconds = 0.45f;
+	// A tip the player never completes still goes away eventually rather
+	// than sitting on screen for the rest of the game.
+	static constexpr float TipMaxHoldSeconds = 12.f;
 };

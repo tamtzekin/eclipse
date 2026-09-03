@@ -18,8 +18,19 @@ AEclipseItemActor::AEclipseItemActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// The ROOT is a bare scene component and the mesh hangs off it. The mesh
+	// used to be the root itself, which had two consequences: the row's
+	// MeshRotation was really the actor's rotation (so every editor rotate
+	// was undone by the next construction pass), and a model whose own
+	// origin sits far from its geometry — the beer bottle is 4cm off in
+	// mesh space, 68cm once its 16x row scale is applied — rendered nowhere
+	// near its own transform gizmo. With a separate root the mesh can be
+	// offset to sit ON the pivot, and the actor's transform is left alone.
+	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	RootComponent = Root;
+
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	RootComponent = Mesh;
+	Mesh->SetupAttachment(Root);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision); // pickup handled by proximity, not hit
 }
 
@@ -47,16 +58,38 @@ namespace
 			return false;
 		}
 
-		// Snap by the RENDERED BOUNDS, not the actor origin. Imported prefabs
-		// put their pivot wherever the artist left it — the beer bottle's
-		// mesh sits 60 cm BELOW its origin, the lollipop 5 cm above — so
-		// moving the origin to the floor leaves the visible mesh buried or
-		// floating by that offset. Measuring the gap between the origin and
-		// the bottom of the bounds and correcting for it lands every prefab
-		// on the floor regardless of where its pivot is.
-		FVector BoundsOrigin, BoundsExtent;
-		InActor->GetActorBounds(/*bOnlyCollidingComponents=*/false, BoundsOrigin, BoundsExtent);
-		const float BottomToOrigin = Origin.Z - (BoundsOrigin.Z - BoundsExtent.Z);
+		// Snap by the MODEL's bottom, not the actor origin. Imported prefabs
+		// put their pivot wherever the artist left it, so moving the origin
+		// to the floor leaves the visible mesh buried or floating by that
+		// offset. Measuring the gap between the origin and the bottom of the
+		// model and correcting for it lands every prefab on the floor
+		// regardless of where its pivot is.
+		//
+		// Computed from the mesh asset rather than GetActorBounds: during
+		// OnConstruction the mesh is assigned in the same pass, so the
+		// component's cached bounds are still empty. An empty box reads as
+		// "bottom at world Z = 0", which makes BottomToOrigin equal the
+		// actor's whole height and lifts it by that much every single
+		// construction — items ended up saved at exactly twice their correct
+		// height, with BeginPlay's snap quietly hiding it in PIE.
+		float BottomToOrigin = 0.f;
+		if (const UStaticMeshComponent* MC = InActor->FindComponentByClass<UStaticMeshComponent>())
+		{
+			if (const UStaticMesh* SM = MC->GetStaticMesh())
+			{
+				// Mesh-local box → actor-local via the component's relative
+				// transform, then out to world by the actor's own scale
+				// (which the relative transform doesn't carry).
+				const FBox InActorSpace = SM->GetBoundingBox().TransformBy(MC->GetRelativeTransform());
+				BottomToOrigin = -InActorSpace.Min.Z * InActor->GetActorScale3D().Z;
+			}
+		}
+		else
+		{
+			FVector BoundsOrigin, BoundsExtent;
+			InActor->GetActorBounds(/*bOnlyCollidingComponents=*/false, BoundsOrigin, BoundsExtent);
+			BottomToOrigin = Origin.Z - (BoundsOrigin.Z - BoundsExtent.Z);
+		}
 
 		OutNewLocation = Origin;
 		// +1 cm so it rests on the floor rather than z-fighting with it.
@@ -103,6 +136,21 @@ void AEclipseItemActor::ApplyMeshFromRow()
 	// and the actor has nothing to show until the mesh is resident.
 	if (UStaticMesh* SM = Row.Mesh.LoadSynchronous())
 	{
+		// The row's pose is a STARTING pose, applied only when this actor
+		// adopts a new mesh — never re-asserted afterwards.
+		//
+		// This matters because Mesh IS the RootComponent (see the
+		// constructor), so SetRelativeRotation on it is setting the ACTOR's
+		// rotation. OnConstruction fires on every transform edit in the
+		// editor, so re-applying the row rotation there meant every rotate
+		// in the viewport was undone by the construction pass that the
+		// rotate itself triggered — the item snapped back the instant you
+		// let go of the gizmo. Same for scale.
+		//
+		// Applying it once on adoption keeps the baggie lying flat when it
+		// is first placed or dropped, and leaves per-instance rotation in
+		// the level alone. Only the floor snap still runs every time, which
+		// is the one thing that SHOULD keep correcting itself.
 		if (Mesh->GetStaticMesh() != SM)
 		{
 			Mesh->SetStaticMesh(SM);
@@ -111,15 +159,28 @@ void AEclipseItemActor::ApplyMeshFromRow()
 			// real prefab solid blue. Clear them and let the mesh use the
 			// materials it shipped with.
 			Mesh->EmptyOverrideMaterials();
-		}
-		const float S = FMath::Max(0.0001f, Row.MeshScale);
-		SetActorScale3D(FVector(S));
 
-		// How the thing rests. Authored per row because it's a property of
-		// the model's own axes, not of where it was dropped — a baggie that
-		// imports standing on its edge should lie flat everywhere, including
-		// when it's dropped from a swap.
-		Mesh->SetRelativeRotation(Row.MeshRotation);
+			SetActorScale3D(FVector(FMath::Max(0.0001f, Row.MeshScale)));
+			if (!Row.MeshRotation.IsNearlyZero())
+			{
+				SetActorRotation(Row.MeshRotation);
+			}
+		}
+
+		// Re-centre the model over the pivot every construction — cheap, and
+		// it has to survive a mesh the artist re-exported with a different
+		// origin. Horizontal centre on the pivot, base resting on it, all in
+		// mesh-local units so the actor's scale cancels out naturally.
+		{
+			const FBox B = SM->GetBoundingBox();
+			const FVector Wanted(-(B.Min.X + B.Max.X) * 0.5f,
+			                     -(B.Min.Y + B.Max.Y) * 0.5f,
+			                     -B.Min.Z);
+			if (!Mesh->GetRelativeLocation().Equals(Wanted, 0.01f))
+			{
+				Mesh->SetRelativeLocation(Wanted);
+			}
+		}
 
 		if (UMaterialInterface* Mat = Row.MeshMaterial.IsNull() ? nullptr : Row.MeshMaterial.LoadSynchronous())
 		{
@@ -139,13 +200,20 @@ void AEclipseItemActor::OnConstruction(const FTransform& Transform)
 	// origin, and swapping the mesh can change where that sits.
 	ApplyMeshFromRow();
 
-	// Only auto-snap in the editor world. PIE / packaged builds rely on
+	// Only auto-snap in a LIVE editor world. PIE / packaged builds rely on
 	// BeginPlay's snap so items can't be missed if a designer placed them
 	// floating without re-saving the level.
+	//
+	// EWorldType::Editor specifically, not merely "not a game world": a
+	// world opened with LoadObject for inspection is Inactive, and an
+	// inactive world has no registered collision. The downward trace then
+	// misses the surface the item was authored on and relocates it to
+	// whatever it does hit — silently rewriting a designer's placement as a
+	// side effect of something merely reading the level.
 #if WITH_EDITOR
 	if (UWorld* World = GetWorld())
 	{
-		if (!World->IsGameWorld())
+		if (World->WorldType == EWorldType::Editor)
 		{
 			FVector Snapped;
 			if (TraceDownToSurface(this, Snapped))
@@ -208,6 +276,35 @@ void AEclipseItemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+// A soft red rim on anything within reach, so the world tells you what it
+// is offering without you holding TAB. The TAB highlight still wins when
+// it's on — that one means "show me EVERYTHING", and downgrading a
+// deliberately-held key to the ambient cue would read as it not working.
+void AEclipseItemActor::TickProximityGlow()
+{
+	if (bPickedUp || bTabHighlighted) return;
+
+	// Exactly the item the E prompt is offering, not everything in range.
+	// A distance test lit up a whole shelf of bottles at once and gave no
+	// clue which one you would actually get; the InteractSubsystem has
+	// already picked a winner, so ask it.
+	UWorld* W = GetWorld();
+	UEclipseInteractSubsystem* Interact = W ? W->GetSubsystem<UEclipseInteractSubsystem>() : nullptr;
+	if (!Interact) return;
+
+	const bool bNear = (Interact->GetNearItem() == this);
+	if (bNear == bProximityGlowOn) return;   // only touch materials on the edge
+
+	bProximityGlowOn = bNear;
+	UMaterialInterface* Overlay = bNear ? EclipseUI::GetProximityGlow() : nullptr;
+	TArray<UMeshComponent*> Meshes;
+	GetComponents<UMeshComponent>(Meshes);
+	for (UMeshComponent* M : Meshes)
+	{
+		if (M) M->SetOverlayMaterial(Overlay);
+	}
+}
+
 void AEclipseItemActor::HandleHighlightToggled(bool bActive)
 {
 	UE_LOG(LogEclipse, Log, TEXT("[TAB] Item '%s' HandleHighlightToggled(%s)"),
@@ -215,6 +312,11 @@ void AEclipseItemActor::HandleHighlightToggled(bool bActive)
 
 	const bool bSuppress = bPickedUp || IsHidden();
 	const bool bShow     = bActive && !bSuppress;
+	bTabHighlighted      = bShow;
+	// Releasing TAB clears the overlay, so the ambient rim has to be
+	// re-evaluated from scratch next tick rather than assuming its old
+	// state still holds.
+	if (!bShow) bProximityGlowOn = false;
 
 	// Pulsing cyan rim-glow overlay on the mesh.
 	UMaterialInterface* Overlay = bShow ? EclipseUI::GetHighlightOverlay() : nullptr;
@@ -229,6 +331,8 @@ void AEclipseItemActor::HandleHighlightToggled(bool bActive)
 void AEclipseItemActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	TickProximityGlow();
 
 	if (bPickedUp) return;
 
@@ -293,9 +397,28 @@ void AEclipseItemActor::Pickup_Implementation()
 				}
 			}
 
+			// Base id, not the runtime "__actor" form: listeners want the
+			// row key so they can look up a name and a picture.
+			State->OnItemPickedUp.Broadcast(UEclipseGameStateSubsystem::GetBaseItemId(ItemId));
 			ConsumePickup();
 		}
 	}
+}
+
+USoundBase* AEclipseItemActor::ResolvePickupSound() const
+{
+	if (PickupSound) return PickupSound;
+
+	const UGameInstance* GI = GetGameInstance();
+	const UEclipseGameStateSubsystem* State = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!State) return nullptr;
+
+	FEclipseItemRow Row;
+	if (!State->GetItemRow(UEclipseGameStateSubsystem::GetBaseItemId(ItemId), Row)) return nullptr;
+
+	// Synchronous, but only on the frame something is actually picked up,
+	// and the asset stays resident afterwards.
+	return Row.PickupSound.IsNull() ? nullptr : Row.PickupSound.LoadSynchronous();
 }
 
 FName AEclipseItemActor::MakeRuntimeId() const
@@ -366,12 +489,22 @@ void AEclipseItemActor::ConsumePickup()
 		}
 	}
 
-	// Audio cue at the pickup location.
+	// Audio cue at the pickup location. Lives here rather than in
+	// Pickup_Implementation because the post-swap path reaches ConsumePickup
+	// without going through it — swapped-in items used to be picked up in
+	// total silence.
 	if (UGameInstance* GI = World->GetGameInstance())
 	{
 		if (UEclipseAudioSubsystem* Audio = GI->GetSubsystem<UEclipseAudioSubsystem>())
 		{
-			Audio->PlaySFXAt(PickupSound, GetActorLocation());
+			if (USoundBase* Sound = ResolvePickupSound())
+			{
+				Audio->PlaySFXAt(Sound, GetActorLocation());
+			}
+			else
+			{
+				Audio->PlayCue(EEclipseUiCue::Pickup);
+			}
 		}
 	}
 

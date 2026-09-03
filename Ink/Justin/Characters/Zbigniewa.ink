@@ -1,16 +1,19 @@
 //
 
-=== door_girl ===
-{Patience >= neutral: -> ask_door_girl_for_ticket}
-{Patience < bored: -> door_girl_annoyed}
+=== zbigniewa ===
+{Patience >= neutral: -> ask_zbigniewa_for_ticket}
+// <= bored, not < bored: annoyed and bored are both "she's done with you",
+// and with the strict form a Patience of exactly bored matched neither
+// branch, so the knot fell off its own end with nothing to say.
+{Patience <= bored: -> zbigniewa_annoyed}
 
 
-== ask_door_girl_for_ticket ==
+== ask_zbigniewa_for_ticket ==
 {She's not looking at you. Whatever you do, whoever you are, she doesn't actually care. Her cigarette a tower of ash. She stares into it like there are a billion universes in each speck of burnt chemical. | She eyes you. | She's waiting for you to say something. Anything. | She doesn't look at you. Looking at her phone.}
 
-* {bouncer_outside} Ok I talked to the bouncer.
+* {florin} Ok I talked to the bouncer.
 'Oh really? And what extreme religion did he put you onto? Did he make you feel we are all small, insigificant nothings with no agency in this ball of fire?'
-    ** {bouncer_outside && psychedelics >= 2} Yes. Everything you just said.
+    ** {florin && psychedelics >= 2} Yes. Everything you just said.
     She's surprised you bothered trying. That's enough for her. 'If you need another one let me know.'
     ~ Inventory += ticket
     
@@ -22,17 +25,17 @@
     'He doesn't have the list.' Her face is ice. 'I do.'
     -> DONE
 * {rhythm >= 1} You don't look like you want to be here.
-    A twitch in her face, some sign of life. 'I'm working.'
+    A twitch in her face, some sign of life. 'I'm trying to work.'
     ** {rhythm > 2} Have you ever thought of getting a different job?
     'Do I have a choice?'
     
-        *** {glamorous_dealer} Have you thought of dealing?
+        *** {nuria} Have you thought of dealing?
         'Under the empire's laws dealing is illegal and a reportable offence. According to the Statutes I would have to report you right now to the higher police.' She tilts her head. 'Their car is over there.'
         -> DONE
         
         *** You could work behind the bar.
         'Have *you* ever worked behind a bar?'
-        -> ask_door_girl_for_ticket
+        -> ask_zbigniewa_for_ticket
     
 * One ticket, please.
     -> buy_ticket
@@ -127,7 +130,7 @@ Her eyes scan a piece of paper in front of her, out of your sight. The secret li
         ~ Patience--
         -> DONE
 
-== door_girl_annoyed==
+== zbigniewa_annoyed==
 '20, I said. Twenty. Get it, or get out of my face.' Her finger runs along the edge of the counter.
 
     * {euros >= 20} Hand it over quietly.

@@ -52,6 +52,26 @@ void UEclipseDialogueSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 }
 
+bool UEclipseDialogueSubsystem::GetInitialInventoryItems(TArray<FName>& Out) const
+{
+	if (!Story) return false;
+
+	bool bOk = false;
+	FInkpotList List;
+	Story->GetList(TEXT("Inventory"), List, bOk);
+	if (!bOk) return false;
+
+	TArray<FString> Names;
+	List.ToStringArray(Names, /*bUseOrigin=*/false);
+	for (const FString& N : Names)
+	{
+		// "none" is the LIST's zero value, not a thing you can hold.
+		if (N.IsEmpty() || N.Equals(TEXT("none"), ESearchCase::IgnoreCase)) continue;
+		Out.Add(FName(*N));
+	}
+	return true;
+}
+
 void UEclipseDialogueSubsystem::Deinitialize()
 {
 	UE_LOG(LogEclipse, Log, TEXT("DialogueSubsystem::Deinitialize"));
@@ -133,6 +153,7 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 			if (AEclipsePlayerCharacter* Player = Cast<AEclipsePlayerCharacter>(PC->GetPawn()))
 			{
 				Player->StartFaceTarget(Npc->GetActorLocation());
+				Player->SetDialogueCameraPitch(Npc->DialogueCameraPitch);
 				Npc->StartFacePlayer(Player);
 			}
 		}
@@ -208,6 +229,20 @@ bool UEclipseDialogueSubsystem::OpenItemDialogue(AEclipseItemActor* Item)
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
 			GS->SetClockRunning(false);
+		}
+	}
+
+	// Cut to a framed shot of the thing being examined. Released again in
+	// CloseDialogue, which is the single exit for every path out of here
+	// (LEAVE, takeItem, chapter transition).
+	if (UWorld* W = GetWorld())
+	{
+		if (APlayerController* PC = W->GetFirstPlayerController())
+		{
+			if (AEclipsePlayerCharacter* Player = Cast<AEclipsePlayerCharacter>(PC->GetPawn()))
+			{
+				Player->FocusOnActor(Item);
+			}
 		}
 	}
 
@@ -590,6 +625,8 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 			if (AEclipsePlayerCharacter* Player = Cast<AEclipsePlayerCharacter>(PC->GetPawn()))
 			{
 				Player->StopFaceTarget();
+				Player->SetDialogueCameraPitch(0.f);
+				Player->ClearFocus();   // no-op unless an item dialogue took the view
 			}
 			if (NpcToRelease)
 			{

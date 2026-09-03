@@ -9,6 +9,9 @@
 #include "Styling/SlateColor.h"
 #include "Math/Color.h"
 #include "Materials/MaterialInterface.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Fonts/FontMeasure.h"
+#include "Engine/Texture2D.h"
 
 /**
  * Centralised UI tokens — colors and fonts pulled directly from the HTML
@@ -25,12 +28,17 @@ namespace EclipseUI
 	inline const FLinearColor Cream       = FLinearColor(0.945f, 0.929f, 0.851f, 1.f); // #f1ecd9 chalk
 	inline const FLinearColor CreamDim    = FLinearColor(0.945f, 0.929f, 0.851f, 0.85f);
 
-	// ── Inventory palette: hyperlink blue on white ─────────────────────
+	// ── Inventory palette: deep red on white ───────────────────────────
 	// Authored from sRGB hex via FLinearColor(FColor) — writing these as
 	// raw floats would gamma-lift them into pastels on screen.
-	// LinkBlue on PaperWhite is ~9.7:1, so body text at small sizes holds up.
-	inline const FLinearColor LinkBlue    = FLinearColor(FColor(0x0B, 0x3F, 0xC4)); // #0b3fc4
-	inline const FLinearColor LinkBlueDim = FLinearColor(FColor(0x0B, 0x3F, 0xC4)).CopyWithNewOpacity(0.55f);
+	// #A3111B on PaperWhite is ~8.4:1, so body text at small sizes holds up.
+	//
+	// Named LinkBlue for its role, not its hue — it is the inventory's one
+	// accent, and nothing outside the inventory reads it, so repointing it
+	// here restyles that whole panel in one place. (Renaming it would touch
+	// forty call sites to say the same thing.)
+	inline const FLinearColor LinkBlue    = FLinearColor(FColor(0xA3, 0x11, 0x1B)); // #a3111b
+	inline const FLinearColor LinkBlueDim = FLinearColor(FColor(0xA3, 0x11, 0x1B)).CopyWithNewOpacity(0.55f);
 	inline const FLinearColor PaperWhite  = FLinearColor(FColor(0xF7, 0xF7, 0xFA)); // panel ground
 	inline const FLinearColor InkWhite    = FLinearColor::White;                    // text ON blue
 	inline const FLinearColor Slate       = FLinearColor(0.055f, 0.059f, 0.071f, 1.f); // #0e0f12
@@ -46,6 +54,7 @@ namespace EclipseUI
 	// Replaced the cyan accents on the dialogue UI (speaker captions,
 	// portrait outline) per design direction.
 	inline const FLinearColor DialogueRed = FLinearColor(0.902f, 0.165f, 0.165f, 1.f); // #e62a2a
+	inline const FLinearColor DialogueRedDim = FLinearColor(0.902f, 0.165f, 0.165f, 0.5f);
 
 	// Per-stat hue — shared by the dialogue widget's skill-check choice tints
 	// and its stat-altering body-text callouts (e.g. "Aesthetics Damaged: ...")
@@ -103,6 +112,15 @@ namespace EclipseUI
 		return Cache.Get();
 	}
 
+	inline UFont* GetFragmentMono()
+	{
+		static TWeakObjectPtr<UFont> Cache;
+		if (!Cache.IsValid())
+			Cache = LoadObject<UFont>(nullptr,
+				TEXT("/Game/Justin/UI/Fonts/FragmentMono-Regular_Font.FragmentMono-Regular_Font"));
+		return Cache.Get();
+	}
+
 	inline FSlateFontInfo MakeBMSPA(int32 Size, float LetterSpacingPx = 0.f)
 	{
 		FSlateFontInfo Info;
@@ -146,6 +164,20 @@ namespace EclipseUI
 		Info.LetterSpacing = (int32)(LetterSpacingPx * 62.5f);
 		return Info;
 	}
+	inline FSlateFontInfo MakeFragmentMono(int32 Size, float LetterSpacingPx = 0.f)
+	{
+		FSlateFontInfo Info;
+		if (UFont* F = GetFragmentMono())
+		{
+			Info = FSlateFontInfo(F, Size, FName("Default"));
+		}
+		else
+		{
+			Info.Size = Size;
+		}
+		Info.LetterSpacing = (int32)(LetterSpacingPx * 62.5f);
+		return Info;
+	}
 
 	// ── Brush helpers ────────────────────────────────────────────────────────
 	// Use RoundedBox even for "solid" fills — Box mode requires a texture and
@@ -164,6 +196,19 @@ namespace EclipseUI
 	}
 	// Shared TAB-hold rim-glow material — applied via SetOverlayMaterial on
 	// every UMeshComponent of NPCs / Items. Cached on first call.
+	// Soft red rim shown on an item you're standing next to — distinct from
+	// the TAB-hold cyan, which means "everything you could interact with".
+	inline UMaterialInterface* GetProximityGlow()
+	{
+		static TWeakObjectPtr<UMaterialInterface> Cache;
+		if (!Cache.IsValid())
+		{
+			Cache = LoadObject<UMaterialInterface>(nullptr,
+				TEXT("/Game/Justin/Materials/M_ProximityGlow.M_ProximityGlow"));
+		}
+		return Cache.Get();
+	}
+
 	inline UMaterialInterface* GetHighlightOverlay()
 	{
 		static TWeakObjectPtr<UMaterialInterface> Cache;
@@ -173,6 +218,26 @@ namespace EclipseUI
 				TEXT("/Game/Justin/Materials/M_HighlightOverlay.M_HighlightOverlay"));
 		}
 		return Cache.Get();
+	}
+
+	// ── Diamond bullet ──────────────────────────────────────────────────
+	// A square rotated 45°, not a glyph: the pixel fonts have no diamond
+	// character, and a Border with a render-transform angle is resolution
+	// independent and tints per-state for free.
+	//
+	// Slate lays a rotated widget out by its UNROTATED bounds, so the
+	// caller's SizeBox should be ~1.42x the visual width you want.
+	inline FSlateBrush DiamondBrush(const FLinearColor& Fill, const FLinearColor& Outline,
+		float OutlineWidth = 1.5f)
+	{
+		FSlateBrush B;
+		B.DrawAs = ESlateBrushDrawType::RoundedBox;
+		B.TintColor = FSlateColor(Fill);
+		B.OutlineSettings.Color        = FSlateColor(Outline);
+		B.OutlineSettings.Width        = OutlineWidth;
+		B.OutlineSettings.CornerRadii  = FVector4(0, 0, 0, 0);
+		B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		return B;
 	}
 
 	inline FSlateBrush RoundedBrush(const FLinearColor& Fill, const FLinearColor& Outline,
@@ -185,6 +250,45 @@ namespace EclipseUI
 		B.OutlineSettings.Width        = OutlineWidth;
 		B.OutlineSettings.CornerRadii  = FVector4(CornerRadius, CornerRadius, CornerRadius, CornerRadius);
 		B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		return B;
+	}
+
+	// Top padding that vertically centres a bullet of `BulletSize` on the
+	// FIRST line of a text block set in `Font`.
+	//
+	// Measures the font's real line height instead of taking a fraction of
+	// the point size. A fixed fraction guesses wrong for any face whose
+	// ascent/descent ratio isn't average — which is exactly why the quest
+	// and choice diamonds sat visibly high.
+	inline float BulletTopPadding(const FSlateFontInfo& Font, float BulletSize)
+	{
+		if (!FSlateApplication::IsInitialized()) return 0.f;
+		const TSharedRef<FSlateFontMeasure> Measure =
+			FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		const float LineHeight = Measure->GetMaxCharacterHeight(Font);
+		return FMath::Max(0.f, (LineHeight - BulletSize) * 0.5f);
+	}
+
+	// Soft dark-red wash behind the tutorial line. A texture rather than a
+	// flat colour because Slate brushes have no gradient of their own, and a
+	// hard-edged plate reads as a UI box the rest of this HUD doesn't have.
+	inline FSlateBrush TutorialPlateBrush()
+	{
+		FSlateBrush B;
+		if (UTexture2D* T = LoadObject<UTexture2D>(nullptr,
+				TEXT("/Game/Justin/UI/Tex/T_TutorialPlate.T_TutorialPlate")))
+		{
+			B.SetResourceObject(T);
+			B.DrawAs    = ESlateBrushDrawType::Image;
+			B.ImageSize = FVector2D(256.f, 8.f);
+			B.TintColor = FSlateColor(FLinearColor::White);
+		}
+		else
+		{
+			// Texture missing — a flat wash still beats unreadable text.
+			B.DrawAs    = ESlateBrushDrawType::Box;
+			B.TintColor = FSlateColor(FLinearColor(0.23f, 0.02f, 0.04f, 0.8f));
+		}
 		return B;
 	}
 }

@@ -1,6 +1,6 @@
-// Bouncer_Outside.ink — bouncer NPC outside the club (NPC_Figure_2).
+// Florin.ink — bouncer NPC outside the club (NPC_Figure_2).
 
-=== bouncer_outside ===
+=== florin ===
 He sees you before you're even there.
 Bag. Show me what you carry.
 
@@ -12,7 +12,7 @@ Bag. Show me what you carry.
     * {Inventory !? thick_book} Go for it. 
     -> bag_check
     
-    * [I'm not going in.] I need to ... uh ... check with my friend ... on something. I'll be right back.
+    * [I'm not going in yet.] I need to ... I'll be right back.
     You are wasting all of our time.
         ~ Patience--
     

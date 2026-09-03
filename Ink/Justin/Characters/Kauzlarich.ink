@@ -1,8 +1,10 @@
 // RHYTHM 
 
-=== chainsmoker ===
+=== kauzlarich ===
 {Patience >= neutral: -> got_fire}
-{Patience < bored: -> chainsmoker_annoyed}
+// <= bored, not <: at exactly bored neither branch matched and the
+// knot fell off its own end with nothing to say.
+{Patience <= bored: -> kauzlarich_annoyed}
 
 
 == got_fire ==
@@ -55,7 +57,7 @@ No.
     ** Don't worry about it.
     -> DONE
 
-== chainsmoker_annoyed ==
+== kauzlarich_annoyed ==
 I'm good.
 The smoke clouds his eyes, the rest of his face still visible.
 -> DONE

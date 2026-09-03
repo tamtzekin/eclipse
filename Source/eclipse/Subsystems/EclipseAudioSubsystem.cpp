@@ -40,7 +40,45 @@ void UEclipseAudioSubsystem::PlaySFXAt(USoundBase* Sound, FVector Location, floa
 	UGameplayStatics::PlaySoundAtLocation(World, Sound, Location, VolumeMultiplier, PitchMultiplier);
 }
 
-void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds)
+void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
+{
+	// Placeholder square-wave bleeps generated into /Game/Justin/Audio/UI —
+	// deliberately cheap and obviously temporary. The FMOD plugins are
+	// enabled but the project ships no banks yet, so there is nothing for
+	// FMOD to play; when a Studio project exists this function is the one
+	// place that has to change.
+	if (!bPlaceholderUiCues) return;
+
+	const TCHAR* Asset = nullptr;
+	switch (Cue)
+	{
+	case EEclipseUiCue::Pickup:       Asset = TEXT("S_UI_Pickup");       break;
+	case EEclipseUiCue::Use:          Asset = TEXT("S_UI_Use");          break;
+	case EEclipseUiCue::Drop:         Asset = TEXT("S_UI_Drop");         break;
+	case EEclipseUiCue::Equip:        Asset = TEXT("S_UI_Equip");        break;
+	case EEclipseUiCue::MenuOpen:     Asset = TEXT("S_UI_MenuOpen");     break;
+	case EEclipseUiCue::MenuClose:    Asset = TEXT("S_UI_MenuClose");    break;
+	case EEclipseUiCue::DialogueLine: Asset = TEXT("S_UI_DialogueLine"); break;
+	case EEclipseUiCue::MeterUp:      Asset = TEXT("S_UI_MeterUp");      break;
+	case EEclipseUiCue::MeterDown:    Asset = TEXT("S_UI_MeterDown");    break;
+	}
+	if (!Asset) return;
+
+	// Cached per cue: these fire on every pickup and every dialogue line, so
+	// a synchronous load each time would hitch the frame it lands on.
+	TWeakObjectPtr<USoundBase>& Slot = CueCache.FindOrAdd(Cue);
+	if (!Slot.IsValid())
+	{
+		Slot = LoadObject<USoundBase>(nullptr,
+			*FString::Printf(TEXT("/Game/Justin/Audio/UI/%s.%s"), Asset, Asset));
+	}
+	if (USoundBase* Sound = Slot.Get())
+	{
+		PlayUI(Sound, VolumeMultiplier);
+	}
+}
+
+void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds, float StartTimeSeconds)
 {
 	if (!Sound) return;
 	UWorld* World = GetWorld();
@@ -58,7 +96,7 @@ void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds)
 		World, Sound,
 		/*VolumeMultiplier=*/0.f,    // start silent, FadeIn to 1
 		/*PitchMultiplier=*/1.f,
-		/*StartTime=*/0.f,
+		StartTimeSeconds,           // skip an intro that doesn't work as a loop-in
 		/*ConcurrencyOverride=*/nullptr,
 		/*bPersistAcrossLevelTransition=*/true,
 		/*bAutoDestroy=*/true);
@@ -68,8 +106,8 @@ void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds)
 		// Fade up to the global MusicVolume multiplier — 0 keeps the track
 		// silent (slice currently ships muted; flip via SetMusicVolume later).
 		CurrentMusic->FadeIn(FadeInSeconds, /*FadeVolumeLevel=*/MusicVolume);
-		UE_LOG(LogEclipse, Log, TEXT("Audio: PlayMusic '%s' fade-in %.1fs vol=%.2f"),
-			*Sound->GetName(), FadeInSeconds, MusicVolume);
+		UE_LOG(LogEclipse, Log, TEXT("Audio: PlayMusic '%s' fade-in %.1fs vol=%.2f start=%.1fs"),
+			*Sound->GetName(), FadeInSeconds, MusicVolume, StartTimeSeconds);
 	}
 }
 

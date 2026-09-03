@@ -8,23 +8,23 @@
 // choices. Here the {a|b|c} sequence advances on every pass, exactly as it
 // did when each branch ended with `-> alina`.
 - (top)
-{...This is it? | What are we still doing standing here? | I'm getting kind of thirsty, too. Did you find a smoke?}
+{...This is it? | What are we still doing standing here? | I'm getting kind of thirsty, too. Did you find something to smoke?}
 
 * You don't sound like you want to be here.
-    I don't know. I get this feeling. I can't describe it. She looks off into the distance at something. 'I need a cigarette.'
+    I don't know. I get this feeling. I can't describe it. She looks off into the distance. 'I need a cigarette.'
     ~ SideQuests += alina_needs_a_cigarette
 
-* {SideQuests ? alina_needs_a_cigarette} Can you see anyone smoking around here?
-    Everyone carries cigarettes at the club. It's basically currency. Can probably bribe your way in with an expensive pack of those herbal cigarettes. Banned across three dynasties.
+* {SideQuests ? alina_needs_a_cigarette} Do you know where I can get some?
+    Everyone smokes here. It's basically currency.
 
 * How are we going to get in?
     That's not hard. They'll let me in.
 
     ** I mean for me.
-        I don't know, maybe you can talk your way in. With your looks or your mind.
+        I don't know, maybe you can talk your way in. With your good looks.
 
-    ** Because you're a woman.
-        I'll take advantage of whatever situation I can.
+    ** Because you're a woman?
+        I'll take whatever I can.
 
     ** {aesthetics > 2} Because you're hot.
         It's not my fault other people decide to be uglier than me.

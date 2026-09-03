@@ -75,6 +75,12 @@ protected:
 	UPROPERTY()
 	TObjectPtr<class UEclipseStatsMenuWidget> ActiveStatsMenu;
 
+public:
+	// Read by the HUD's tutorial prompts, which retire a tip once the player
+	// has actually done the thing it asked for.
+	bool IsInventoryOpen() const { return ActiveInventory != nullptr; }
+	bool IsStatsMenuOpen() const { return ActiveStatsMenu != nullptr; }
+
 	UPROPERTY()
 	TObjectPtr<class UEclipsePhoneWidget> ActivePhone;
 };

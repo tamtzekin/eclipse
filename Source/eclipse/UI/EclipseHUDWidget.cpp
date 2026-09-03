@@ -2,6 +2,9 @@
 
 #include "EclipseHUDWidget.h"
 #include "Eclipse.h"
+#include "GameFramework/Pawn.h"
+#include "eclipsePlayerController.h"
+#include "Subsystems/EclipseInteractSubsystem.h"
 #include "EclipseUiStyle.h"
 #include "EclipseDeathOverlayWidget.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
@@ -11,6 +14,8 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
+#include "Components/OverlaySlot.h"
+#include "Components/Overlay.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -179,6 +184,48 @@ void UEclipseHUDWidget::NativeConstruct()
 	// and needs to be readable at a glance without opening the phone.
 	if (CurrencyText) CurrencyText->SetVisibility(ESlateVisibility::Collapsed);
 
+	// Same runtime-injection pattern as the clock below, so the tutorial line
+	// exists whichever path built this HUD. The populator writes it into
+	// WBP_HUD too, so a designer can restyle it there.
+	if (!TutorialText && WidgetTree)
+	{
+		if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget))
+		{
+			TutorialText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("TutorialText_Runtime"));
+			TutorialText->SetFont(EclipseUI::MakeFragmentMono(20, 1.f));
+			TutorialText->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
+			TutorialText->SetJustification(ETextJustify::Center);
+			TutorialText->SetVisibility(ESlateVisibility::Collapsed);
+
+			TutorialPlate = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("TutorialPlate_Runtime"));
+			TutorialPlate->SetBrush(EclipseUI::TutorialPlateBrush());
+			TutorialPlate->SetPadding(FMargin(34.f, 8.f));
+			TutorialPlate->SetContent(TutorialText);
+			TutorialPlate->SetVisibility(ESlateVisibility::Collapsed);
+
+			if (UCanvasPanelSlot* CS = RootCanvas->AddChildToCanvas(TutorialPlate))
+			{
+				// Bottom-centre, clear of the meters (top-left) and the
+				// clock (bottom-left).
+				CS->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+				CS->SetAlignment(FVector2D(0.5f, 1.f));
+				CS->SetPosition(FVector2D(0.f, -90.f));
+				CS->SetAutoSize(true);
+			}
+		}
+	}
+
+	// The tutorial's inventory tip waits on a real pickup, not on the
+	// inventory merely being non-empty — the player starts holding the kit
+	// Globals.ink gave them.
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		GS->OnItemPickedUp.AddDynamic(this, &UEclipseHUDWidget::HandleTutorialPickup);
+	}
+
 	// Inject the readout if neither the WBP nor the fallback tree supplied
 	// one — same runtime-injection pattern the dialogue widget uses, so the
 	// clock exists regardless of which path built this HUD.
@@ -267,6 +314,9 @@ void UEclipseHUDWidget::NativeDestruct()
 
 void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSeconds)
 {
+	TickTutorial(DeltaSeconds);
+
+	TickQuestCompletions(DeltaSeconds);
 	Super::NativeTick(InGeometry, DeltaSeconds);
 
 	QuestRefreshCountdown -= DeltaSeconds;
@@ -326,11 +376,21 @@ void UEclipseHUDWidget::UpdateBars()
 	// pulse timer to full so the bar flashes briefly on the next frames.
 	// The first ever call seeds Last* without flashing (LastX == -1
 	// sentinel ensures no spurious pulse on game start).
-	auto DetectChange = [](int32 NewV, int32& LastV, float& PulseOut)
+	// The bar flashes AND the change is audible: a meter moving during a
+	// long dialogue is easy to miss entirely when it only flickers in the
+	// corner. Direction picks the cue, so gaining and losing don't sound
+	// alike.
+	UEclipseAudioSubsystem* Audio = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr;
+	auto DetectChange = [Audio](int32 NewV, int32& LastV, float& PulseOut)
 	{
 		if (LastV != -1 && NewV != LastV)
 		{
 			PulseOut = UEclipseHUDWidget::PulseDuration;
+			if (Audio)
+			{
+				Audio->PlayCue(NewV > LastV ? EEclipseUiCue::MeterUp : EEclipseUiCue::MeterDown);
+			}
 		}
 		LastV = NewV;
 	};
@@ -427,6 +487,7 @@ void UEclipseHUDWidget::UpdateCurrency()
 
 void UEclipseHUDWidget::UpdateQuestList()
 {
+	using namespace EclipseUI;
 	if (!QuestList) return;
 
 	UGameInstance* GI = GetGameInstance();
@@ -443,64 +504,185 @@ void UEclipseHUDWidget::UpdateQuestList()
 	if (Lines == LastQuestLines) return;   // nothing gained or completed
 	LastQuestLines = Lines;
 
-	QuestList->ClearChildren();
-	QuestList->SetVisibility(Lines.Num() > 0
-		? ESlateVisibility::HitTestInvisible
-		: ESlateVisibility::Collapsed);
+	// Rows are NOT rebuilt from scratch any more. A quest that dropped out
+	// of the active list has been finished, and the row has to survive long
+	// enough to be ticked and read — so existing rows are kept, newly
+	// missing ones are marked complete, and only genuinely new quests get
+	// a fresh row.
+	for (FQuestRow& R : QuestRows)
+	{
+		if (R.CompletedFor < 0.f && !Lines.Contains(R.Line))
+		{
+			R.CompletedFor = 0.f;
+			if (UBorder* D = Cast<UBorder>(R.Diamond.Get()))
+			{
+				// Filled = done. Same silhouette, so the eye reads the
+				// change as a tick rather than a different icon.
+				D->SetBrush(DiamondBrush(FLinearColor::White, FLinearColor::White, 1.5f));
+			}
+			if (UWidget* Strike = R.Strike.Get())
+			{
+				Strike->SetVisibility(ESlateVisibility::HitTestInvisible);
+			}
+		}
+	}
 
 	for (const FString& Line : Lines)
 	{
-		// A row is [circle] [text]. The bullet is a DRAWN circle, not the
-		// "●" character — Rodin has no glyph for it, so the character
-		// rendered as nothing at all. A rounded Border with equal width and
-		// height is always a circle regardless of typeface.
-		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), NAME_None);
+		const bool bAlready = QuestRows.ContainsByPredicate(
+			[&Line](const FQuestRow& R){ return R.CompletedFor < 0.f && R.Line == Line; });
+		if (bAlready) continue;
+		BuildQuestRow(Line);
+	}
 
-		UBorder* Dot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), NAME_None);
+	QuestList->SetVisibility(QuestList->GetChildrenCount() > 0
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+}
+
+void UEclipseHUDWidget::BuildQuestRow(const FString& Line)
+{
+	using namespace EclipseUI;
+
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(), NAME_None);
+
+	// ── Diamond bullet ──
+	// A square turned 45°. Slate lays a rotated widget out by its
+	// UNROTATED bounds, so the box is sized 1/1.42 of the visual width and
+	// the corners are allowed to overhang into the padding.
+	const float Side = QuestBulletSize * 0.72f;
+	USizeBox* DotBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+	DotBox->SetWidthOverride(Side);
+	DotBox->SetHeightOverride(Side);
+
+	UBorder* Dot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), NAME_None);
+	Dot->SetBrush(DiamondBrush(FLinearColor::Transparent, FLinearColor::White, 1.5f));
+	Dot->SetRenderTransformAngle(45.f);
+	Dot->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+	DotBox->AddChild(Dot);
+
+	if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(DotBox))
+	{
+		HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		// Top-aligned with a nudge down, NOT centred: centring put the
+		// diamond between the two lines of a wrapped quest instead of
+		// against the first one. The nudge centres it on line one.
+		// Centred on the FIRST LINE's midpoint. The line box is taller than
+		// the glyphs (FragmentMono's ascent leaves headroom), so the naive
+		// (font - side) / 2 sat the diamond visibly high; the 0.62 factor
+		// measures from the line's optical centre instead of its box top.
+		// Centred on the first line by the font's measured line height —
+		// the old fraction-of-point-size guess left it sitting high.
+		HS->SetPadding(FMargin(2.f,
+			EclipseUI::BulletTopPadding(EclipseUI::MakeFragmentMono(QuestFontSize), Side),
+			QuestBulletGapPx, 0.f));
+		HS->SetVerticalAlignment(VAlign_Top);
+	}
+
+	// ── Text, with a strike-through line laid over it ──
+	UOverlay* TextCell = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), NAME_None);
+
+	UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), NAME_None);
+	T->SetText(FText::FromString(Line));
+	{
+		FSlateFontInfo F = MakeFragmentMono(QuestFontSize);
+		F.OutlineSettings.OutlineSize = 2;
+		F.OutlineSettings.OutlineColor = FLinearColor(0.f, 0.f, 0.f, 0.9f);
+		F.OutlineSettings.bApplyOutlineToDropShadows = true;
+		T->SetFont(F);
+	}
+	T->SetColorAndOpacity(FSlateColor(Cream));
+	T->SetShadowOffset(FVector2D::ZeroVector);
+	T->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.9f));
+	T->SetAutoWrapText(true);
+	T->SetWrapTextAt(ColumnWidth - QuestBulletSize - QuestBulletGapPx);
+	if (UOverlaySlot* OS = TextCell->AddChildToOverlay(T))
+	{
+		OS->SetHorizontalAlignment(HAlign_Left);
+		OS->SetVerticalAlignment(VAlign_Top);
+	}
+
+	// UTextBlock has no strikethrough, so it's a 2px bar drawn over the
+	// first line. Collapsed until the quest completes.
+	UBorder* Strike = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), NAME_None);
+	Strike->SetBrush(SolidBrush(Cream));
+	Strike->SetVisibility(ESlateVisibility::Collapsed);
+	if (UOverlaySlot* OS = TextCell->AddChildToOverlay(Strike))
+	{
+		OS->SetHorizontalAlignment(HAlign_Fill);
+		OS->SetVerticalAlignment(VAlign_Top);
+		OS->SetPadding(FMargin(0.f, QuestFontSize * 0.5f, 0.f, 0.f));
+	}
+	Strike->SetPadding(FMargin(0.f, 1.f));
+
+	if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(TextCell))
+	{
+		HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	if (UVerticalBoxSlot* VS = QuestList->AddChildToVerticalBox(Row))
+	{
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	}
+
+	FQuestRow Rec;
+	Rec.Line = Line; Rec.Diamond = Dot; Rec.Text = T; Rec.Strike = Strike; Rec.Row = Row;
+	QuestRows.Add(Rec);
+}
+
+// Completed rows glow bright for a beat, then fade out and are removed.
+void UEclipseHUDWidget::TickQuestCompletions(float DeltaTime)
+{
+	using namespace EclipseUI;
+	if (QuestRows.Num() == 0) return;
+
+	const float Total = QuestCompleteHoldSeconds + QuestCompleteFadeSeconds;
+	for (int32 i = QuestRows.Num() - 1; i >= 0; --i)
+	{
+		FQuestRow& R = QuestRows[i];
+		if (R.CompletedFor < 0.f) continue;
+
+		R.CompletedFor += DeltaTime;
+
+		// Hold at full brightness (>1 pushes the glow past white), then
+		// ease to nothing.
+		float Alpha = 1.f;
+		if (R.CompletedFor > QuestCompleteHoldSeconds)
 		{
-			FSlateBrush B;
-			B.DrawAs = ESlateBrushDrawType::RoundedBox;
-			B.TintColor = FSlateColor(EclipseUI::DialogueRed);
-			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::HalfHeightRadius;
-			B.OutlineSettings.Width = 0.f;
-			B.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
-			B.ImageSize = FVector2D(QuestBulletSize, QuestBulletSize);
-			Dot->SetBrush(B);
+			const float K = (R.CompletedFor - QuestCompleteHoldSeconds) / QuestCompleteFadeSeconds;
+			Alpha = FMath::Clamp(1.f - K, 0.f, 1.f);
 		}
-		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(Dot))
+		const float Glow = 1.f + Alpha * 1.6f;
+
+		if (UWidget* Row = R.Row.Get())
 		{
-			HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			HS->SetPadding(FMargin(0.f, 4.f, 8.f, 0.f));
-			HS->SetVerticalAlignment(VAlign_Top);
+			Row->SetRenderOpacity(Alpha);
+		}
+		if (UTextBlock* T = R.Text.Get())
+		{
+			T->SetColorAndOpacity(FSlateColor(FLinearColor(Glow, Glow, Glow, 1.f)));
+		}
+		if (UBorder* D = Cast<UBorder>(R.Diamond.Get()))
+		{
+			D->SetBrush(DiamondBrush(
+				FLinearColor(Glow, Glow, Glow, 1.f),
+				FLinearColor(Glow, Glow, Glow, 1.f), 1.5f));
 		}
 
-		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), NAME_None);
-		T->SetText(FText::FromString(Line));
-		// Dialogue body typeface, and the clock's outline treatment so the
-		// text stays readable over a bright floor instead of washing out.
+		if (R.CompletedFor >= Total)
 		{
-			FSlateFontInfo F = EclipseUI::MakeRodin(QuestFontSize);
-			F.OutlineSettings.OutlineSize = 2;
-			F.OutlineSettings.OutlineColor = FLinearColor(0.f, 0.f, 0.f, 0.9f);
-			F.OutlineSettings.bApplyOutlineToDropShadows = true;
-			T->SetFont(F);
+			if (UWidget* Row = R.Row.Get())
+			{
+				QuestList->RemoveChild(Row);
+			}
+			QuestRows.RemoveAt(i);
 		}
-		T->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
-		T->SetShadowOffset(FVector2D::ZeroVector);
-		T->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.9f));
-		T->SetAutoWrapText(true);
-		T->SetWrapTextAt(ColumnWidth - QuestBulletSize - 8.f);
-		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(T))
-		{
-			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		}
+	}
 
-		if (UVerticalBoxSlot* VS = QuestList->AddChildToVerticalBox(Row))
-		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 5.f));
-		}
+	if (QuestList && QuestList->GetChildrenCount() == 0)
+	{
+		QuestList->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
@@ -662,4 +844,155 @@ void UEclipseHUDWidget::UpdateDebugOverlay()
 	{
 		DebugColumns[i]->SetText(FText::FromString(FString::Join(Col[i], TEXT("\n"))));
 	}
+}
+
+// ─── Tutorial prompts ────────────────────────────────────────────────────────
+
+bool UEclipseHUDWidget::IsTipDone(ETip T) const
+{
+	const UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	return GS && (GS->TutorialSeenMask & (1 << static_cast<int32>(T))) != 0;
+}
+
+void UEclipseHUDWidget::MarkTipDone(ETip T)
+{
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		GS->TutorialSeenMask |= (1 << static_cast<int32>(T));
+	}
+}
+
+// Which tip, if any, the current moment calls for. Ordered by priority: the
+// earliest incomplete tip whose trigger is satisfied wins, so the player is
+// never shown two things to learn at once.
+UEclipseHUDWidget::ETip UEclipseHUDWidget::PickTip() const
+{
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn) return ETip::Count;
+
+	// Nothing to learn while a menu or a conversation owns the screen.
+	const UEclipseDialogueSubsystem* Dlg = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+	const AeclipsePlayerController* EPC = Cast<AeclipsePlayerController>(PC);
+	const bool bBusy = (Dlg && Dlg->IsDialogueOpen())
+		|| (EPC && (EPC->IsInventoryOpen() || EPC->IsStatsMenuOpen()));
+
+	if (!IsTipDone(ETip::Walk)) return bBusy ? ETip::Count : ETip::Walk;
+	if (!IsTipDone(ETip::Look)) return bBusy ? ETip::Count : ETip::Look;
+
+	// "I to open inventory" outranks the proximity tips: it fires on the
+	// beat right after a pickup, when the player is looking for what
+	// happened to the thing they just took.
+	if (bSeenFirstPickup && !IsTipDone(ETip::Inventory)) return ETip::Inventory;
+	if (bSeenFirstDialogue && !IsTipDone(ETip::Stats))   return ETip::Stats;
+
+	if (bBusy) return ETip::Count;
+
+	const UEclipseInteractSubsystem* IS = GetWorld()
+		? GetWorld()->GetSubsystem<UEclipseInteractSubsystem>() : nullptr;
+	if (!IS) return ETip::Count;
+
+	if (!IsTipDone(ETip::Talk)     && IS->GetNearTalkable()) return ETip::Talk;
+	if (!IsTipDone(ETip::Interact) && IS->GetNearItem())     return ETip::Interact;
+	return ETip::Count;
+}
+
+void UEclipseHUDWidget::TickTutorial(float DeltaTime)
+{
+	if (!TutorialText) return;
+
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn) return;
+
+	if (!bTipBaselineSet)
+	{
+		TipStartLocation = Pawn->GetActorLocation();
+		TipStartRotation = PC->GetControlRotation();
+		bTipBaselineSet  = true;
+	}
+
+	// ── Retire whatever the player has now done ──
+	const AeclipsePlayerController* EPC = Cast<AeclipsePlayerController>(PC);
+	const UEclipseDialogueSubsystem* Dlg = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+
+	if (FVector::DistSquared2D(Pawn->GetActorLocation(), TipStartLocation) > FMath::Square(300.f))
+	{
+		MarkTipDone(ETip::Walk);
+	}
+	// Only after walking, so the yaw the follow-camera applies on its own
+	// can't be mistaken for the player looking around.
+	if (IsTipDone(ETip::Walk))
+	{
+		const float Turned = FMath::Abs(FRotator::NormalizeAxis(
+			PC->GetControlRotation().Yaw - TipStartRotation.Yaw));
+		if (Turned > 70.f) MarkTipDone(ETip::Look);
+	}
+	if (EPC && EPC->IsInventoryOpen()) MarkTipDone(ETip::Inventory);
+	if (EPC && EPC->IsStatsMenuOpen()) MarkTipDone(ETip::Stats);
+	if (Dlg && Dlg->IsDialogueOpen())
+	{
+		MarkTipDone(ETip::Talk);
+		bSeenFirstDialogue = true;
+	}
+
+	// ── Choose and fade ──
+	const ETip Wanted = PickTip();
+	if (Wanted != ActiveTip)
+	{
+		// Fade the old one out first; only swap the text once it's gone, so
+		// two tips never cross-dissolve into each other.
+		if (TipAlpha <= 0.01f)
+		{
+			ActiveTip   = Wanted;
+			TipHoldTime = 0.f;
+		}
+		else
+		{
+			TipAlpha = FMath::FInterpConstantTo(TipAlpha, 0.f, DeltaTime, 1.f / TipFadeSeconds);
+		}
+	}
+	else if (ActiveTip != ETip::Count)
+	{
+		TipHoldTime += DeltaTime;
+		// An unmet tip still retires itself rather than nagging forever.
+		if (TipHoldTime > TipMaxHoldSeconds) MarkTipDone(ActiveTip);
+		TipAlpha = FMath::FInterpConstantTo(TipAlpha, 1.f, DeltaTime, 1.f / TipFadeSeconds);
+	}
+	else
+	{
+		TipAlpha = FMath::FInterpConstantTo(TipAlpha, 0.f, DeltaTime, 1.f / TipFadeSeconds);
+	}
+
+	if (ActiveTip != ETip::Count)
+	{
+		const TCHAR* Line = TEXT("");
+		switch (ActiveTip)
+		{
+		case ETip::Walk:      Line = TEXT("WSAD to walk");            break;
+		case ETip::Look:      Line = TEXT("Mouse to look around");    break;
+		case ETip::Interact:  Line = TEXT("E to interact");           break;
+		case ETip::Inventory: Line = TEXT("I to open your inventory");break;
+		case ETip::Talk:      Line = TEXT("E to talk");               break;
+		case ETip::Stats:     Line = TEXT("C to check your stats");   break;
+		default: break;
+		}
+		TutorialText->SetText(FText::FromString(Line));
+	}
+
+	// Fade the plate; the text inherits its parent's render opacity.
+	UWidget* FadeTarget = TutorialPlate ? Cast<UWidget>(TutorialPlate) : Cast<UWidget>(TutorialText);
+	FadeTarget->SetRenderOpacity(TipAlpha);
+	FadeTarget->SetVisibility(TipAlpha > 0.01f
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (TutorialPlate) TutorialText->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UEclipseHUDWidget::HandleTutorialPickup(FName /*ItemId*/)
+{
+	bSeenFirstPickup = true;
 }

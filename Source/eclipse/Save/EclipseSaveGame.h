@@ -55,6 +55,8 @@ public:
 	UPROPERTY() int32 Coins = 0;
 	UPROPERTY() int32 Notes = 0;
 	UPROPERTY() int32 Cigarettes = 0;
+	// Stops a load re-gifting Globals.ink's starting kit.
+	UPROPERTY() bool bStartingKitGiven = false;
 
 	// Which carrier (Hands / Pockets) each carried item is in. Saves written
 	// before the carry model existed have this empty; ApplySnapshot rebuilds

@@ -31,6 +31,13 @@ struct FEclipseDialogueChoice;
  *   UVerticalBox    ChoicesBox
  *   UButton         CloseButton
  */
+/** A run of body text attributed to one speaker — see ParseSpeechSegments. */
+struct FEclipseSpeechSegment
+{
+	FName   Speaker;
+	FString Text;
+};
+
 UCLASS()
 class ECLIPSE_API UEclipseDialogueWidget : public UUserWidget
 {
@@ -252,6 +259,26 @@ private:
 	// AnimateChoiceText.
 	TArray<TObjectPtr<class UWrapBox>> ChoiceWordBoxes;
 
+	// Diamond bullet per choice row, and how far each row has cross-faded
+	// into its hovered look (0 = resting white card, 1 = black).
+	TArray<TWeakObjectPtr<class UBorder>> ChoiceDiamonds;
+	TArray<float> ChoiceHoverAlphas;
+
+	// Bullets are held at zero opacity with their rows — a child that sets
+	// its own render transform doesn't inherit the button's opacity ramp.
+	TArray<TWeakObjectPtr<class UWidget>> ChoiceRevealDiamonds;
+
+	// How many caption bubbles the history keeps. Sized so the newest is
+	// always whole rather than clipped by the scroll box's top edge.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Dialogue")
+	int32 MaxHistoryBubbles = 3;
+
+	// Drops whole bubbles off the top until the transcript fits its own
+	// viewport. A count cap can't do this on its own — bubbles differ in
+	// height, so three tall ones still overflow and the oldest gets sliced
+	// through the middle, which reads as a rendering fault.
+	void TrimHistoryToFit();
+
 	// Background card per choice row (parallel to ChoiceButtons) — white
 	// bg / black text at rest, flips to black bg / white text on hover or
 	// keyboard selection (matching the NPC caption boxes' own black card).
@@ -445,6 +472,20 @@ private:
 	float BodyAnimTotalTime = 0.f;
 
 	void StartBodyAnimation(const FString& BodyString);
+
+	// One speaker's stretch of a node's body. See ParseSpeechSegments.
+	void BuildBodyWords(const FString& BodyString, float& RunningDelay);
+	void FinishBodyAnimation();
+	static TArray<struct FEclipseSpeechSegment> ParseSpeechSegments(
+		const FString& Body, FName DefaultSpeaker);
+	void StartBodySegments(const TArray<struct FEclipseSpeechSegment>& Segments);
+	class AEclipseNpcCharacter* FindNpcByDialogueId(FName Id) const;
+
+	// When each speaker's stretch starts printing, and where they stand.
+	// Parallel arrays walked forward by NativeTick to swing the camera.
+	TArray<float>   SegmentStartDelays;
+	TArray<FVector> SegmentSpeakerLocations;
+	int32           NextSegmentFocus = 0;
 
 	// Mirrors bDialogueAnimating onto the dialogue subsystem so non-dialogue
 	// UI (the HUD quest checklist) can hold off until the line has finished

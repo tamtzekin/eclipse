@@ -18,12 +18,14 @@
 #include "Components/UniformGridSlot.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "Data/EclipseItemDefinition.h"
 #include "Data/EclipseClothingDefinition.h"
 #include "Items/EclipseItemActor.h"
@@ -89,17 +91,36 @@ void UEclipseInventoryChipWidget::InitEmptySlot(UUserWidget* InOwner, int32 InSl
 
 void UEclipseInventoryChipWidget::SetSelectedVisual(bool bSelected)
 {
-	using namespace EclipseUI;
 	bIsSelected = bSelected;
+	ApplyChipVisual();
+}
+
+// Selection and hover both live here so leaving a hovered chip restores the
+// SELECTED look rather than the resting one — two independent setters
+// writing the same brush is how that gets lost.
+void UEclipseInventoryChipWidget::ApplyChipVisual()
+{
+	using namespace EclipseUI;
 	if (!ChipFrame) return;
 	// Empty cells have their own dim-outline frame styling — never overwrite
 	// it with the item-chip selected/unselected brush.
 	if (bIsEmpty) return;
-	const float OutlineW = bSelected ? 2.f : 1.f;
-	const FLinearColor Outline = bSelected ? LinkBlue : LinkBlueDim;
-	const FLinearColor Fill    = bSelected
+
+	float OutlineW      = bIsSelected ? 2.f : 1.f;
+	FLinearColor Outline = bIsSelected ? LinkBlue : LinkBlueDim;
+	FLinearColor Fill    = bIsSelected
 		? FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.14f)
 		: FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.04f);
+
+	if (bIsHovered)
+	{
+		// A brighter rim and a lift in the fill — enough to say "this one"
+		// without pretending to be selected.
+		OutlineW = FMath::Max(OutlineW, 2.f);
+		Outline  = DialogueRed;
+		Fill     = FLinearColor(DialogueRed.R, DialogueRed.G, DialogueRed.B,
+					  bIsSelected ? 0.18f : 0.10f);
+	}
 	ChipFrame->SetBrush(RoundedBrush(Fill, Outline, OutlineW, 4.f));
 }
 
@@ -211,24 +232,17 @@ FReply UEclipseInventoryChipWidget::NativeOnMouseButtonUp(const FGeometry& InGeo
 
 void UEclipseInventoryChipWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	using namespace EclipseUI;
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
-	if (bIsEmpty || !ChipFrame) return;
-	// Subtle highlight on hover so chips feel alive — preserves the tinted
-	// outline of the unselected state but bumps the fill brightness.
-	ChipFrame->SetBrush(RoundedBrush(
-		FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.12f),
-		FLinearColor(Tint.R, Tint.G, Tint.B, 0.85f),
-		1.f, 4.f));
+	if (bIsEmpty) return;
+	bIsHovered = true;
+	ApplyChipVisual();
 }
 
 void UEclipseInventoryChipWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
-	if (bIsEmpty) return;
-	// Restore the persisted selected/unselected brush — SetSelectedVisual
-	// caches bIsSelected, so calling it again re-applies the correct look.
-	SetSelectedVisual(bIsSelected);
+	bIsHovered = false;
+	ApplyChipVisual();
 }
 
 void UEclipseInventoryChipWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
@@ -371,25 +385,6 @@ namespace
 		return TEXT("?");
 	}
 
-	// 3-letter body-part code shown faintly in an EMPTY slot — letters
-	// render reliably in the pixel font (emoji glyphs don't), and keep
-	// every drop target identifiable before anything is equipped.
-	const TCHAR* SlotPlaceholderCode(EEclipseSlotType Slot)
-	{
-		switch (Slot)
-		{
-		case EEclipseSlotType::Head:   return TEXT("HED");
-		case EEclipseSlotType::Eyes:   return TEXT("EYE");
-		case EEclipseSlotType::Neck:   return TEXT("NCK");
-		case EEclipseSlotType::Top:    return TEXT("TOP");
-		case EEclipseSlotType::Bottom: return TEXT("BTM");
-		case EEclipseSlotType::Shoes:  return TEXT("SHO");
-		case EEclipseSlotType::Hands:  return TEXT("HND");
-		case EEclipseSlotType::Pockets:return TEXT("PKT");
-		}
-		return TEXT("---");
-	}
-
 	// Compact letter badge for an equipped item — first 3 letters of its
 	// display name, uppercased. Keeps the slot a "square with letters"
 	// rather than an emoji symbol.
@@ -422,48 +417,82 @@ bool UEclipseClothingSlotWidget::Initialize()
 	// SlotFrame in their own WBP_Slot later.
 	if (!SlotFrame && !SlotLabel && !SlotIcon)
 	{
-		SlotFrame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotFrame"));
-		{
-			FSlateBrush B;
-			B.DrawAs    = ESlateBrushDrawType::RoundedBox;
-			// Lighter slate fill so the box reads against the dark panel,
-			// with a bright cyan outline (Deus Ex augmentation-slot look).
-			B.TintColor = FSlateColor(FLinearColor(0.094f, 0.122f, 0.180f, 0.92f));
-			B.OutlineSettings.Color        = FSlateColor(LinkBlue);
-			B.OutlineSettings.Width        = 1.5f;
-			B.OutlineSettings.CornerRadii  = FVector4(3.f, 3.f, 3.f, 3.f);
-			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-			SlotFrame->SetBrush(B);
-		}
-		SlotFrame->SetPadding(FMargin(6.f, 4.f));
-		SlotFrame->SetHorizontalAlignment(HAlign_Fill);
-		SlotFrame->SetVerticalAlignment(VAlign_Fill);
-		WidgetTree->RootWidget = SlotFrame;
-
+		// Caption OUTSIDE the box, box below it. The label used to sit
+		// inside the frame and eat half the height, which left no room for
+		// the prefab render to be anything but a stamp.
 		UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(
 			UVerticalBox::StaticClass(), TEXT("SlotCol"));
-		SlotFrame->SetContent(Col);
+		WidgetTree->RootWidget = Col;
 
 		SlotLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotLabel"));
-		SlotLabel->SetFont(MakeRodin(11));
-		SlotLabel->SetColorAndOpacity(FSlateColor(LinkBlue));
+		SlotLabel->SetFont(MakeFragmentMono(10, 1.f));
+		SlotLabel->SetColorAndOpacity(FSlateColor(DialogueRed));
 		SlotLabel->SetJustification(ETextJustify::Center);
 		SlotLabel->SetText(FText::FromString(SlotLabelText(SlotType)));
 		if (UVerticalBoxSlot* LS = Col->AddChildToVerticalBox(SlotLabel))
 		{
 			LS->SetHorizontalAlignment(HAlign_Center);
 			LS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+			LS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 		}
+
+		SlotFrame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotFrame"));
+		{
+			FSlateBrush B;
+			B.DrawAs    = ESlateBrushDrawType::RoundedBox;
+			// Near-black fill and the game's stall-door red on the rim.
+			B.TintColor = FSlateColor(FLinearColor(0.04f, 0.03f, 0.04f, 0.88f));
+			B.OutlineSettings.Color        = FSlateColor(DialogueRed);
+			B.OutlineSettings.Width        = 1.5f;
+			B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
+			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+			SlotFrame->SetBrush(B);
+		}
+		SlotFrame->SetPadding(FMargin(2.f));
+		SlotFrame->SetHorizontalAlignment(HAlign_Fill);
+		SlotFrame->SetVerticalAlignment(VAlign_Fill);
+		if (UVerticalBoxSlot* FS = Col->AddChildToVerticalBox(SlotFrame))
+		{
+			FS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
+		// The badge and the prefab render share one cell — an item with a
+		// baked IconTexture shows the model, anything else falls back to
+		// letters. Both are built either way so RefreshFromState only has
+		// to flip visibility.
+		UOverlay* IconCell = WidgetTree->ConstructWidget<UOverlay>(
+			UOverlay::StaticClass(), TEXT("SlotIconCell"));
+		SlotFrame->SetContent(IconCell);
 
 		SlotIcon = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotIcon"));
 		// Sized for a 3-letter badge ("JKT", "SHO", …) inside the square.
-		SlotIcon->SetFont(MakeRodin(20));
-		SlotIcon->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.22f)));
+		SlotIcon->SetFont(MakeFragmentMono(18));
+		SlotIcon->SetColorAndOpacity(FSlateColor(DialogueRed.CopyWithNewOpacity(0.35f)));
 		SlotIcon->SetJustification(ETextJustify::Center);
-		SlotIcon->SetText(FText::FromString(SlotPlaceholderCode(SlotType)));
-		if (UVerticalBoxSlot* IS = Col->AddChildToVerticalBox(SlotIcon))
+		SlotIcon->SetText(FText::GetEmpty());
+		if (UOverlaySlot* IS = IconCell->AddChildToOverlay(SlotIcon))
 		{
 			IS->SetHorizontalAlignment(HAlign_Center);
+			IS->SetVerticalAlignment(VAlign_Center);
+		}
+
+		// The renders are square and the slot box is wide, so a plain Fill
+		// would stretch the model sideways. MaxAspectRatio 1 keeps it
+		// square while still growing to the full height of the box.
+		USizeBox* ThumbBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(), TEXT("SlotThumbBox"));
+		ThumbBox->SetMaxAspectRatio(1.f);
+
+		SlotThumb = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("SlotThumb"));
+		SlotThumb->SetVisibility(ESlateVisibility::Collapsed);
+		ThumbBox->AddChild(SlotThumb);
+		if (UOverlaySlot* TS = IconCell->AddChildToOverlay(ThumbBox))
+		{
+			// Fill both ways and let MaxAspectRatio do the centring —
+			// HAlign_Center would hand the box the image's 32px default
+			// brush size instead of the room it actually has.
+			TS->SetHorizontalAlignment(HAlign_Fill);
+			TS->SetVerticalAlignment(VAlign_Fill);
 		}
 	}
 
@@ -516,12 +545,16 @@ void UEclipseClothingSlotWidget::RefreshFromState()
 	const FName Occupant = GetOccupant();
 	if (Occupant.IsNone())
 	{
+		// Empty slots show a "+": the caption above already names the slot,
+		// so the old 3-letter codes just said it twice in a worse typeface,
+		// but a bare box gave no hint it was a drop target at all.
+		if (SlotThumb) SlotThumb->SetVisibility(ESlateVisibility::Collapsed);
 		if (SlotIcon)
 		{
-			// Faint 3-letter body-part code so the empty slot reads as
-			// "drop here" without an emoji glyph.
-			SlotIcon->SetText(FText::FromString(SlotPlaceholderCode(SlotType)));
-			SlotIcon->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.22f)));
+			SlotIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
+			SlotIcon->SetText(FText::FromString(TEXT("+")));
+			SlotIcon->SetFont(MakeBMSPA(22));
+			SlotIcon->SetColorAndOpacity(FSlateColor(DialogueRed.CopyWithNewOpacity(0.45f)));
 		}
 	}
 	else
@@ -532,6 +565,7 @@ void UEclipseClothingSlotWidget::RefreshFromState()
 		// to DT_Items when the id isn't a garment.
 		FString Label;
 		FLinearColor Tint = LinkBlue;
+		TSoftObjectPtr<UTexture2D> Thumb;
 
 		FEclipseClothingRow CRow;
 		FEclipseItemRow     IRow;
@@ -539,18 +573,125 @@ void UEclipseClothingSlotWidget::RefreshFromState()
 		{
 			Label = CRow.DisplayName.ToString();
 			Tint  = CRow.TintColor;
+			Thumb = CRow.IconTexture;
 		}
 		else if (GS->GetItemRow(Occupant, IRow))
 		{
 			Label = IRow.DisplayName.ToString();
 			Tint  = IRow.TintColor;
+			Thumb = IRow.IconTexture;
 		}
 
+		// A stack shows its count rather than a name or a picture —
+		// cigarettes are the only one, and "CIG" tells you nothing you can
+		// act on when what matters is whether you have twenty.
+		const bool bIsStack = UEclipseGameStateSubsystem::GetBaseItemId(Occupant)
+			== UEclipseGameStateSubsystem::CigaretteItemId;
+		if (bIsStack)
+		{
+			Label = FString::Printf(TEXT("%d"), GS->Cigarettes);
+		}
+
+		// Synchronous: the panel is modal and the texture is a few hundred
+		// KB, so there's nothing to gain from streaming it in a frame late.
+		UTexture2D* ThumbTex = Thumb.IsNull() ? nullptr : Thumb.LoadSynchronous();
+		if (SlotThumb)
+		{
+			SlotThumb->SetVisibility(ThumbTex
+				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			if (ThumbTex)
+			{
+				SlotThumb->SetBrushFromTexture(ThumbTex, /*bMatchSize=*/false);
+			}
+		}
 		if (SlotIcon)
 		{
-			SlotIcon->SetText(FText::FromString(ItemAbbrev(Label, Occupant)));
-			SlotIcon->SetColorAndOpacity(FSlateColor(Tint));
+			// A stack keeps its count ON TOP of the picture — "20" in the
+			// corner of a photo of cigarettes, not one instead of the
+			// other. Anything else falls back to letters only when it has
+			// no baked render to show.
+			const bool bWantText = bIsStack || !ThumbTex;
+			SlotIcon->SetVisibility(bWantText
+				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			SlotIcon->SetFont(MakeFragmentMono(bIsStack ? 14 : 18));
+			SlotIcon->SetText(FText::FromString(
+				bIsStack ? Label : ItemAbbrev(Label, Occupant)));
+			SlotIcon->SetColorAndOpacity(FSlateColor(bIsStack ? Cream : Tint));
+
+			// Bottom-right when it's a badge over an image, centred when
+			// it's standing in for one.
+			if (UOverlaySlot* OS = Cast<UOverlaySlot>(SlotIcon->Slot))
+			{
+				const bool bBadge = bIsStack && ThumbTex;
+				OS->SetHorizontalAlignment(bBadge ? HAlign_Right  : HAlign_Center);
+				OS->SetVerticalAlignment  (bBadge ? VAlign_Bottom : VAlign_Center);
+				OS->SetPadding(bBadge ? FMargin(0.f, 0.f, 3.f, 1.f) : FMargin(0.f));
+			}
 		}
+	}
+}
+
+void UEclipseClothingSlotWidget::NativeOnMouseEnter(const FGeometry& G, const FPointerEvent& E)
+{
+	Super::NativeOnMouseEnter(G, E);
+	bSlotHovered = true;
+	if (UseFlashAlpha <= 0.f) SetHoverFeedback(EHoverState::Idle);
+}
+
+void UEclipseClothingSlotWidget::NativeOnMouseLeave(const FPointerEvent& E)
+{
+	Super::NativeOnMouseLeave(E);
+	bSlotHovered = false;
+	if (UseFlashAlpha <= 0.f) SetHoverFeedback(EHoverState::Idle);
+}
+
+void UEclipseClothingSlotWidget::FlashUse()
+{
+	UseFlashAlpha = 1.f;
+}
+
+void UEclipseClothingSlotWidget::NativeTick(const FGeometry& G, float DeltaTime)
+{
+	Super::NativeTick(G, DeltaTime);
+	using namespace EclipseUI;
+
+	if (UseFlashAlpha <= 0.f || !SlotFrame) return;
+
+	// ~0.9s decay, eased. Drives the frame, the thumbnail AND the count
+	// together so the whole tile lights up and settles, rather than a rim
+	// flashing round a picture that never reacted. The curve is squared so
+	// it holds near full brightness before falling away — a linear ramp at
+	// this length just looked like a slow dim.
+	UseFlashAlpha = FMath::Max(0.f, UseFlashAlpha - DeltaTime / UseFlashSeconds);
+	const float K = FMath::Sqrt(UseFlashAlpha);
+
+	FSlateBrush B;
+	B.DrawAs = ESlateBrushDrawType::RoundedBox;
+	B.TintColor = FSlateColor(FLinearColor(
+		FMath::Lerp(0.04f, 1.0f, K), FMath::Lerp(0.03f, 0.92f, K),
+		FMath::Lerp(0.04f, 0.86f, K), 0.88f));
+	B.OutlineSettings.Color        = FSlateColor(FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, K));
+	B.OutlineSettings.Width        = FMath::Lerp(1.5f, 6.f, K);
+	B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
+	B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+	SlotFrame->SetBrush(B);
+
+	const float Glow = 1.f + K * 4.f;   // >1 blows past white into a bloom
+	if (SlotThumb)
+	{
+		SlotThumb->SetColorAndOpacity(FLinearColor(Glow, Glow, Glow, 1.f));
+	}
+	// The quantity glows too — on a stack the number IS the item, and
+	// leaving it flat while everything around it flared looked broken.
+	if (SlotIcon)
+	{
+		SlotIcon->SetColorAndOpacity(FSlateColor(FLinearColor(Glow, Glow, Glow, 1.f)));
+	}
+	if (UseFlashAlpha <= 0.f)
+	{
+		SetHoverFeedback(EHoverState::Idle);
+		if (SlotThumb) SlotThumb->SetColorAndOpacity(FLinearColor::White);
+		RefreshFromState();          // restores the icon's own colour
 	}
 }
 
@@ -563,7 +704,7 @@ void UEclipseClothingSlotWidget::SetHoverFeedback(EHoverState State)
 	// here. Invalid = greyed out (the "no" state the design asked for).
 	FSlateBrush B;
 	B.DrawAs                        = ESlateBrushDrawType::RoundedBox;
-	B.OutlineSettings.CornerRadii   = FVector4(3.f, 3.f, 3.f, 3.f);
+	B.OutlineSettings.CornerRadii   = FVector4(2.f, 2.f, 2.f, 2.f);
 	B.OutlineSettings.RoundingType  = ESlateBrushRoundingType::FixedRadius;
 
 	const FLinearColor Green(0.36f, 0.85f, 0.45f, 1.f);
@@ -583,9 +724,16 @@ void UEclipseClothingSlotWidget::SetHoverFeedback(EHoverState State)
 		break;
 	case EHoverState::Idle:
 	default:
-		B.TintColor             = FSlateColor(FLinearColor(0.094f, 0.122f, 0.180f, 0.92f));
-		B.OutlineSettings.Color = FSlateColor(LinkBlue);
-		B.OutlineSettings.Width = 1.5f;
+		// Hovering a slot lifts its fill and brightens the rim — the same
+		// "this one" cue the chips give, so an occupied slot reads as
+		// something you can pick up rather than a label.
+		B.TintColor             = FSlateColor(bSlotHovered
+			? FLinearColor(0.16f, 0.05f, 0.06f, 0.94f)
+			: FLinearColor(0.04f, 0.03f, 0.04f, 0.88f));
+		B.OutlineSettings.Color = FSlateColor(bSlotHovered
+			? FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, 0.45f)
+			: DialogueRed);
+		B.OutlineSettings.Width = bSlotHovered ? 2.5f : 1.5f;
 		break;
 	}
 	SlotFrame->SetBrush(B);
@@ -596,7 +744,7 @@ void UEclipseClothingSlotWidget::SetHoverFeedback(EHoverState State)
 	{
 		const FLinearColor LabelCol = (State == EHoverState::Invalid)
 			? FLinearColor(Grey.R, Grey.G, Grey.B, ContentAlpha)
-			: (State == EHoverState::Valid ? Green : LinkBlue);
+			: (State == EHoverState::Valid ? Green : DialogueRed);
 		SlotLabel->SetColorAndOpacity(FSlateColor(LabelCol));
 	}
 }
@@ -826,6 +974,11 @@ UEclipseInventoryWidget* UEclipseInventoryWidget::OpenForPlayer(APlayerControlle
 	PC->SetInputMode(Mode);
 	PC->SetShowMouseCursor(true);
 
+	if (UEclipseAudioSubsystem* A = PC->GetGameInstance()
+			? PC->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		A->PlayCue(EEclipseUiCue::MenuOpen);
+	}
 	UE_LOG(LogEclipse, Log, TEXT("Inventory: opened for %s"), *PC->GetName());
 	return W;
 }
@@ -983,9 +1136,11 @@ void UEclipseInventoryWidget::BuildFallbackTree()
 	{
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.06f));
-		BS.Hovered  = SolidBrush(FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.15f));
-		BS.Pressed  = SolidBrush(FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.22f));
+		// Identical in all three states so the hover can CROSS-FADE via the
+		// button's BackgroundColor tint instead of snapping between brushes.
+		BS.Normal   = SolidBrush(FLinearColor(DialogueRed.R, DialogueRed.G, DialogueRed.B, 0.26f));
+		BS.Hovered  = BS.Normal;
+		BS.Pressed  = SolidBrush(FLinearColor(DialogueRed.R, DialogueRed.G, DialogueRed.B, 0.44f));
 		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
 		Btn->SetStyle(BS);
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
@@ -1505,14 +1660,92 @@ void UEclipseInventoryWidget::RefreshDetailPanel()
 	if (UseBtn)  UseBtn->SetIsEnabled(bCanUse);
 }
 
-void UEclipseInventoryWidget::OnUse()
+void UEclipseInventoryWidget::NativeTick(const FGeometry& G, float DeltaTime)
 {
-	if (SelectedItemId.IsNone() || bSelectedIsClothing) return;
-	if (UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	Super::NativeTick(G, DeltaTime);
+	TickPendingUse(DeltaTime);
+	TickButtonHovers(DeltaTime);
+}
+
+// UButton swaps its Hovered brush on the frame the cursor crosses the edge,
+// which pops. The styles are all the same red now and the fade lives in the
+// BackgroundColor tint, which multiplies the brush — so alpha 0 is "at rest"
+// and the interp does the rest.
+void UEclipseInventoryWidget::TickButtonHovers(float DeltaTime)
+{
+	using namespace EclipseUI;
+	UButton* Btns[] = { UseBtn, CloseBtn };
+	for (int32 i = 0; i < UE_ARRAY_COUNT(Btns); ++i)
 	{
-		GS->UseItem(SelectedItemId);
-		SelectedItemId = NAME_None;   // selection's gone with the item
+		UButton* B = Btns[i];
+		if (!B) continue;
+		if (!ButtonHoverAlphas.IsValidIndex(i)) ButtonHoverAlphas.SetNum(i + 1);
+		float& A = ButtonHoverAlphas[i];
+		const float Target = (B->IsHovered() && B->GetIsEnabled()) ? 1.f : 0.f;
+		A = FMath::FInterpConstantTo(A, Target, DeltaTime, 6.f);
+
+		// The hover reads as the LABEL coming up, not a card lighting up
+		// behind it. These are flat words on the panel — fading a
+		// background in and out made them look like chrome that isn't
+		// there at rest.
+		B->SetBackgroundColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
+		constexpr float RestOpacity = 0.55f;
+		if (UWidget* Label = B->GetChildAt(0))
+		{
+			Label->SetRenderOpacity(FMath::Lerp(RestOpacity, 1.f, A));
+		}
 	}
 }
 
-void UEclipseInventoryWidget::OnCloseClicked() { Close(); }
+void UEclipseInventoryWidget::OnUse()
+{
+	if (SelectedItemId.IsNone() || bSelectedIsClothing) return;
+	if (!PendingUseId.IsNone()) return;          // already going off
+
+	if (UEclipseAudioSubsystem* A = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		A->PlayCue(EEclipseUiCue::Use);
+	}
+
+	// Light up whichever carrier is holding it, then consume a beat later.
+	// An item that vanishes on the same frame you click reads as the click
+	// having missed; the flash is the receipt.
+	UEclipseClothingSlotWidget* Carriers[] = { HandsSlot, Pocket0Slot, Pocket1Slot };
+	for (UEclipseClothingSlotWidget* Slot : Carriers)
+	{
+		if (Slot && Slot->GetOccupant() == SelectedItemId) Slot->FlashUse();
+	}
+
+	// Counted down in NativeTick rather than a world timer: the inventory is
+	// a modal panel and the world may be paused under it, which would leave
+	// a timer-based consume never firing.
+	PendingUseId    = SelectedItemId;
+	PendingUseTimer = 0.55f;   // let the flare read before the item goes
+	SelectedItemId  = NAME_None;   // selection's gone with the item
+}
+
+void UEclipseInventoryWidget::TickPendingUse(float DeltaTime)
+{
+	if (PendingUseId.IsNone()) return;
+	PendingUseTimer -= DeltaTime;
+	if (PendingUseTimer > 0.f) return;
+
+	const FName Id = PendingUseId;
+	PendingUseId = NAME_None;
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		GS->UseItem(Id);
+	}
+}
+
+void UEclipseInventoryWidget::OnCloseClicked()
+{
+	if (UEclipseAudioSubsystem* A = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		A->PlayCue(EEclipseUiCue::MenuClose);
+	}
+	Close();
+}

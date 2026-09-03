@@ -253,6 +253,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Eclipse|Dialogue")
 	bool IsDialogueOpen() const { return bDialogueOpen; }
 
+	/** Ink's Inventory LIST as it stands right now, as bare item ids.
+	 *  Used to seed the carry model from Globals.ink's parenthesised
+	 *  (already-carried) entries. False if the story isn't loaded. */
+	bool GetInitialInventoryItems(TArray<FName>& Out) const;
+
 	// True while the dialogue widget is still cascading the current node's
 	// body text in word by word. Ink runs a whole block the instant a choice
 	// is picked — the `~ SideQuests += ...` on the last line of a branch has

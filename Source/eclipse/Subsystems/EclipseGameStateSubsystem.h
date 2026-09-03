@@ -61,6 +61,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterCardRequested, const 
 // the chapter advance code.)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseChapterAdvanced, int32, NewChapter);
 
+// Fires when an item is actually collected from the world, carrying the id
+// so the HUD can show WHAT was picked up rather than just that something was.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseItemPickedUp, FName, ItemId);
+
 /**
  * Holds player meta-state across levels. Exposed to UMG via delegates so the
  * HUD widgets re-bind once at construction and react to broadcasts.
@@ -322,6 +326,15 @@ public:
 	// leave together — see SyncCigaretteChip.
 	static const FName CigaretteItemId;
 
+	// Set once the starting kit has been handed over, and saved with the
+	// run — without it, loading a game where the player had spent or
+	// dropped those items would silently hand them back.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Inventory") bool bStartingKitGiven = false;
+
+	/** Give the player whatever Globals.ink marks as already-carried. */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Inventory")
+	void SeedStartingKit();
+
 	// Where each carried item physically is: Hands or Pockets. This replaced
 	// the old 6×3 grid-index map — there is no grid and no backpack any
 	// more, so an item's "position" is just which carrier it's in.
@@ -357,6 +370,13 @@ public:
 
 	// ── Time ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time") int32 Chapter = 0;
+
+	// Bitmask of tutorial tips the player has already completed (see
+	// UEclipseHUDWidget::ETip). Lives here rather than on the HUD widget so
+	// it survives a level change — the widget is rebuilt, this isn't.
+	// Deliberately NOT serialised into the save: a tutorial that reappears
+	// after a reload is a smaller annoyance than a save-format change.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Tutorial") int32 TutorialSeenMask = 0;
 
 	// Chapter clock — accumulates real seconds since the chapter started.
 	// When it crosses GetChapterDurationSeconds() the chapter auto-advances.
@@ -685,6 +705,9 @@ public:
 	// swap, weather) hook here.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Time")
 	FEclipseChapterAdvanced OnChapterAdvanced;
+
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Inventory")
+	FEclipseItemPickedUp OnItemPickedUp;
 
 	// Convenience for tests / Blueprint:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|State")

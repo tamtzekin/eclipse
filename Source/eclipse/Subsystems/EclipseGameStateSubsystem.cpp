@@ -1,6 +1,8 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseGameStateSubsystem.h"
+#include "EclipseAudioSubsystem.h"
+#include "EclipseDialogueSubsystem.h"
 #include "Eclipse.h"
 #include "Save/EclipseSaveGame.h"
 #include "Data/EclipseChapterDefinition.h"
@@ -543,11 +545,34 @@ void UEclipseGameStateSubsystem::SyncCigaretteChip()
 		// into a chip you may already be carrying, and it must never be
 		// given a "__actor" runtime id — the id IS the stack key.
 		Inventory.Add(CigaretteItemId);
-		if (!AutoPlace(CigaretteItemId))
+
+		// Smokes live in a pocket, and they get first claim on one: with
+		// both pockets full the chip used to be dropped outright, so the
+		// count went up and nothing appeared anywhere — which reads as the
+		// pickup having failed. Shuffle the most recent loose item into a
+		// free hand instead. Nothing is lost, it just moves.
+		if (!CanPlaceInSlot(CigaretteItemId, EEclipseSlotType::Pockets))
 		{
-			// Genuinely nowhere to put it. Keep the count (they're in your
-			// hand, conceptually) but don't leave an unplaced entry, which
-			// the carry model treats as corrupt.
+			const TArray<FName> InPockets = GetItemsInSlot(EEclipseSlotType::Pockets);
+			if (InPockets.Num() > 0 && CanPlaceInSlot(InPockets.Last(), EEclipseSlotType::Hands))
+			{
+				ItemPlacements.Add(InPockets.Last(), EEclipseSlotType::Hands);
+			}
+		}
+
+		if (CanPlaceInSlot(CigaretteItemId, EEclipseSlotType::Pockets))
+		{
+			ItemPlacements.Add(CigaretteItemId, EEclipseSlotType::Pockets);
+		}
+		else if (CanPlaceInSlot(CigaretteItemId, EEclipseSlotType::Hands))
+		{
+			ItemPlacements.Add(CigaretteItemId, EEclipseSlotType::Hands);
+		}
+		else
+		{
+			// Genuinely carrying three other things. Keep the count — they
+			// are on you somewhere — but don't leave an unplaced entry,
+			// which the carry model treats as corrupt.
 			Inventory.Remove(CigaretteItemId);
 		}
 	}
@@ -556,6 +581,38 @@ void UEclipseGameStateSubsystem::SyncCigaretteChip()
 		Inventory.Remove(CigaretteItemId);
 		ItemPlacements.Remove(CigaretteItemId);
 	}
+}
+
+// Globals.ink authors the starting kit as the PARENTHESISED entries of the
+// Inventory LIST — "(lighter), (bottle_vodka), (cup_empty)". Parentheses are
+// Ink's syntax for "this list item starts switched on", so the story already
+// believes the player is carrying them; this makes the carry model agree.
+// Read from Ink rather than duplicated in C++ so the writer can change the
+// kit in the .ink and have it stick.
+void UEclipseGameStateSubsystem::SeedStartingKit()
+{
+	if (bStartingKitGiven) return;
+
+	UGameInstance* GI = GetGameInstance();
+	UEclipseDialogueSubsystem* Dlg = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+	if (!Dlg) return;
+
+	TArray<FName> Starting;
+	if (!Dlg->GetInitialInventoryItems(Starting)) return;   // story not up yet — try again next level
+
+	bStartingKitGiven = true;
+	for (const FName& Id : Starting)
+	{
+		if (!AddItem(Id))
+		{
+			UE_LOG(LogEclipse, Warning,
+				TEXT("SeedStartingKit: no room for '%s' — the rest of the kit is skipped"),
+				*Id.ToString());
+			break;
+		}
+	}
+	UE_LOG(LogEclipse, Log, TEXT("SeedStartingKit: %d item(s) from Globals.ink"), Starting.Num());
+	NotifyChanged();
 }
 
 void UEclipseGameStateSubsystem::AddCigarettes(int32 Amount)
@@ -691,6 +748,12 @@ bool UEclipseGameStateSubsystem::DropItemToWorld(FName ItemId)
 			// runtime id on re-collection, so handing it the old one would
 			// double-suffix.
 			Pickup->ItemId = GetBaseItemId(ItemId);
+
+			if (UEclipseAudioSubsystem* A = GetGameInstance()
+					? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+			{
+				A->PlayCue(EEclipseUiCue::Drop);
+			}
 
 			// Row-driven mesh + scale (DT_Items). A swapped-out item has to
 			// look like the thing you just gave up, or you can't find it
@@ -1050,7 +1113,11 @@ bool UEclipseGameStateSubsystem::GetItemRow(FName ItemId, FEclipseItemRow& OutRo
 	// Try the id as-is first (covers legacy saves + unique row ids the user
 	// hand-typed before per-instance ids landed). Fall back to the base id
 	// extracted from the "<base>__<suffix>" runtime form.
-	const FEclipseItemRow* Found = ItemTable->FindRow<FEclipseItemRow>(ItemId, TEXT("InventoryUI"));
+	// bWarnIfMissing=false: for a runtime "<base>__<suffix>" id this first
+	// probe is EXPECTED to miss, and the warning it logged made a working
+	// lookup read like a broken one.
+	const FEclipseItemRow* Found = ItemTable->FindRow<FEclipseItemRow>(
+		ItemId, TEXT("InventoryUI"), /*bWarnIfMissing=*/false);
 	if (!Found)
 	{
 		const FName Base = GetBaseItemId(ItemId);
@@ -1332,6 +1399,7 @@ namespace
 		Save->Coins                    = GS.Coins;
 		Save->Notes                    = GS.Notes;
 		Save->Cigarettes               = GS.Cigarettes;
+		Save->bStartingKitGiven        = GS.bStartingKitGiven;
 		Save->ItemPlacements           = GS.ItemPlacements;
 		Save->Quest                    = GS.Quest;
 		Save->MetNPCs                  = GS.MetNPCs;
@@ -1415,6 +1483,7 @@ namespace
 		GS.Coins                    = Save->Coins;
 		GS.Notes                    = Save->Notes;
 		GS.Cigarettes               = Save->Cigarettes;
+		GS.bStartingKitGiven        = Save->bStartingKitGiven;
 		GS.ItemPlacements           = Save->ItemPlacements;
 		GS.Quest                    = Save->Quest;
 		GS.MetNPCs                  = Save->MetNPCs;

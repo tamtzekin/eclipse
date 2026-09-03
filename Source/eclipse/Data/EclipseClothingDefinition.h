@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "EclipseItemDefinition.h" // FEclipseItemEffect
 #include "EclipseClothingDefinition.generated.h"
 
@@ -55,4 +56,7 @@ struct FEclipseClothingRow : public FTableRowBase
 	// Wearables can also be carried loose — Shades come off and go in a
 	// pocket. Same meaning as FEclipseItemRow::Size.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EEclipseItemSize Size = EEclipseItemSize::Small;
+	// Same as FEclipseItemRow::IconTexture — a baked render shown in the
+	// slot instead of a 3-letter abbreviation.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TSoftObjectPtr<UTexture2D> IconTexture;
 };

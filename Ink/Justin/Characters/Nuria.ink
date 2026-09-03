@@ -1,11 +1,13 @@
-// GlamorousDealer.ink
+// Nuria.ink
 // drug/banned book dealer, very rich
 // Strengths: AESTHETICS + ZEN
 
-=== glamorous_dealer ===
+=== nuria ===
 // Check how annoyed they are first, then send player to dialogue path
 {Patience >= neutral: -> first_chat}
-{Patience < bored: -> annoyed_glamorous_dealer}
+// <= bored, not <: at exactly bored neither branch matched and the
+// knot fell off its own end with nothing to say.
+{Patience <= bored: -> annoyed_nuria}
 
 
 == first_chat
@@ -74,7 +76,7 @@ She won't take her eyes off her flip phones, both of them.
        ~ get(thick_book)
        -> DONE
 
-== annoyed_glamorous_dealer
+== annoyed_nuria
 We're done talking.
 -> END
 

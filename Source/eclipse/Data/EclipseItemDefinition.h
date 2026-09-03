@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "Engine/Texture2D.h"
 #include "EclipseItemDefinition.generated.h"
 
 UENUM(BlueprintType)
@@ -123,4 +124,15 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FRotator MeshRotation = FRotator::ZeroRotator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) TSoftObjectPtr<UMaterialInterface> MeshMaterial;
+
+	// Baked render of Mesh, shown in the inventory's carry slots instead of
+	// a 3-letter abbreviation. Generated in-editor by Tools/bake_thumbs.py;
+	// leave empty and the slot falls back to letters.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TSoftObjectPtr<UTexture2D> IconTexture;
+
+	// What picking this up sounds like. A coin clinks, a glass rings, a
+	// baggie rustles in a pocket — that's a property of the object, so it
+	// belongs here next to its mesh rather than on each placed actor.
+	// Leave unset and the generic UI pickup cue plays instead.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TSoftObjectPtr<class USoundBase> PickupSound;
 };

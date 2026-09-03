@@ -54,4 +54,47 @@ private:
 	bool bDialogueOpen = false;
 
 	void RefreshPrompt();
+
+	// ── World-anchored name label ──────────────────────────────────────
+	// The prompt is no longer parked at a fixed spot on screen: it tracks
+	// the projected position of whatever it's naming, offset onto the
+	// player's side of it, so the label reads as belonging to that object
+	// and swings around it as the player circles.
+	void TickPromptPosition();
+
+	// Gap between the subject's silhouette and the label, and how far above
+	// the subject's top the label floats.
+	static constexpr float LabelStandoffCm = 18.f;
+	static constexpr float LabelLiftCm     = 14.f;
+
+	// Anchors/alignment only need setting once; the per-frame work is the
+	// position alone.
+	bool bPromptSlotReady = false;
+
+	// ── Pickup card ────────────────────────────────────────────────────
+	// A framed picture of what you just collected, shown beside the
+	// interact prompt and faded out. Confirms WHAT was taken without
+	// making the player open the inventory to check.
+	UFUNCTION()
+	void HandleItemPickedUp(FName ItemId);
+
+	virtual void NativeTick(const FGeometry& G, float DeltaTime) override;
+
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UBorder> PickupCard;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<class UImage>  PickupImage;
+
+	// Eight white copies of the icon, nudged one step in each direction and
+	// stacked behind the real one. A UBorder can only ever outline its own
+	// rectangle, which is why the card used to read as a white square around
+	// a picture; drawing the sprite itself is what makes the outline follow
+	// the silhouette.
+	UPROPERTY() TArray<TObjectPtr<class UImage>> PickupOutline;
+
+	void EnsurePickupCard();
+
+	float PickupCardTimer = 0.f;
+	static constexpr float PickupCardHoldSeconds = 1.8f;
+	static constexpr float PickupCardFadeSeconds = 0.9f;
+	// Stroke width, in pixels, of the sprite outline.
+	static constexpr float PickupOutlinePx = 2.f;
 };

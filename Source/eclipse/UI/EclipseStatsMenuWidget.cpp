@@ -237,7 +237,7 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatsTitle"));
 	Title->SetText(FText::FromString(TEXT("STATS")));
 	Title->SetFont(MakeBMSPA(48, 8.f));
-	Title->SetColorAndOpacity(FSlateColor(Cyan));
+	Title->SetColorAndOpacity(FSlateColor(DialogueRed));
 	Title->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
 	{
@@ -249,7 +249,10 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	auto MakeStatRow = [&](FName WidgetName) -> UTextBlock*
 	{
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
-		T->SetFont(MakeBMSPA(20, 4.f));
+		// FragmentMono, no letter-spacing: the row is three padded columns
+		// and padding only aligns in a monospace face. BMSPA at 4px tracking
+		// also made the longest row wider than the panel.
+		T->SetFont(MakeFragmentMono(18));
 		T->SetColorAndOpacity(FSlateColor(Cream));
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(T))
 		{
@@ -302,10 +305,19 @@ void UEclipseStatsMenuWidget::RefreshAll()
 
 	// Each row: name, level, learn-by-doing XP toward the next level
 	// ("AESTHETICS     3     40/100").
+	// Fixed-width columns rather than a run of literal spaces: "PSYCHEDELICS"
+	// is five characters longer than "ZEN", so the old format pushed its
+	// numbers off the right edge of the panel while the short rows sat with
+	// their columns nowhere near each other.
 	auto SetRow = [](UTextBlock* T, const TCHAR* Label, int32 Val, int32 XP)
 	{
-		if (T) T->SetText(FText::FromString(FString::Printf(TEXT("%s     %d     %d/%d"),
-			Label, Val, XP, UEclipseGameStateSubsystem::StatXPToLevel)));
+		if (!T) return;
+		FString Name = Label;
+		while (Name.Len() < 13) Name.AppendChar(TEXT(' '));
+		const FString Progress = FString::Printf(TEXT("%d/%d"),
+			XP, UEclipseGameStateSubsystem::StatXPToLevel);
+		T->SetText(FText::FromString(FString::Printf(TEXT("%s %2d  %8s"),
+			*Name, Val, *Progress)));
 	};
 	SetRow(AestheticsRow,   TEXT("AESTHETICS"),   GS->Aesthetics,   GS->AestheticsXP);
 	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm,       GS->RhythmXP);

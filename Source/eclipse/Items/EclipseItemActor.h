@@ -51,7 +51,7 @@ public:
 
 	// ── Interact radius (used by InteractSubsystem) ──
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Item")
-	float PickupRadius = 150.f;  // 1.5 m
+	float PickupRadius = 190.f;  // 1.9 m
 
 	// Only meaningful when ItemId is "coins" or "notes" — how much currency
 	// this single actor adds to the player's counter on pickup. Default 1
@@ -64,6 +64,11 @@ public:
 	// ── Visual ──
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|Item")
 	TObjectPtr<UStaticMeshComponent> Mesh;
+
+	// Bare pivot the mesh hangs off — see the constructor for why the mesh
+	// is no longer the root.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Eclipse|Item")
+	TObjectPtr<class USceneComponent> Root;
 
 	// Pull Mesh/MeshScale/MeshMaterial off this actor's DT_Items row and
 	// apply them. Runs on editor placement (so a dropped-in actor shows its
@@ -90,6 +95,12 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Item")
 	bool bPickedUp = false;
 
+	// Ambient "you could pick this up" rim — see TickProximityGlow. Which
+	// item gets it is the InteractSubsystem's call, not a radius of ours.
+	bool bProximityGlowOn  = false;
+	bool bTabHighlighted   = false;
+	void TickProximityGlow();
+
 	// ── Actions ──
 	/** Called by InteractSubsystem when player presses E near this actor. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Eclipse|Item")
@@ -107,9 +118,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Items")
 	bool TakeAfterSwap(FName OutgoingId);
 
-	// Sound played at the item's location on Pickup. Null-safe — no-op if unset.
+	// Per-actor override for the pickup sound. Normally left empty — the
+	// sound belongs to the KIND of object, so it lives on the DT_Items row
+	// (see ResolvePickupSound).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Audio")
 	TObjectPtr<class USoundBase> PickupSound;
+
+	// This actor's override, else the DT_Items row's sound, else null. A
+	// coin should clink and a baggie should rustle, and which of those it is
+	// is a property of the item, not of the actor someone dragged into the
+	// level — so the row is where it's authored.
+	class USoundBase* ResolvePickupSound() const;
 
 protected:
 	// Opens the swap prompt for this pickup. No-op when there's no player

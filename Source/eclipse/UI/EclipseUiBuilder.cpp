@@ -647,6 +647,30 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 
 		BuildBar(TEXT("Heat"),        TEXT("HEAT"));
 		BuildBar(TEXT("Thirst"),      TEXT("THIRST"));
+
+		// ── Tutorial line ──
+		// Bottom-centre, clear of the meters and the clock. The widget fades
+		// this in and out and writes the text; everything here is style, so
+		// a designer can restyle it without touching C++.
+		UTextBlock* TutorialText = New<UTextBlock>(Tree, TEXT("TutorialText"));
+		TutorialText->SetText(FText::FromString(TEXT("WSAD to walk")));
+		TutorialText->SetFont(MakeFragmentMono(20, 1.f));
+		TutorialText->SetColorAndOpacity(FSlateColor(Cream));
+		TutorialText->SetJustification(ETextJustify::Center);
+
+		UBorder* TutorialPlate = New<UBorder>(Tree, TEXT("TutorialPlate"));
+		TutorialPlate->SetBrush(TutorialPlateBrush());
+		TutorialPlate->SetPadding(FMargin(34.f, 8.f));
+		TutorialPlate->SetContent(TutorialText);
+		TutorialPlate->SetVisibility(ESlateVisibility::Collapsed);
+
+		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(TutorialPlate))
+		{
+			S->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+			S->SetAlignment(FVector2D(0.5f, 1.f));
+			S->SetPosition(FVector2D(0.f, -90.f));
+			S->SetAutoSize(true);
+		}
 	});
 #else
 	(void)WBPAssetPath; return false;
@@ -666,13 +690,26 @@ bool UEclipseUiBuilder::PopulateInteractWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
+		// Same treatment as the chapter clock: cream letters carrying a red
+		// outline, not red letters. Red-on-red went unreadable the moment
+		// the prompt sat over anything bright.
+		const FLinearColor PromptGlow(0.90f, 0.16f, 0.16f, 0.65f);   // #e62a2a
 		UTextBlock* PromptText = New<UTextBlock>(Tree, TEXT("PromptText"));
-		PromptText->SetFont(MakeBMSPA(28, 2.f));
-		PromptText->SetColorAndOpacity(FSlateColor(Cyan));
+		{
+			// Small: this is a name floating beside a thing in the world now,
+			// not a banner across the bottom of the screen. The widget
+			// repositions it every frame — see TickPromptPosition.
+			FSlateFontInfo F = MakeBMSPA(20, 2.f);
+			F.OutlineSettings.OutlineSize  = 2;
+			F.OutlineSettings.OutlineColor = PromptGlow;
+			F.OutlineSettings.bApplyOutlineToDropShadows = true;
+			PromptText->SetFont(F);
+		}
+		PromptText->SetColorAndOpacity(FSlateColor(Cream));
 		PromptText->SetJustification(ETextJustify::Center);
-		PromptText->SetShadowOffset(FVector2D(0.f, 2.f));
-		PromptText->SetShadowColorAndOpacity(FLinearColor(0.318f, 0.933f, 0.988f, 0.55f));
-		PromptText->SetText(FText::FromString(TEXT("[E]  TALK TO ...")));
+		PromptText->SetShadowOffset(FVector2D::ZeroVector);
+		PromptText->SetShadowColorAndOpacity(PromptGlow);
+		PromptText->SetText(FText::FromString(TEXT("NAME")));
 
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(PromptText))
 		{
@@ -1083,12 +1120,15 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 				UBorder* Mount = New<UBorder>(Tree,
 					FName(*FString::Printf(TEXT("%sMount"), Spec.Name)));
 				{
+					// Invisible. The mount is only a canvas anchor — the
+					// slot widget dropped into it draws its own frame, and
+					// a border here would box the caption in too, which is
+					// now above the box rather than inside it.
 					FSlateBrush B;
 					B.DrawAs    = ESlateBrushDrawType::RoundedBox;
-					B.TintColor = FSlateColor(FLinearColor(LinkBlue.R, LinkBlue.G, LinkBlue.B, 0.05f));
-					B.OutlineSettings.Color        = FSlateColor(LinkBlueDim);
-					B.OutlineSettings.Width        = 1.f;
-					B.OutlineSettings.CornerRadii  = FVector4(3, 3, 3, 3);
+					B.TintColor = FSlateColor(FLinearColor::Transparent);
+					B.OutlineSettings.Color        = FSlateColor(FLinearColor::Transparent);
+					B.OutlineSettings.Width        = 0.f;
 					B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
 					Mount->SetBrush(B);
 				}
@@ -1166,12 +1206,12 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
-			// Fully transparent in every state — the menu reads as plain
-			// text, not buttons. The UButton is kept purely for click +
-			// hover handling; nothing about it is drawn.
+			// Transparent at rest so the menu reads as plain text; hover and
+			// pressed fill in the game's red so USE and CLOSE answer the
+			// mouse instead of sitting there inert.
 			BS.Normal   = SolidBrush(FLinearColor::Transparent);
-			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
-			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+			BS.Hovered  = SolidBrush(FLinearColor(DialogueRed.R, DialogueRed.G, DialogueRed.B, 0.20f));
+			BS.Pressed  = SolidBrush(FLinearColor(DialogueRed.R, DialogueRed.G, DialogueRed.B, 0.38f));
 			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			Btn->SetStyle(BS);
 
@@ -1269,10 +1309,10 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 			S->SetOffsets(FMargin(0.f));
 		}
 
-		// Centred navy panel — same RoundedBrush(PanelBg, PanelBorder) as the
+		// Centred navy panel — same RoundedBrush(PanelBg, DialogueRed) as the
 		// HUD background so the modal reads as "HUD expanded full-screen".
 		UBorder* Panel = New<UBorder>(Tree, TEXT("StatsPanel"));
-		Panel->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
+		Panel->SetBrush(RoundedBrush(PanelBg, DialogueRed, 1.f, 0.f));
 		Panel->SetPadding(FMargin(28.f, 22.f));
 		Panel->SetHorizontalAlignment(HAlign_Fill);
 		Panel->SetVerticalAlignment(VAlign_Fill);
@@ -1291,7 +1331,7 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("StatsTitle"));
 		Title->SetText(FText::FromString(TEXT("STATS")));
 		Title->SetFont(MakeBerenjena(44, 8.f));
-		Title->SetColorAndOpacity(FSlateColor(Cyan));
+		Title->SetColorAndOpacity(FSlateColor(DialogueRed));
 		Title->SetJustification(ETextJustify::Center);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
 		{
@@ -1314,7 +1354,7 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 			FSlateBrush PB;
 			PB.DrawAs    = ESlateBrushDrawType::RoundedBox;
 			PB.TintColor = FSlateColor(FLinearColor(0.078f, 0.169f, 0.314f, 1.f));
-			PB.OutlineSettings.Color        = FSlateColor(Cyan);
+			PB.OutlineSettings.Color        = FSlateColor(DialogueRed);
 			PB.OutlineSettings.Width        = 2.f;
 			PB.OutlineSettings.CornerRadii  = FVector4(0,0,0,0);
 			PB.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
@@ -1326,7 +1366,7 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		UTextBlock* PortraitLabel = New<UTextBlock>(Tree, TEXT("PortraitLabel"));
 		PortraitLabel->SetText(FText::FromString(TEXT("YOU")));
 		PortraitLabel->SetFont(MakeBerenjena(20, 5.f));
-		PortraitLabel->SetColorAndOpacity(FSlateColor(Cyan));
+		PortraitLabel->SetColorAndOpacity(FSlateColor(DialogueRed));
 		PortraitLabel->SetJustification(ETextJustify::Center);
 		PortraitFrame->SetContent(PortraitLabel);
 
@@ -1354,7 +1394,9 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		{
 			UTextBlock* T = New<UTextBlock>(Tree, WidgetName);
 			T->SetText(FText::FromString(DefaultLabel));
-			T->SetFont(MakeBerenjena(20, 4.f));
+			// See UEclipseStatsMenuWidget::Refresh — monospace, no tracking,
+			// so the padded columns line up and the longest row still fits.
+			T->SetFont(MakeFragmentMono(18));
 			T->SetColorAndOpacity(FSlateColor(Cream));
 			if (UVerticalBoxSlot* VS = StatList->AddChildToVerticalBox(T))
 			{

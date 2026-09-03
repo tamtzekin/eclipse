@@ -38,7 +38,7 @@ void AEclipseBaseRoom::BeginPlay()
 		return;
 	}
 
-	Audio->PlayMusic(Sound, MusicFadeInSeconds);
-	UE_LOG(LogEclipse, Log, TEXT("Room '%s': PlayMusic '%s' fade=%.1fs"),
-		*RoomKey.ToString(), *Sound->GetName(), MusicFadeInSeconds);
+	Audio->PlayMusic(Sound, MusicFadeInSeconds, MusicStartSeconds);
+	UE_LOG(LogEclipse, Log, TEXT("Room '%s': PlayMusic '%s' fade=%.1fs start=%.1fs"),
+		*RoomKey.ToString(), *Sound->GetName(), MusicFadeInSeconds, MusicStartSeconds);
 }
