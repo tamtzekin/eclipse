@@ -153,13 +153,19 @@ public:
 	float CameraZOffset = 0.f;
 
 	// ── Footsteps ──
-	// Driven by distance travelled, not a timer: the stair slowdown changes
-	// how fast the character walks, and a timer would keep the same cadence
-	// while the stride visibly shortened.
+	// Fired off the animation's own foot plants: the foot bones are tracked
+	// each frame and a step lands when one touches down. Distance-driven
+	// cadence (FootstepStrideCm below) is the fallback for meshes without
+	// foot_l/foot_r, and drifts out of phase with the legs as speed changes.
 	UPROPERTY(EditAnywhere, Category = "Eclipse|Audio")
 	float FootstepStrideCm = 95.f;
 	UPROPERTY(EditAnywhere, Category = "Eclipse|Audio")
 	float FootstepVolume = 0.55f;
+	// Height above the capsule's bottom at which a foot counts as planted.
+	// Needs tuning per mesh — the mannequin's foot bone sits ~10 cm up
+	// inside the shoe at rest, so the trigger has to clear that.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Audio")
+	float FootPlantHeightCm = 14.f;
 	// Filled from /Game/Justin/Audio/Steps on first use. Several samples so
 	// the same clip doesn't retrigger every stride and read as a machine gun.
 	UPROPERTY(Transient)
@@ -167,7 +173,9 @@ public:
 
 	float FootstepDistance = 0.f;
 	int32 LastFootstepIndex = -1;
+	bool  bFootDown[2] = { false, false };   // foot_l, foot_r — last frame's plant state
 	void TickFootsteps(float DeltaTime);
+	void PlayFootstep();
 
 	// Set from the NPC being talked to (see AEclipseNpcCharacter). Degrees
 	// of extra camera pitch while the dialogue framing is engaged.

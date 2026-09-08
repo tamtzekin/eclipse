@@ -42,6 +42,30 @@ void UEclipseAudioSubsystem::PlaySFXAt(USoundBase* Sound, FVector Location, floa
 
 void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
 {
+	// Cues that already have real foley play regardless of the placeholder
+	// gate below — opening a pocket is the same sound whichever menu it is.
+	float Pitch = 1.f;
+	const TCHAR* Real = nullptr;
+	switch (Cue)
+	{
+	case EEclipseUiCue::MenuOpen:  Real = TEXT("Items/S_Item_Rustle"); break;
+	case EEclipseUiCue::MenuClose: Real = TEXT("Items/S_Item_Rustle"); Pitch = 0.88f; break;
+	default: break;
+	}
+	if (Real)
+	{
+		TWeakObjectPtr<USoundBase>& RealSlot = CueCache.FindOrAdd(Cue);
+		if (!RealSlot.IsValid())
+		{
+			FString Name = FString(Real);
+			Name = Name.RightChop(Name.Find(TEXT("/")) + 1);
+			RealSlot = LoadObject<USoundBase>(nullptr,
+				*FString::Printf(TEXT("/Game/Justin/Audio/%s.%s"), Real, *Name));
+		}
+		if (USoundBase* S = RealSlot.Get()) PlayUI(S, VolumeMultiplier, Pitch);
+		return;
+	}
+
 	// Placeholder square-wave bleeps generated into /Game/Justin/Audio/UI —
 	// deliberately cheap and obviously temporary. The FMOD plugins are
 	// enabled but the project ships no banks yet, so there is nothing for

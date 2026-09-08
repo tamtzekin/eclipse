@@ -371,12 +371,18 @@ void AEclipsePlayerCharacter::ClearFocus()
 	PC->SetViewTargetWithBlend(this, InspectBlendSeconds, VTBlend_Cubic, 0.f, true);
 }
 
-// Steps land on distance covered rather than on a clock, so the cadence
-// automatically stretches when the stair slowdown shortens the stride.
+// Steps land when the animation actually plants a foot. Watching the foot
+// bones costs one socket lookup each and needs no notifies added to the
+// animation assets, which live outside our folder.
 void AEclipsePlayerCharacter::TickFootsteps(float DeltaTime)
 {
 	UCharacterMovementComponent* Move = GetCharacterMovement();
-	if (!Move || !Move->IsMovingOnGround()) { FootstepDistance = 0.f; return; }
+	if (!Move || !Move->IsMovingOnGround())
+	{
+		FootstepDistance = 0.f;
+		bFootDown[0] = bFootDown[1] = false;
+		return;
+	}
 
 	if (FootstepSounds.Num() == 0)
 	{
@@ -394,10 +400,32 @@ void AEclipsePlayerCharacter::TickFootsteps(float DeltaTime)
 
 	const float Speed = GetVelocity().Size2D();
 	if (Speed < 10.f) return;
+
+	// Capsule bottom is the floor under the character; foot heights are
+	// measured from there so slopes and stairs don't shift the threshold.
+	USkeletalMeshComponent* M = GetMesh();
+	static const FName FootBones[2] = { FName("foot_l"), FName("foot_r") };
+	if (M && M->DoesSocketExist(FootBones[0]) && M->DoesSocketExist(FootBones[1]))
+	{
+		const float Floor = GetActorLocation().Z
+			- GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		for (int32 i = 0; i < 2; ++i)
+		{
+			const bool bDown = (M->GetSocketLocation(FootBones[i]).Z - Floor) < FootPlantHeightCm;
+			if (bDown && !bFootDown[i]) PlayFootstep();   // touchdown edge only
+			bFootDown[i] = bDown;
+		}
+		return;
+	}
+
 	FootstepDistance += Speed * DeltaTime;
 	if (FootstepDistance < FootstepStrideCm) return;
 	FootstepDistance = 0.f;
+	PlayFootstep();
+}
 
+void AEclipsePlayerCharacter::PlayFootstep()
+{
 	// Never the same sample twice running — a repeat is the thing the ear
 	// picks out as artificial.
 	if (FootstepSounds.Num() == 0) return;
