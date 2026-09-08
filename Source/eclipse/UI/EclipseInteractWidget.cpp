@@ -268,8 +268,9 @@ void UEclipseInteractWidget::NativeConstruct()
 		GS->OnItemPickedUp.AddDynamic(this, &UEclipseInteractWidget::HandleItemPickedUp);
 	}
 
-	// Start hidden
-	SetVisibility(ESlateVisibility::Hidden);
+	// Root always ticks (see RefreshPrompt); the label starts hidden.
+	SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (PromptText) PromptText->SetVisibility(ESlateVisibility::Collapsed);
 
 	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
 	{
@@ -343,9 +344,15 @@ void UEclipseInteractWidget::RefreshPrompt()
 {
 	if (!PromptText) return;
 
+	// The root stays visible whatever the prompt is doing; only the label
+	// is toggled. Slate's tick pass arranges with an EVisibility::Visible
+	// filter, so a Hidden root stops receiving NativeTick — which froze the
+	// pickup card mid-fade and let it re-appear at the next prompt.
+	SetVisibility(ESlateVisibility::HitTestInvisible);
+
 	if (bDialogueOpen)
 	{
-		SetVisibility(ESlateVisibility::Hidden);
+		PromptText->SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
 
@@ -355,7 +362,7 @@ void UEclipseInteractWidget::RefreshPrompt()
 	if (CachedNpc.IsValid())
 	{
 		PromptText->SetText(FText::FromString(CachedNpc->GetDisplayName().ToString().ToUpper()));
-		SetVisibility(ESlateVisibility::HitTestInvisible);
+		PromptText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		TickPromptPosition();   // place it before the first frame draws
 		return;
 	}
@@ -391,10 +398,10 @@ void UEclipseInteractWidget::RefreshPrompt()
 		// its own reads as scenery text rather than a thing you can take.
 		PromptText->SetText(FText::FromString(
 			FString::Printf(TEXT("x  %s"), *ItemDisplay.ToString().ToUpper())));
-		SetVisibility(ESlateVisibility::HitTestInvisible);
+		PromptText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		TickPromptPosition();
 		return;
 	}
 
-	SetVisibility(ESlateVisibility::Hidden);
+	PromptText->SetVisibility(ESlateVisibility::Collapsed);
 }

@@ -1,6 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseMainMenuWidget.h"
+#include "Subsystems/EclipseDemoSettings.h"
 #include "Eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Blueprint/WidgetTree.h"
@@ -11,6 +12,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Save/EclipseSaveGame.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -62,12 +64,14 @@ void UEclipseMainMenuWidget::BuildFallbackTree()
 		UCanvasPanel::StaticClass(), TEXT("Canvas_0"));
 	WidgetTree->RootWidget = Root;
 
-	// Full-screen chalk panel — same style as the pause menu so the boot
-	// experience feels consistent with the in-game pause overlay.
+	// Same shell as the pause menu: opaque black, one left-aligned column
+	// 80px off the screen edge, vertically centred. Title and options in
+	// the same face and colour — the boot screen and the in-game overlay
+	// should read as the same menu.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MainMenuPanel"));
-	Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 1.f)));
-	Panel->SetPadding(FMargin(0.f));
-	Panel->SetHorizontalAlignment(HAlign_Fill);
+	Panel->SetBrush(SolidBrush(FLinearColor::Black));
+	Panel->SetPadding(FMargin(80.f, 0.f, 0.f, 0.f));
+	Panel->SetHorizontalAlignment(HAlign_Left);
 	Panel->SetVerticalAlignment(VAlign_Center);
 	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 	{
@@ -79,41 +83,47 @@ void UEclipseMainMenuWidget::BuildFallbackTree()
 		UVerticalBox::StaticClass(), TEXT("MainMenuColumn"));
 	Panel->SetContent(Column);
 
-	// Title
 	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MainMenuTitle"));
-	Title->SetText(FText::FromString(TEXT("ECLIPSE")));
-	Title->SetFont(MakeBMSPA(/*Size=*/200, /*Letter=*/18.f));
-	Title->SetColorAndOpacity(FSlateColor(Cyan));
-	Title->SetJustification(ETextJustify::Center);
+	Title->SetText(FText::FromString(TEXT("ECLIPSE 9000")));
+	Title->SetFont(MakeRodin(40));
+	Title->SetColorAndOpacity(FSlateColor(Cream));
+	Title->SetJustification(ETextJustify::Left);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
 	{
-		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 96.f));
-		VS->SetHorizontalAlignment(HAlign_Center);
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 40.f));
+		VS->SetHorizontalAlignment(HAlign_Left);
 	}
 
 	auto MakeBtn = [&](const FString& Label, FName WidgetName) -> UButton*
 	{
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-		BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-		BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+		// Transparent in every state — plain text, not buttons. The
+		// UButton survives only to carry click + hover.
+		BS.Normal   = SolidBrush(FLinearColor::Transparent);
+		BS.Hovered  = SolidBrush(FLinearColor::Transparent);
+		BS.Pressed  = SolidBrush(FLinearColor::Transparent);
+		BS.Disabled = SolidBrush(FLinearColor::Transparent);
 		Btn->SetStyle(BS);
 		Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
 		T->SetText(FText::FromString(Label));
-		T->SetFont(MakeRodin(56));
+		T->SetFont(MakeRodin(22));
 		T->SetColorAndOpacity(FSlateColor(Cream));
-		T->SetJustification(ETextJustify::Center);
+		T->SetJustification(ETextJustify::Left);
 		Btn->SetContent(T);
+		if (UButtonSlot* BSlot = Cast<UButtonSlot>(T->Slot))
+		{
+			BSlot->SetHorizontalAlignment(HAlign_Left);
+			BSlot->SetVerticalAlignment(VAlign_Center);
+		}
 
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
 		{
-			VS->SetPadding(FMargin(0.f, 16.f));
-			VS->SetHorizontalAlignment(HAlign_Fill);
+			VS->SetPadding(FMargin(0.f, 6.f));
+			VS->SetHorizontalAlignment(HAlign_Left);
 		}
 		return Btn;
 	};
@@ -124,13 +134,13 @@ void UEclipseMainMenuWidget::BuildFallbackTree()
 
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatusText"));
 	StatusText->SetText(FText::GetEmpty());
-	StatusText->SetFont(MakeRodin(28));
+	StatusText->SetFont(MakeRodin(18));
 	StatusText->SetColorAndOpacity(FSlateColor(EclipseUI::CreamDim));
-	StatusText->SetJustification(ETextJustify::Center);
+	StatusText->SetJustification(ETextJustify::Left);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 	{
-		VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
-		VS->SetHorizontalAlignment(HAlign_Center);
+		VS->SetPadding(FMargin(0.f, 32.f, 0.f, 0.f));
+		VS->SetHorizontalAlignment(HAlign_Left);
 	}
 }
 
@@ -160,10 +170,17 @@ void UEclipseMainMenuWidget::RefreshContinueState()
 	}
 }
 
+FName UEclipseMainMenuWidget::ResolveStartLevel() const
+{
+	return NewGameLevelName.IsNone()
+		? UEclipseDemoSettings::Get().FirstPlayableLevel
+		: NewGameLevelName;
+}
+
 void UEclipseMainMenuWidget::OnNewGame()
 {
 	UE_LOG(LogEclipse, Log, TEXT("MainMenu: New Game — wiping autosave + opening %s"),
-		*NewGameLevelName.ToString());
+		*ResolveStartLevel().ToString());
 
 	// Wipe the autosave so the player gets a fresh state, not a stale chapter.
 	UGameplayStatics::DeleteGameInSlot(UEclipseSaveGame::SlotName, UEclipseSaveGame::UserIndex);
@@ -181,7 +198,7 @@ void UEclipseMainMenuWidget::OnNewGame()
 
 	if (UWorld* W = GetWorld())
 	{
-		UGameplayStatics::OpenLevel(W, NewGameLevelName);
+		UGameplayStatics::OpenLevel(W, ResolveStartLevel());
 	}
 }
 
@@ -214,7 +231,7 @@ void UEclipseMainMenuWidget::OnContinue()
 
 	if (UWorld* W = GetWorld())
 	{
-		UGameplayStatics::OpenLevel(W, NewGameLevelName);
+		UGameplayStatics::OpenLevel(W, ResolveStartLevel());
 	}
 }
 

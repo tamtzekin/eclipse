@@ -100,7 +100,7 @@ namespace
 			FName(*FString::Printf(TEXT("%sBar"), Suffix)));
 		{
 			FProgressBarStyle Style;
-			Style.BackgroundImage = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.3f));
+			Style.BackgroundImage = SolidBrush(Cream.CopyWithNewOpacity(0.16f));
 			Style.FillImage       = SolidBrush(FLinearColor::White); // tinted per-frame via SetFillColorAndOpacity
 			OutBar->SetWidgetStyle(Style);
 		}
@@ -397,18 +397,22 @@ void UEclipseHUDWidget::UpdateBars()
 	DetectChange(GS->Heat,        LastHeat,        HeatPulse);
 	DetectChange(GS->Thirst,      LastThirst,      ThirstPulse);
 
-	// Per-meter base tints. Critical-zone bars override to red via
-	// ApplyBarStyle so designers don't have to pick a separate critical
-	// colour.
-	const FLinearColor HeatFill  (0.902f, 0.165f, 0.165f, 1.f); // #e62a2a red
-	const FLinearColor ThirstFill(0.545f, 0.267f, 0.902f, 1.f); // #8b44e6 purple
+	// Two colours for the whole readout: red fill, white when critical.
+	// The bars used to be red and purple with a third red for the critical
+	// zone, which read as three unrelated states rather than one meter.
+	const FLinearColor HeatFill   = DialogueRed;
+	const FLinearColor ThirstFill = DialogueRed;
 
 	// Pulse value passed to ApplyBarStyle: 0..1, peaking at full timer.
 	const float HeatPulseAlpha = HeatPulse        / PulseDuration;
 	const float ThirstPulseAlpha = ThirstPulse    / PulseDuration;
 
-	ApplyBarStyle(HeatBar,   GS->Heat,   HeatFill,   HeatPulseAlpha,   /*bHighIsCritical=*/false);
-	ApplyBarStyle(ThirstBar, GS->Thirst, ThirstFill, ThirstPulseAlpha, /*bHighIsCritical=*/true);
+	// Heat is critical at BOTH ends — 0 is the freeze-out death, max costs
+	// you water. Thirst only at the bottom: a full Thirst meter is the good
+	// state, so it must never light up as an alarm. (These two were the
+	// wrong way round.)
+	ApplyBarStyle(HeatBar,   GS->Heat,   HeatFill,   HeatPulseAlpha,   /*bHighIsCritical=*/true);
+	ApplyBarStyle(ThirstBar, GS->Thirst, ThirstFill, ThirstPulseAlpha, /*bHighIsCritical=*/false);
 
 	const int32 Max = UEclipseGameStateSubsystem::MeterMax;
 	if (HeatValueText)        HeatValueText->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"), GS->Heat, Max)));
@@ -417,13 +421,15 @@ void UEclipseHUDWidget::UpdateBars()
 
 void UEclipseHUDWidget::ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearColor BaseTint, float Pulse, bool bHighIsCritical) const
 {
+	using namespace EclipseUI;
 	if (!Bar) return;
 
-	const FLinearColor CriticalTint(0.95f, 0.18f, 0.18f, 1.f);
-	// Heat passes bHighIsCritical=false: only 0 kills, so a hot player is
-	// fine and shouldn't read as an alarm. (It also starts at 8, which is
-	// exactly MeterCriticalHigh — without this the bar would be red from
-	// the first frame of a new game.) Thirst keeps both ends critical.
+	// White is the alarm now that every bar is red at rest — it's the only
+	// other colour in the cluster, so it can't be read as anything else.
+	const FLinearColor CriticalTint = Cream;
+	// Which end counts as critical is the caller's call — see UpdateBars.
+	// MeterCriticalHigh is 9 so Heat's starting value of 8 is not already
+	// in the alarm zone.
 	const bool bCritical =
 		(Value <= UEclipseGameStateSubsystem::MeterCriticalLow) ||
 		(bHighIsCritical && Value >= UEclipseGameStateSubsystem::MeterCriticalHigh);

@@ -202,14 +202,19 @@ void UEclipseSwapPromptWidget::BuildCandidateBoxes()
 	{
 		UButton* Box = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 
+		// Red box = what you'd gain, white box = what you'd give up. The
+		// outline is what names each side; the fill only says how hot the
+		// hover is, so the two never blur into the same grey.
+		const FLinearColor Edge = bIsNew ? DialogueRed : Cream;
+		auto BoxBrush = [&Edge](float Alpha)
+		{
+			return RoundedBrush(Edge.CopyWithNewOpacity(Alpha), Edge, 1.5f, 0.f);
+		};
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(bIsNew ? DialogueRed.CopyWithNewOpacity(0.18f)
-		                                : FLinearColor(0.945f, 0.929f, 0.851f, 0.06f));
-		BS.Hovered  = SolidBrush(bIsNew ? DialogueRed.CopyWithNewOpacity(0.55f)
-		                                : FLinearColor(0.945f, 0.929f, 0.851f, 0.20f));
-		BS.Pressed  = SolidBrush(bIsNew ? DialogueRed.CopyWithNewOpacity(0.75f)
-		                                : FLinearColor(0.945f, 0.929f, 0.851f, 0.30f));
-		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+		BS.Normal   = BoxBrush(0.10f);
+		BS.Hovered  = BoxBrush(0.34f);
+		BS.Pressed  = BoxBrush(0.52f);
+		BS.Disabled = BoxBrush(0.04f);
 		Box->SetStyle(BS);
 		Box->SetClickMethod(EButtonClickMethod::MouseDown);
 
@@ -268,7 +273,7 @@ void UEclipseSwapPromptWidget::BuildFallbackTree()
 	// No full-screen dim: the game is still running underneath and blacking
 	// it out would read as a pause the prompt doesn't actually apply.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SwapPanel"));
-	Panel->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
+	Panel->SetBrush(RoundedBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.97f), DialogueRed, 1.f, 0.f));
 	Panel->SetPadding(FMargin(18.f, 14.f));
 	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 	{

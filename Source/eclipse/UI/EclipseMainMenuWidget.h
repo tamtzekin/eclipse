@@ -38,11 +38,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> QuitBtn;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StatusText;
 
-	// Levels — soft pointers so the menu doesn't pull L_Bathroom into its own
-	// cooked content. Default point at the slice's only level; designer can
-	// override per-WBP later for branching content.
+	// Leave None (the default) and NEW GAME opens
+	// UEclipseDemoSettings::FirstPlayableLevel, so the menu and the demo
+	// flow can't drift apart. Set it per-WBP only to override that.
 	UPROPERTY(EditDefaultsOnly, Category = "Eclipse|UI")
-	FName NewGameLevelName = TEXT("L_Bathroom");
+	FName NewGameLevelName;
+
+	// Resolves NewGameLevelName against the demo settings.
+	FName ResolveStartLevel() const;
 
 private:
 	UFUNCTION() void OnNewGame();

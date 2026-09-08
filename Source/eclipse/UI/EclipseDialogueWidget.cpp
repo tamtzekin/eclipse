@@ -1434,6 +1434,12 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	ChoiceRowBackgrounds.Reset();
 	ChoiceLabelWidgets.Reset();
 	ChoicePrefixLabels.Reset();
+	// These three were missed here: Path B rebuilds every button each turn,
+	// so without the reset the reveal arrays grew forever and kept RAW
+	// pointers to buttons that had already been destroyed with the old rows.
+	ChoiceRevealButtons.Reset();
+	ChoiceRevealDiamonds.Reset();
+	ChoiceRevealDelays.Reset();
 
 	// Make sure the container itself is actually visible — an earlier turn
 	// (or Path A's Collapse-on-unused logic) can leave it hidden.
@@ -1500,7 +1506,8 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 		// RenderOpacity ramp does not reach a child that sets its own render
 		// transform, so the diamond was drawing over the NPC's line while
 		// the choices were still held back.
-		CircleSize->SetRenderOpacity(0.f);
+		// Built hidden; NativeTick's reveal gate turns it on with its row.
+		CircleSize->SetVisibility(ESlateVisibility::Hidden);
 		ChoiceRevealDiamonds.Add(CircleSize);
 
 		// ── Text label ──
@@ -2683,9 +2690,19 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			B->SetRenderOpacity(RevealAlpha);
 		}
 		// The bullets come up with their rows, never before them.
+		//
+		// Visibility, not RenderOpacity: the diamond is a UBorder with its
+		// own 45-degree render transform, and a widget that carries a render
+		// transform is composited in its own pass — an ancestor's
+		// RenderOpacity never reaches it. That is why the bullets kept
+		// showing next to invisible rows while the NPC's line was still
+		// printing. Hidden (not Collapsed) so the rows don't jump sideways
+		// when the bullets arrive.
+		const ESlateVisibility BulletVis = bBodyDone
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden;
 		for (const TWeakObjectPtr<UWidget>& D : ChoiceRevealDiamonds)
 		{
-			if (UWidget* W = D.Get()) W->SetRenderOpacity(RevealAlpha);
+			if (UWidget* W = D.Get()) W->SetVisibility(BulletVis);
 		}
 		// Rows appearing grows the scrollable content — keep the view
 		// pinned to the newest row.

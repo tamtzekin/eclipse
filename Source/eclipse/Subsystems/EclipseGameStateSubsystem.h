@@ -260,7 +260,9 @@ public:
 	// HUD tint; it doesn't kill the player directly.
 	static constexpr int32 MeterMax          = 10;
 	static constexpr int32 MeterCriticalLow  = 2;   // value ≤ this → critical
-	static constexpr int32 MeterCriticalHigh = 8;   // value ≥ this → critical
+	// 9, not 8: Heat starts at 8, and a meter that is already in its alarm
+	// zone on the first frame of a new game reads as a broken HUD.
+	static constexpr int32 MeterCriticalHigh = 9;   // value ≥ this → critical
 
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Heat        = 8;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Thirst      = 5;

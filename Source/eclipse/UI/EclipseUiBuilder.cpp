@@ -626,7 +626,7 @@ bool UEclipseUiBuilder::PopulateHUDWBP(const FString& WBPAssetPath)
 				FName(*FString::Printf(TEXT("%sBar"), Suffix)));
 			{
 				FProgressBarStyle Style;
-				Style.BackgroundImage = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.3f));
+				Style.BackgroundImage = SolidBrush(Cream.CopyWithNewOpacity(0.16f));
 				Style.FillImage       = SolidBrush(FLinearColor::White); // tinted per-frame via SetFillColorAndOpacity
 				Bar->SetWidgetStyle(Style);
 			}
@@ -894,10 +894,12 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 		UCanvasPanel* Root = New<UCanvasPanel>(Tree, TEXT("Canvas_0"));
 		Tree->RootWidget = Root;
 
+		// Same shell as the pause menu: opaque black, one left-aligned column
+		// 80px off the screen edge, vertically centred. Title and options in
+		// the same face and colour — the boot screen and the in-game overlay
+		// should read as the same menu.
 		UBorder* Panel = New<UBorder>(Tree, TEXT("MainMenuPanel"));
-		Panel->SetBrush(SolidBrush(FLinearColor(0.039f, 0.043f, 0.059f, 1.f)));
-		// Left-aligned column with a margin off the screen edge, rather
-		// than a full-width centred block.
+		Panel->SetBrush(SolidBrush(FLinearColor::Black));
 		Panel->SetPadding(FMargin(80.f, 0.f, 0.f, 0.f));
 		Panel->SetHorizontalAlignment(HAlign_Left);
 		Panel->SetVerticalAlignment(VAlign_Center);
@@ -910,43 +912,47 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 		UVerticalBox* Column = New<UVerticalBox>(Tree, TEXT("MainMenuColumn"));
 		Panel->SetContent(Column);
 
-		// Big title
 		UTextBlock* Title = New<UTextBlock>(Tree, TEXT("MainMenuTitle"));
-		Title->SetText(FText::FromString(TEXT("ECLIPSE")));
-		Title->SetFont(MakeBMSPA(200, 18.f));
-		Title->SetColorAndOpacity(FSlateColor(Cyan));
-		Title->SetJustification(ETextJustify::Center);
+		Title->SetText(FText::FromString(TEXT("ECLIPSE 9000")));
+		Title->SetFont(MakeRodin(40));
+		Title->SetColorAndOpacity(FSlateColor(Cream));
+		Title->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
 		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 96.f));
-			VS->SetHorizontalAlignment(HAlign_Center);
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 40.f));
+			VS->SetHorizontalAlignment(HAlign_Left);
 		}
 
 		auto MakeBtn = [&](const FString& Label, FName WidgetName)
 		{
 			UButton* Btn = New<UButton>(Tree, WidgetName);
 			FButtonStyle BS;
-			// Fully transparent in every state — the menu reads as plain
-			// text, not buttons. The UButton is kept purely for click +
-			// hover handling; nothing about it is drawn.
+			// Transparent in every state — plain text, not buttons. The
+			// UButton survives only to carry click + hover.
 			BS.Normal   = SolidBrush(FLinearColor::Transparent);
 			BS.Hovered  = SolidBrush(FLinearColor::Transparent);
 			BS.Pressed  = SolidBrush(FLinearColor::Transparent);
 			BS.Disabled = SolidBrush(FLinearColor::Transparent);
 			Btn->SetStyle(BS);
+			Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 
 			UTextBlock* T = New<UTextBlock>(Tree,
 				FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
 			T->SetText(FText::FromString(Label));
-			T->SetFont(MakeRodin(56));
+			T->SetFont(MakeRodin(22));
 			T->SetColorAndOpacity(FSlateColor(Cream));
-			T->SetJustification(ETextJustify::Center);
+			T->SetJustification(ETextJustify::Left);
 			Btn->SetContent(T);
+			if (UButtonSlot* BSlot = Cast<UButtonSlot>(T->Slot))
+			{
+				BSlot->SetHorizontalAlignment(HAlign_Left);
+				BSlot->SetVerticalAlignment(VAlign_Center);
+			}
 
 			if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
 			{
-				VS->SetPadding(FMargin(0.f, 16.f));
-				VS->SetHorizontalAlignment(HAlign_Fill);
+				VS->SetPadding(FMargin(0.f, 6.f));
+				VS->SetHorizontalAlignment(HAlign_Left);
 			}
 		};
 		MakeBtn(TEXT("NEW GAME"), TEXT("NewGameBtn"));
@@ -960,8 +966,8 @@ bool UEclipseUiBuilder::PopulateMainMenuWBP(const FString& WBPAssetPath)
 		StatusText->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 		{
-			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
-			VS->SetHorizontalAlignment(HAlign_Center);
+			VS->SetPadding(FMargin(0.f, 32.f, 0.f, 0.f));
+			VS->SetHorizontalAlignment(HAlign_Left);
 		}
 	});
 #else
@@ -1258,7 +1264,7 @@ bool UEclipseUiBuilder::PopulateSwapPromptWBP(const FString& WBPAssetPath)
 		// No dim layer: the prompt doesn't pause, so darkening the screen
 		// would promise a stop that isn't happening.
 		UBorder* Panel = New<UBorder>(Tree, TEXT("SwapPanel"));
-		Panel->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
+		Panel->SetBrush(RoundedBrush(FLinearColor(0.039f, 0.043f, 0.059f, 0.97f), DialogueRed, 1.f, 0.f));
 		Panel->SetPadding(FMargin(18.f, 14.f));
 		if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 		{
