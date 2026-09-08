@@ -141,3 +141,18 @@ Her eyes scan a piece of paper in front of her, out of your sight. The secret li
     * {euros < 20} I still don't have it.
     'Are they all this dumb?' Like she's mumbling to the ghost behind her.
     -> DONE
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== zbigniewa_yaps ===
+Twenty. It's twenty. It's been twenty all night.
+Florin's a friend. He is not my boss.
+He doesn't have the list. I do.
+I'm trying to work. That's all this is.
+I only smoke singles. Don't offer me a pack.
+-> DONE

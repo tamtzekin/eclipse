@@ -78,3 +78,18 @@ FLORIN: Friend, you are not important. Tonight, on the list, there's no soul tha
 // == got_inside ==
 
 // == found_dj_crisis ==
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== maja_yaps ===
+I am on the list. Do you understand what that means?
+If I miss this set I don't know what I'll do.
+I'm with DJ Crisis. He takes us everywhere.
+My mother is in the Party. She'll bleed him dry.
+I thought we killed off the rats.
+-> DONE

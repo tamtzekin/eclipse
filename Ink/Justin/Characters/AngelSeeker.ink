@@ -57,3 +57,17 @@ I've been waiting by this stall a long time. You feel it too, don't you? The Ang
     -> END
 * [I should go.]
     -> END
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== angel_seeker_yaps ===
+She was here. I felt her go past the door.
+Nobody else looks up. That's the whole problem.
+Four tabs. That's what it takes to see her.
+I've been in that stall since the lights changed.
+-> DONE

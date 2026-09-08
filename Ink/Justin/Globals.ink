@@ -42,10 +42,19 @@ LIST Inventory = none, phone, lighter, slim_cigarette, pack_cigarettes, bottle_e
 
 
 // Side Quests
-LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_go_in, cold_tomas_wants_a_jacket, you_need_a_drink
+LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_go_in, cold_tomas_wants_a_jacket, you_need_a_drink, nuria_lost_her_phone, got_into_club
+
+LIST FinishedQuests = (none)
 
 === function new_quest(x)
     ~ SideQuests += x
+
+=== function have_quest(x)
+    ~ return SideQuests ? x
+
+=== function finish_quest(x)
+    ~ SideQuests -= x
+    ~ FinishedQuests -= x
 
 // Display text for the side-quest checklist on the HUD. The C++ side reads
 // which SideQuests items are active, then calls this once per item with the
@@ -61,6 +70,8 @@ LIST SideQuests = alina_needs_a_cigarette, cold_tomas_wants_to_go_in, cold_tomas
     - "cold_tomas_wants_to_go_in":  ~ return "Tomas wants to go in"
     - "cold_tomas_wants_a_jacket":     ~ return "Tomas needs a jacket"
     - "you_need_a_drink":              ~ return "You're thirsty, find something to drink"
+    - "nuria_lost_her_phone":          ~ return "Find Nuria's phone"
+    - "got_into_club":                 ~ return "You're in"
     }
     ~ return q
     

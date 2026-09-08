@@ -61,3 +61,18 @@ No.
 I'm good.
 The smoke clouds his eyes, the rest of his face still visible.
 -> DONE
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== kauzlarich_yaps ===
+Hey. You got fire?
+He always keeps my lighter. Every single time.
+Nobody in this queue carries a light. Unbelievable.
+Your impatience will kill you some day.
+I've got a whole pack and nothing to start it with.
+-> DONE

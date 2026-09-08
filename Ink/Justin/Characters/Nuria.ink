@@ -11,54 +11,81 @@
 
 
 == first_chat
-She won't take her eyes off her flip phones, both of them.
-* Do you know how I can get in?
-  Still doesn't look up, shrugs anyway.
+    {Oh my god, how could this happen to me? | Where the FUCK is my phone? | This is the worst night ever. | What am I going to do?}
+    
+    * Are you good?
+    No, I'm not 'good'. I've lost everything. Every single number and name and years of relationship-building and history and my money, oh my god, how much was in there?
+    
+        ** {rhythm > 1} You can't find your phone?
+        I'm useless. I've lost everything.
+        ~ new_quest(nuria_lost_her_phone)
+
+            *** {zen > 1} It'll show up.
+            And what if it doesn't? What if someone junkie finds it first? What if they take everything I have??
+        
+        ** {zen >= 1} It'll show up.
+        Okay, and *when* will it show up?
+            *** What does it look like?
+            ...Like, a mobile phone? What am I supposed to tell you?
+            ~ Patience--
+        
+            *** Where were you last when you used it?
+            By the fence. It must be somewhere on the ground.
+            -> DONE
+            
+        ** {rhythm >= 1} I can take a look for you. 
+        I swear it was somewhere by the fence. But there's so much fence.
+        ~ Patience++
+        -> DONE 
+                    
+        ** Are you drunk?
+        No. I'm PISSED OFF.
+        ~ Patience--
+        
+      
+* {have(phone)} Is this it?
+  -> return_the_phone
+
+  ** Have you tried ringing it?
+     How the fuck am I supposed to ring it without a phone?
   ~ Patience--
+     -> first_chat
+  ** I'll keep an eye out.
+     'Do that.' Back to the screen.
+     -> first_chat
 
-  ** ...to that club. Over there.
-     She stares into one phone, watching prayer videos on loop, DIOS TE BENDIGA DIOS HE SALVAJATE DIOS TE BENDIGA. 
-     *** Is there a reason why you're not saying anything??
-     She's texting a flood of people at once. She's too busy for you.
-        -> DONE
-
-        -> dark_hair
-
-        **** No. She was blonde.
-        –Then we have the wrong person in mind.
-        Smiles at you, but not like she cares.
-        -> DONE
-     *** Uh, bye.
-     She rolls her eyes.
-     -> DONE
-
-  ** You seem busy. Forget about it.
-  She nods.
-    -> DONE
+* {SideQuests ? nuria_lost_her_phone} Have you found your phone yet?
+  It's here, on the ground. I can hear it.
+  -> first_chat
 
 * Do you have a cigarette?
 -> ask_for_cigarette
 
+* Do you know how I can get into that club?
+My business is outside.
+
 * Sorry. I thought you were someone else.
-  She isn't aware you exist.
+  Right.
   ~ Patience--
   -> END
 
 == ask_for_cigarette
-  Five euros.
-  * 'I'm not paying for a single cigarette[.'] that I could get by asking anyone else here, come on.
-    'Then go and talk to them. I prefer to keep the market in perfect balance.'
+  i'll give you one if you help me find my phone.
+  * What's so important about this phone anyway?
+  I'm waiting on a call. Many calls, I guess.
+    ** I'll give you five euros.
+    This is not important right now.
     -> first_chat
 
-  * {euros >= 5} (Wallet: €{euros}) Fine, take it.
-    'Cherish this one, babe. It might be your last drag in this lifetime.' She sighs.
-    You lost €5 (Wallet: €{euros})
-    ~ euros = euros - 5
-    You got a single, precious, Slim Cigarette.
-    ~ get(slim_cigarette)
-    -> first_chat
+//   * {euros >= 5} (Wallet: €{euros}) Fine, take it.
+//     'Cherish this one, babe. It might be your last drag in this lifetime.' She sighs.
+//     You lost €5 (Wallet: €{euros})
+//     ~ euros = euros - 5
+//     You got a single, precious, Slim Cigarette.
+//     ~ get(slim_cigarette)
+//     -> first_chat
 
-  * {aesthetics > 1} I like the outfit.
+  * {aesthetics > 1} I like your outfit.
     She stares. 'Do you talk to all women like this?'
     ~ Patience--
     Aesthetics Damaged: Level {aesthetics}
@@ -76,20 +103,45 @@ She won't take her eyes off her flip phones, both of them.
        ~ get(thick_book)
        -> DONE
 
+== return_the_phone
+A hundred missed calls.
+
+* So you're a dealer.[]Am I going to get in trouble for this? Like, aiding a criminal?
+    ** Don't be a pussy. 
+
+  -> phone_returned
+
+= phone_returned
+~ lose(phone)
+~ SideQuests -= nuria_lost_her_phone
+I guess you mainlanders expect payment for your labour. This is what I can give you. 
+~ cigarettes = cigarettes + 2
+Don't make it a thing.
+    * {zen < 2} Is that it...?
+    * {aesthetics >= 1} Nice. {SideQuests ? alina_needs_a_cigarette: I was looking for some.}
+    -> DONE
+
 == annoyed_nuria
-We're done talking.
+{not have(phone): I can't talk right now.} 
+{have(phone): I've got a call to take. Things are moving tonight. Nice knowing you.}
 -> END
 
-== dark_hair
-* I'm here to pay her debt.
--> END
-* I'm not responsible for what she's done.
--> END
-* Sorry, you've got the wrong person.
--> END
 
-== rejected
-Listen, you need to get out of my face. I'm busy tonight.
-* [Leave.]
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
 
--> END
+=== nuria_yaps ===
+// pre completing phone quest
+Where is it...where is it...
+Where the hell did it go?
+Oh my god, I can hear it ringing from here.
+Where is that little shit?
+
+// post finding phone
+Sixty a gram. That's what it costs.
+We obey the market. Respect the market.
+-> DONE

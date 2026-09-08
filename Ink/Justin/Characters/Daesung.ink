@@ -13,3 +13,15 @@
 * [Just resting?]
     Somethin' like that.
     -> END
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== daesung_yaps ===
+Same faces, different night.
+I'm not queueing again. Not for this.
+-> DONE

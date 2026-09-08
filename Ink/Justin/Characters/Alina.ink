@@ -42,3 +42,18 @@
 
 // The one and only loop. Everything above lands here.
 - -> top
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== alina_yaps ===
+I'm gasping. Someone here has to be smoking something.
+We've been standing in the same spot for twenty minutes.
+I get this feeling about tonight. I can't describe it.
+One cigarette. That's all I'm asking for.
+They'll let me in. It's you I'm worried about.
+-> DONE

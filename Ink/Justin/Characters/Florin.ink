@@ -85,9 +85,14 @@ Where is this from?
     -> ticket_check
 
 == ticket_check ==
+// got_into_club is the demo's end trigger (UEclipseDemoSettings::
+// EndTriggerQuest) — every branch that actually gets the player through the
+// door has to set it, or the demo has no ending.
 Now, ticket?
 * {have(ticket)} Here.
     Go ahead.
+    ~ lose(ticket)
+    ~ new_quest(got_into_club)
     -> END
     
 * {dont_have(ticket)} I don't have one.
@@ -97,8 +102,25 @@ Now, ticket?
 * Can you just let me in?
   Which List?
   ** {Connections ? dj_crisis} DJ Crisis.
+  He steps aside without looking at you. 'Enjoy the release.'
+  ~ new_quest(got_into_club)
   -> END
   ** [That list.] The...main list? What other list is there? How many?
   Obviously you're not meant to be here.
   ~ Patience--
   -> END
+
+// ─── yaps ────────────────────────────────────────────────────────────────
+// Overhead one-liners, shown above the character's head between
+// conversations. One line per line; the runtime harvests the whole knot
+// once with ContinueMaximally and picks from it at random, so there are no
+// choices and no state here — just what this person mutters when you're
+// not talking to them. Each should hint at what they want.
+
+=== florin_yaps ===
+Bag. I will need to see the bag.
+No unregulated lighter fluid inside. It is not personal.
+The economy relies on you to survive.
+Every world has a system that must be obeyed.
+There is a machine inside for tobacco. Use local currency.
+-> DONE
