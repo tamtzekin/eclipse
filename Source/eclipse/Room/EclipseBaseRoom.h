@@ -51,4 +51,31 @@ public:
 	// Whether this room blocks NPC talk-while-frozen (heat=0). Default true.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Behavior")
 	bool bAllowTalkWhenFrozen = false;
+
+	/**
+	 * Meshes whose imported collision is unusable — a single auto-generated
+	 * convex hull that swallows the shape whole and leaves a solid slab
+	 * hanging over the floor the player is meant to walk on. Every component
+	 * using one of these has its collision switched off at BeginPlay.
+	 *
+	 * By mesh rather than by actor because the offending actors live in a
+	 * streaming sublevel owned by someone else (see CLAUDE.md section 0) —
+	 * we can't save a per-instance override into their package, and actor
+	 * names there are auto-generated and unstable. Fixing the collision on
+	 * the source assets is the real repair; this keeps the level walkable
+	 * until then.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Collision")
+	TArray<TSoftObjectPtr<class UStaticMesh>> StripCollisionMeshes;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+	void ApplyCollisionStrips();
+
+	// Re-runs the strip when a streaming sublevel arrives. The offending
+	// actors live in one, and whether it is already loaded when this room's
+	// BeginPlay fires is not something the room gets to know.
+	void OnLevelAdded(class ULevel* Level, class UWorld* World);
+	FDelegateHandle LevelAddedHandle;
 };

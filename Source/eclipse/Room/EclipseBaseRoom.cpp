@@ -6,6 +6,9 @@
 #include "Subsystems/EclipseAudioSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "EngineUtils.h"
 
 AEclipseBaseRoom::AEclipseBaseRoom()
 {
@@ -15,6 +18,13 @@ AEclipseBaseRoom::AEclipseBaseRoom()
 void AEclipseBaseRoom::BeginPlay()
 {
 	Super::BeginPlay();
+
+	ApplyCollisionStrips();
+	if (StripCollisionMeshes.Num() > 0)
+	{
+		LevelAddedHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(
+			this, &AEclipseBaseRoom::OnLevelAdded);
+	}
 
 	// Auto-play this room's music cue on enter. The AudioSubsystem handles
 	// crossfade with whatever was playing before, and respects its global
@@ -41,4 +51,51 @@ void AEclipseBaseRoom::BeginPlay()
 	Audio->PlayMusic(Sound, MusicFadeInSeconds, MusicStartSeconds);
 	UE_LOG(LogEclipse, Log, TEXT("Room '%s': PlayMusic '%s' fade=%.1fs start=%.1fs"),
 		*RoomKey.ToString(), *Sound->GetName(), MusicFadeInSeconds, MusicStartSeconds);
+}
+
+void AEclipseBaseRoom::ApplyCollisionStrips()
+{
+	if (StripCollisionMeshes.Num() == 0) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Resolve to raw pointers once; the soft pointers are only there so the
+	// list doesn't drag these meshes in at editor boot.
+	TSet<const UStaticMesh*> Targets;
+	for (const TSoftObjectPtr<UStaticMesh>& Soft : StripCollisionMeshes)
+	{
+		if (const UStaticMesh* M = Soft.LoadSynchronous()) Targets.Add(M);
+	}
+	if (Targets.Num() == 0) return;
+
+	int32 Stripped = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		TArray<UStaticMeshComponent*> Comps;
+		It->GetComponents(Comps);
+		for (UStaticMeshComponent* C : Comps)
+		{
+			if (!C || !Targets.Contains(C->GetStaticMesh())) continue;
+			C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			++Stripped;
+		}
+	}
+	UE_LOG(LogEclipse, Log, TEXT("Room '%s': stripped collision from %d component(s) across %d mesh(es)"),
+		*RoomKey.ToString(), Stripped, Targets.Num());
+}
+
+void AEclipseBaseRoom::OnLevelAdded(ULevel* /*Level*/, UWorld* World)
+{
+	if (World == GetWorld()) ApplyCollisionStrips();
+}
+
+void AEclipseBaseRoom::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (LevelAddedHandle.IsValid())
+	{
+		FWorldDelegates::LevelAddedToWorld.Remove(LevelAddedHandle);
+		LevelAddedHandle.Reset();
+	}
+	Super::EndPlay(EndPlayReason);
 }
