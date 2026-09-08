@@ -232,6 +232,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool OpenKnot(FName Knot);
 
+	/**
+	 * Overhead one-liners for a character — the "<npc>_yaps" knot in their
+	 * Ink file, if it has one. Harvested once at Initialize (see
+	 * HarvestYaps) rather than on demand: there is a single live
+	 * UInkpotStory for the whole session, so jumping it to a yaps knot
+	 * mid-conversation would throw away where the conversation was.
+	 * Returns an empty array for a character with no yaps.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
+	const TArray<FString>& GetYaps(FName NpcName) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
 
@@ -282,6 +293,13 @@ public:
 	// the whole session. Empty when the story isn't loaded.
 	TArray<FString> GetActiveSideQuests();
 
+	// Raw LIST membership, no quest_text() rewrite. Callers that test for a
+	// specific quest must use this: GetActiveSideQuests returns the DISPLAY
+	// lines, so matching an id against them only works for quests that have
+	// no quest_text entry.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
+	bool HasActiveSideQuest(FName QuestId);
+
 	// Every Ink global (everything declared VAR / LIST in Globals.ink) as
 	// "name = value" lines, sorted. Values go through Ink::FValue::ToString()
 	// so LISTs print their live contents rather than a numeric mask. Empty
@@ -301,6 +319,10 @@ private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> ActiveNpc;
 	UPROPERTY() TObjectPtr<AEclipseItemActor> ActiveItem;
 	UPROPERTY() TObjectPtr<UInkpotStory> Story;
+
+	// npc name -> the lines from that character's "<name>_yaps" knot.
+	TMap<FName, TArray<FString>> YapCache;
+	void HarvestYaps();
 	UPROPERTY() FEclipseDialogueNodeView CurrentNode;
 	bool bDialogueOpen = false;
 	bool bBodyPrinting = false;   // see IsBodyPrinting

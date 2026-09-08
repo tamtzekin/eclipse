@@ -10,6 +10,8 @@
 #include "Subsystems/EclipseInteractSubsystem.h"
 #include "UI/EclipseSpeechBubbleWidget.h"
 #include "UI/EclipseUiStyle.h"
+#include "Subsystems/EclipseDialogueSubsystem.h"
+#include "Kismet/GameplayStatics.h"
 
 AEclipseNpcCharacter::AEclipseNpcCharacter()
 {
@@ -85,6 +87,24 @@ void AEclipseNpcCharacter::BeginPlay()
 
 	UE_LOG(LogEclipse, Verbose, TEXT("NPC '%s' ready (talkable=%d key=%d radius=%.0f)"),
 		*NpcName.ToString(), bTalkable, bIsKeyNPC, TalkRadius);
+	// Deferred a beat: the HUD and dialogue widgets are created by the
+	// player controller's own BeginPlay, and NPC BeginPlay order against it
+	// isn't guaranteed. A timer with 0 delay lands after the whole
+	// BeginPlay pass instead of racing it.
+	if (bOpensDialogueOnBeginPlay)
+	{
+		FTimerHandle Unused;
+		GetWorldTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (UGameInstance* GI = GetGameInstance())
+			{
+				if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+				{
+					if (!DS->IsDialogueOpen()) DS->OpenDialogue(this);
+				}
+			}
+		}), 0.1f, false);
+	}
 }
 
 void AEclipseNpcCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -169,6 +189,8 @@ void AEclipseNpcCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	TickYaps(DeltaTime);
+
 	if (bSteppingAside && StepAsideAlpha < 1.f)
 	{
 		StepAsideAlpha = FMath::Min(1.f, StepAsideAlpha + DeltaTime * StepAsideSpeed);
@@ -248,8 +270,77 @@ void AEclipseNpcCharacter::RefreshBubble(bool bMuted)
 	}
 
 	BubbleWidget->SetVisibility(true);
+	BubbleWidget->SetDrawSize(FVector2D(80.f, 60.f));   // undo a yap's wider plate
 	if (UEclipseSpeechBubbleWidget* BW = Cast<UEclipseSpeechBubbleWidget>(BubbleWidget->GetUserWidgetObject()))
 	{
 		BW->SetBubble(BubbleType, bMuted);
 	}
+}
+
+// Overhead one-liners between conversations. Borrows the speech-bubble
+// widget component rather than adding a second one — only one thing can be
+// above a head at a time, and RefreshBubble puts the ?/! back afterwards.
+void AEclipseNpcCharacter::TickYaps(float DeltaTime)
+{
+	if (bIsHidden || !BubbleWidget) return;
+
+	// Resolved once. An empty array after the lookup means this character
+	// has no yaps knot, and the entry stays empty so we don't ask again.
+	if (YapLines.Num() == 0)
+	{
+		if (LastYapIndex == -2) return;   // looked up already, nothing there
+		const UGameInstance* GI = GetGameInstance();
+		const UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+		if (!DS) return;
+		YapLines = DS->GetYaps(NpcName);
+		if (YapLines.Num() == 0) { LastYapIndex = -2; return; }
+		YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds) * 0.4f;
+	}
+
+	// Never talk over a conversation — the dialogue panel is the voice then.
+	const UGameInstance* GI = GetGameInstance();
+	const UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+	if (DS && DS->IsDialogueOpen())
+	{
+		if (YapShowing > 0.f) { YapShowing = 0.f; RefreshBubble(); }
+		return;
+	}
+
+	if (YapShowing > 0.f)
+	{
+		YapShowing -= DeltaTime;
+		if (YapShowing <= 0.f)
+		{
+			RefreshBubble();
+			YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds);
+		}
+		return;
+	}
+
+	YapTimer -= DeltaTime;
+	if (YapTimer > 0.f) return;
+
+	// Out of earshot: reset the clock rather than burning the line on an
+	// empty room, so the first thing the player hears isn't mid-rotation.
+	const APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!Player || FVector::Dist(Player->GetActorLocation(), GetActorLocation()) > YapAudibleRangeCm)
+	{
+		YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds) * 0.5f;
+		return;
+	}
+
+	int32 Index = FMath::RandRange(0, YapLines.Num() - 1);
+	if (YapLines.Num() > 1 && Index == LastYapIndex)
+	{
+		Index = (Index + 1) % YapLines.Num();
+	}
+	LastYapIndex = Index;
+
+	BubbleWidget->SetDrawSize(FVector2D(360.f, 90.f));
+	BubbleWidget->SetVisibility(true);
+	if (UEclipseSpeechBubbleWidget* BW = Cast<UEclipseSpeechBubbleWidget>(BubbleWidget->GetUserWidgetObject()))
+	{
+		BW->SetYap(FText::FromString(YapLines[Index]));
+	}
+	YapShowing = YapHoldSeconds;
 }

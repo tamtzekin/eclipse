@@ -50,6 +50,48 @@ void UEclipseDialogueSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		UE_LOG(LogEclipse, Error, TEXT("DialogueSubsystem: failed to load/begin main Ink story at '%s'"), MainStoryAssetPath);
 	}
+	HarvestYaps();
+}
+
+// Reads every "<name>_yaps" knot out of the story in one pass, here at
+// Initialize, before any conversation has started. The knots are pure text
+// with no choices and no variable writes, so running them costs the story
+// nothing but a visit count on knots nothing else ever reads — and doing it
+// now means no later request has to disturb a conversation in progress.
+void UEclipseDialogueSubsystem::HarvestYaps()
+{
+	if (!Story) return;
+
+	// The set of characters who have yaps. Kept here rather than derived
+	// from the level's NPCs: harvesting runs before any level is loaded.
+	static const TCHAR* Names[] = {
+		TEXT("alina"), TEXT("tomas"), TEXT("nuria"), TEXT("florin"),
+		TEXT("maja"), TEXT("kauzlarich"), TEXT("zbigniewa"),
+		TEXT("angel_seeker"), TEXT("daesung"), TEXT("enlightened_raver"),
+	};
+
+	for (const TCHAR* Name : Names)
+	{
+		const FString Knot = FString::Printf(TEXT("%s_yaps"), Name);
+		Story->ChoosePath(Knot);
+		const FString Block = Story->ContinueMaximally();
+		if (Block.IsEmpty()) continue;
+
+		TArray<FString> Lines;
+		Block.ParseIntoArrayLines(Lines);
+		for (FString& L : Lines) L.TrimStartAndEndInline();
+		Lines.RemoveAll([](const FString& L) { return L.IsEmpty(); });
+		if (Lines.Num() > 0) YapCache.Add(FName(Name), MoveTemp(Lines));
+	}
+
+	UE_LOG(LogEclipse, Log, TEXT("DialogueSubsystem: harvested yaps for %d characters"), YapCache.Num());
+}
+
+const TArray<FString>& UEclipseDialogueSubsystem::GetYaps(FName NpcName) const
+{
+	static const TArray<FString> Empty;
+	const TArray<FString>* Found = YapCache.Find(NpcName);
+	return Found ? *Found : Empty;
 }
 
 bool UEclipseDialogueSubsystem::GetInitialInventoryItems(TArray<FName>& Out) const
@@ -1274,6 +1316,24 @@ TArray<FString> UEclipseDialogueSubsystem::GetInkVariableDump()
 		Out.Add(FString::Printf(TEXT("%s = %s"), *Key, Val.IsValid() ? *Val->ToString() : TEXT("<null>")));
 	}
 	return Out;
+}
+
+bool UEclipseDialogueSubsystem::HasActiveSideQuest(FName QuestId)
+{
+	if (!Story || QuestId.IsNone()) return false;
+
+	bool bOk = false;
+	FInkpotList List;
+	Story->GetList(TEXT("SideQuests"), List, bOk);
+	if (!bOk) return false;
+
+	TArray<FString> Names;
+	List.ToStringArray(Names, /*bUseOrigin=*/false);
+	const FString Wanted = QuestId.ToString();
+	return Names.ContainsByPredicate([&Wanted](const FString& N)
+	{
+		return N.Equals(Wanted, ESearchCase::IgnoreCase);
+	});
 }
 
 TArray<FString> UEclipseDialogueSubsystem::GetActiveSideQuests()

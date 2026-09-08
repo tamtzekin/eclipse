@@ -69,11 +69,11 @@ public:
 	// no dialogue lock-on. Guarded in the NPC itself rather than at the
 	// InteractSubsystem call sites so both turn paths are covered at once.
 	//
-	// Defaults OFF: the swivel reads as tracking rather than noticing, and
-	// the rigs have no turn animation to sell it. This only governs the
-	// BODY — the talk radius and its lock-on for dialogue are unaffected.
+	// This only governs the BODY — the talk radius and its lock-on for
+	// dialogue are unaffected. Turn it off per-actor for anyone who should
+	// stay fixed (someone facing a wall, a stall occupant).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
-	bool bTurnToFacePlayer = false;
+	bool bTurnToFacePlayer = true;
 
 	// THE LEVER for how close you must stand to talk. Per-instance: select
 	// the NPC in the World Outliner and edit "Talk Radius" under Eclipse|NPC
@@ -211,6 +211,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	void RefreshBubble(bool bMuted = false);
 
+	// Opens this NPC's dialogue as soon as the level starts — the scene the
+	// chapter opens on. One NPC per level should have it; if several do, the
+	// last one to BeginPlay wins and the rest are ignored.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|NPC")
+	bool bOpensDialogueOnBeginPlay = false;
+
+	// ── Yaps — overhead one-liners between conversations ──
+	// Lines come from the "<NpcName>_yaps" knot in this character's Ink file
+	// (see UEclipseDialogueSubsystem::GetYaps). Nothing to wire per actor:
+	// an NPC whose Ink has no yaps knot simply never yaps.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|NPC")
+	float YapGapMinSeconds = 12.f;
+	UPROPERTY(EditAnywhere, Category = "Eclipse|NPC")
+	float YapGapMaxSeconds = 26.f;
+	UPROPERTY(EditAnywhere, Category = "Eclipse|NPC")
+	float YapHoldSeconds = 4.5f;
+	// Yaps only carry within earshot; past this the caption is noise on
+	// screen for a character the player isn't near.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|NPC")
+	float YapAudibleRangeCm = 900.f;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -227,6 +248,13 @@ private:
 
 	// Face-player state — see StartFacePlayer/StopFacePlayer.
 	FRotator OriginalFacingRotation = FRotator::ZeroRotator;   // captured post floor-snap in BeginPlay
+
+	// Yap scheduling. LastYapIndex avoids repeating a line back to back.
+	TArray<FString> YapLines;
+	float YapTimer     = 0.f;   // counts down to the next yap
+	float YapShowing   = 0.f;   // >0 while a caption is on screen
+	int32 LastYapIndex = -1;
+	void TickYaps(float DeltaTime);
 	bool     bFacingPlayer          = false;
 	TWeakObjectPtr<AActor> FacePlayerTarget;
 

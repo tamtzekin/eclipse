@@ -118,17 +118,13 @@ bool UEclipseDemoFlow::PollEndCondition(float /*DeltaSeconds*/)
 	// player has read it loses the payoff.
 	if (DS->IsDialogueOpen()) return true;
 
-	// GetActiveSideQuests returns display lines (quest_text), not raw names,
-	// so match on the raw LIST via the same subsystem the HUD uses. The
-	// display text is what quest_text() rewrites it to, hence the fallback
-	// substring check on the raw id.
-	for (const FString& Line : DS->GetActiveSideQuests())
+	// Raw LIST membership. This used to substring-match the DISPLAY lines
+	// from GetActiveSideQuests, which only ever matched quests with no
+	// quest_text() entry — the moment the end quest got a display line the
+	// demo could no longer end.
+	if (DS->HasActiveSideQuest(S.EndTriggerQuest))
 	{
-		if (Line.Contains(S.EndTriggerQuest.ToString(), ESearchCase::IgnoreCase))
-		{
-			TriggerEnding();
-			return true;
-		}
+		TriggerEnding();
 	}
 	return true;   // keep ticking
 }

@@ -53,7 +53,10 @@ public:
 	// beat without a rebuild.
 	UPROPERTY(config, EditAnywhere, Category = "Demo Flow",
 		meta = (EditCondition = "bDemoFlowEnabled"))
-	FName EndTriggerQuest = TEXT("get_into_club");
+	// The SideQuests entry, not the ending knot — get_into_club is the knot
+	// that PLAYS at the end; got_into_club is the quest Florin sets when he
+	// actually lets you through, which is what fires it.
+	FName EndTriggerQuest = TEXT("got_into_club");
 
 	// Level the START screen lives in — used by the end screen's REPLAY.
 	UPROPERTY(config, EditAnywhere, Category = "Demo Flow")
@@ -61,7 +64,7 @@ public:
 
 	// Level a new demo run begins in.
 	UPROPERTY(config, EditAnywhere, Category = "Demo Flow")
-	FName FirstPlayableLevel = TEXT("L_Club");
+	FName FirstPlayableLevel = TEXT("L_CLUB_NEW1");
 
 	static const UEclipseDemoSettings& Get()
 	{

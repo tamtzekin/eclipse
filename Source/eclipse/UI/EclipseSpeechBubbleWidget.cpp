@@ -62,7 +62,8 @@ bool UEclipseSpeechBubbleWidget::Initialize()
 
 void UEclipseSpeechBubbleWidget::SetBubble(EEclipseBubbleType InType, bool bMuted)
 {
-	if (!BubbleText) return;
+	using namespace EclipseUI;
+	if (!BubbleText || !BubbleBg) return;
 
 	const TCHAR* Label = TEXT("?");
 	switch (InType)
@@ -73,7 +74,11 @@ void UEclipseSpeechBubbleWidget::SetBubble(EEclipseBubbleType InType, bool bMute
 		case EEclipseBubbleType::Both:     Label = TEXT("?!"); break;
 		case EEclipseBubbleType::Muted:    Label = TEXT("…");  break;
 	}
+	// Undo anything SetYap left behind — same widget, two very different looks.
 	BubbleText->SetText(FText::FromString(Label));
+	BubbleText->SetFont(MakeRodin(/*Size=*/22));
+	BubbleText->SetAutoWrapText(false);
+	BubbleBg->SetPadding(FMargin(12.f, 4.f));
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	// Greyed style when player can't talk to the NPC (e.g. thirst=0)
@@ -95,4 +100,20 @@ void UEclipseSpeechBubbleWidget::SetBubble(EEclipseBubbleType InType, bool bMute
 			? FLinearColor(0.541f, 0.576f, 0.639f, 1.f)   // #8a93a3
 			: FLinearColor(0.941f, 0.973f, 1.f, 1.f)));
 	}
+}
+
+void UEclipseSpeechBubbleWidget::SetYap(const FText& Line)
+{
+	using namespace EclipseUI;
+	if (!BubbleText || !BubbleBg) return;
+
+	// Caption-style: no pill, no outline — just the line sitting on a dark
+	// gradient so it stays readable over a lit dancefloor.
+	BubbleBg->SetBrush(CaptionPlateBrush());
+	BubbleBg->SetPadding(FMargin(16.f, 6.f));
+	BubbleText->SetText(Line);
+	BubbleText->SetFont(MakeBMSPA(/*Size=*/16, /*LetterSpacingPx=*/1.f));
+	BubbleText->SetColorAndOpacity(FSlateColor(Cream));
+	BubbleText->SetAutoWrapText(true);
+	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
