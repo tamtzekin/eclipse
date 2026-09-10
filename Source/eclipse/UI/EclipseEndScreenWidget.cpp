@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseEndScreenWidget.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Subsystems/EclipseDemoFlow.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"

@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseUiBuilder.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 
 #if WITH_EDITOR
 #include "EclipseUiStyle.h"

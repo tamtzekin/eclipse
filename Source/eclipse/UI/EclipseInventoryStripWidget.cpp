@@ -2,7 +2,7 @@
 
 #include "EclipseInventoryStripWidget.h"
 #include "EclipseInventoryWidget.h"          // UEclipseInventoryChipWidget lives here
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"

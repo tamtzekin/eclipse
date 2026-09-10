@@ -2,7 +2,7 @@
 
 #include "EclipseMainMenuWidget.h"
 #include "Subsystems/EclipseDemoSettings.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"

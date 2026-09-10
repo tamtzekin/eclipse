@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseDemoFlow.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseDemoSettings.h"
 #include "EclipseDialogueSubsystem.h"
 #include "EclipseGameStateSubsystem.h"

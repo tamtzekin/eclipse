@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipsePhoneWidget.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Blueprint/WidgetTree.h"

@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseDialogueWidget.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
@@ -1267,7 +1267,11 @@ void UEclipseDialogueWidget::RebuildChoices(const TArray<FEclipseDialogueChoice>
 	// brand-new buttons every call, so no widget ever persists across turns
 	// and there is nothing left to hold stale paint state.
 	// To re-enable Path A, restore this to `if (PreBtns[0] != nullptr)`.
-	if (false)
+	// A plain `if (false)` is unreachable code, which BuildSettingsVersion.V7
+	// promotes to a hard error under 5.8. A mutable static reads the same at
+	// runtime but can't be constant-folded, so the block still compiles.
+	static bool bUsePathA = false;
+	if (bUsePathA)
 	{
 		ChoiceButtons.Reset();
 		ChoiceBaseTints.Reset();

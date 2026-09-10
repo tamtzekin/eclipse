@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseHUDWidget.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "GameFramework/Pawn.h"
 #include "eclipsePlayerController.h"
 #include "Subsystems/EclipseInteractSubsystem.h"

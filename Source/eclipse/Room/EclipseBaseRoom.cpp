@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseBaseRoom.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "Sound/SoundBase.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
 #include "Engine/World.h"

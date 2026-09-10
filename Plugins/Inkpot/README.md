@@ -1,7 +1,7 @@
 # Inkpot
 **Inkpot** - A container for **Ink** within the Unreal Engine developed by [The Chinese Room](https://www.thechineseroom.co.uk/).<br><br>
-This is a plugin for Unreal Engine 5.6 or later.<br>
-This is version **1.30.21** of the plugin.</br>
+This is a plugin for Unreal Engine 5.7 or later.<br>
+This is version **1.40.21** of the plugin.</br>
 The head revision contains work in progress towards the upcoming release.<br>
 
 Inkpot is a wrapper for the wonderful narrative scripting language **Ink** developed by [Inkle Studios](https://www.inklestudios.com/ink/).<br>
@@ -13,6 +13,21 @@ For general support and chat with other users, check out [Inkle's discord](https
 (You'll find Inkpot chat in #unreal-projects)
 
 ## Changelog  
+
+### Changes in 1.40.21
+Updated to build with Unreal 5.8 whilst maintaining compatibility with 5.7.<br>
+Continue blocked whilst rendering lines are in flight.<br>
+Fixed SwitchPathToFlow incorrectly consuming lines. ( Internal continue is incorrect )<br>
+FJsonObject keys are now FSharedString for 5.8.<br>
+Linux build fixed for capitalisation on includes.<br>
+
+
+### Changes in 1.32.21
+Fixed naming of paths in debug dump.<br>
+
+### Changes in 1.31.21
+Changed flow not found from assert to error, fixes reported crash during serlialisation.<br>
+List add item now does correct name resolution for item names containing an origin prefix.<br>
 
 ### Changes in 1.30.21
 Gameplay tag tables now automatically created on ink source import. Conditional on bAutogenerateGameplayTags.<br>
@@ -107,7 +122,7 @@ External functions are now implemented, along with functional tests.<br>
 Initial release.<br>
 
 ## Requirements 
-Inkpot works with version 5.6 of Unreal.<br>
+Inkpot works with version 5.7 of Unreal.<br>
 Inkpot includes a C++ port of Ink-engine-runtime version 21, which can be found in the InkPlusPlus module.<br>
 
 ### .Net framework 5.0
@@ -137,6 +152,10 @@ LIke this:<br>
 
 For an example of how this plugin should sit in your project see the InkpotDemo.<br>
 https://github.com/The-Chinese-Room/InkpotDemo
+
+Once you have it installed, you'll need to enable it for your project. Open the project and go to `edit > plugins`. Search for "Inkpot."
+If everything is set up correctly, it should appear in the plugins interface. Tick the box to enable the plugin.
+It will prompt you to restart the editor. When you do, the plugin should compile.
 
 ## FAQ
 

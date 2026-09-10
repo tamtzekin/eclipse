@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseHUD.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseInteractWidget.h"
 #include "EclipseDialogueWidget.h"
 #include "EclipseHUDWidget.h"

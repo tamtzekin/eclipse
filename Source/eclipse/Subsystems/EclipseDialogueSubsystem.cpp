@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseDialogueSubsystem.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "NPC/EclipseNpcCharacter.h"
 #include "Items/EclipseItemActor.h"
 #include "Player/EclipsePlayerCharacter.h"

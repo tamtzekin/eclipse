@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseMainMenuActor.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseMainMenuWidget.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"

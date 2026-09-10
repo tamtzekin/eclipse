@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseGameInstance.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 
 void UEclipseGameInstance::Init()

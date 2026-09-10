@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseItemActor.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/MeshComponent.h"
 #include "Materials/MaterialInterface.h"

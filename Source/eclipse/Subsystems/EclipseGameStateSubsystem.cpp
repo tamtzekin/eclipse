@@ -3,7 +3,7 @@
 #include "EclipseGameStateSubsystem.h"
 #include "EclipseAudioSubsystem.h"
 #include "EclipseDialogueSubsystem.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "Save/EclipseSaveGame.h"
 #include "Data/EclipseChapterDefinition.h"
 #include "Data/EclipseItemDefinition.h"

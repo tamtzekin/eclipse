@@ -1,7 +1,7 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipsePauseMenuWidget.h"
-#include "Eclipse.h"
+#include "eclipse.h"
 #include "EclipseUiStyle.h"
 #include "EclipseBlinkWipeWidget.h"
 #include "Blueprint/WidgetTree.h"

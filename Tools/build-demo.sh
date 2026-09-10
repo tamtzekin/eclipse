@@ -10,7 +10,7 @@
 # changed; the compile is the slow half).
 set -euo pipefail
 
-UE="/Users/Shared/Epic Games/UE_5.6"
+UE="/Users/Shared/Epic Games/UE_5.8"
 PROJ="$(cd "$(dirname "$0")/.." && pwd)/eclipse.uproject"
 OUT="$(dirname "$PROJ")/Build/Demo"
 
