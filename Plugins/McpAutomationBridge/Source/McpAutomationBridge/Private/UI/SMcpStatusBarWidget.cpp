@@ -1,7 +1,7 @@
 #include "UI/SMcpStatusBarWidget.h"
 #include "McpAutomationBridgeSubsystem.h"
 #include "McpAutomationBridgeSettings.h"
-#include "MCP/McpNativeTransport.h"
+#include "MCP/Transport/McpNativeTransport.h"
 #include "Editor.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Images/SImage.h"

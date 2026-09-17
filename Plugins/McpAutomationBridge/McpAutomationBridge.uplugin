@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 3,
-  "VersionName": "0.1.4",
+  "Version": 530,
+  "VersionName": "0.5.30",
   "FriendlyName": "MCP Automation Bridge",
-  "Description": "Editor automation bridge enabling AI assistants (Claude, Cursor, etc.) to control Unreal Engine via Model Context Protocol (MCP). Provides 200+ automation actions for assets, actors, levels, animation, AI, Niagara, materials, foliage, landscapes, and more. Supports UE 5.0-5.7 with TLS/SSL security.",
+  "Description": "Editor automation bridge enabling AI assistants (Claude, Cursor, etc.) to control Unreal Engine via Model Context Protocol (MCP). Provides broad automation coverage for assets, actors, levels, animation, AI, Niagara, materials, foliage, landscapes, and more. Supports UE 5.0-5.8 Preview with TLS/SSL security.",
   "Category": "Editor|Automation|AI",
   "CreatedBy": "ChiR24",
   "CreatedByURL": "https://github.com/ChiR24/Unreal_mcp",
@@ -20,10 +20,28 @@
       "Name": "McpAutomationBridge",
       "Type": "Editor",
       "LoadingPhase": "Default",
-      "PlatformAllowList": ["Win64", "Mac", "Linux"]
+      "PlatformAllowList": [
+        "Win64",
+        "Mac",
+        "Linux"
+      ]
+    },
+    {
+      "Name": "McpAutomationBridgeFab",
+      "Type": "Editor",
+      "LoadingPhase": "Default",
+      "PlatformAllowList": [
+        "Win64",
+        "Mac",
+        "Linux"
+      ]
     }
   ],
   "Plugins": [
+    {
+      "Name": "PythonScriptPlugin",
+      "Enabled": true
+    },
     {
       "Name": "EditorScriptingUtilities",
       "Enabled": true
@@ -54,6 +72,11 @@
     },
     {
       "Name": "ControlRig",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "RigVM",
       "Enabled": true,
       "Optional": true
     },
@@ -103,14 +126,18 @@
       "Optional": true
     },
     {
+      "Name": "GeometryProcessing",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
       "Name": "ChaosCloth",
       "Enabled": true,
       "Optional": true
     },
     {
       "Name": "GameplayAbilities",
-      "Enabled": true,
-      "Optional": true
+      "Enabled": true
     },
     {
       "Name": "Metasound",
@@ -124,8 +151,7 @@
     },
     {
       "Name": "SmartObjects",
-      "Enabled": true,
-      "Optional": true
+      "Enabled": true
     },
     {
       "Name": "MassGameplay",
@@ -139,6 +165,51 @@
     },
     {
       "Name": "OnlineSubsystemUtils",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "Synthesis",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "PCG",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "MovieRenderPipeline",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "MoviePipelineMaskRenderPass",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "Takes",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "ElectraPlayer",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "StructUtils",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "Fab",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "Bridge",
       "Enabled": true,
       "Optional": true
     }
