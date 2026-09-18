@@ -65,6 +65,7 @@ private:
 
 	void BuildFallbackTree();
 	void RefreshAll();
+	void ApplyTooltips();
 
 	// Re-entry guard so the PC C-binding and the widget's NativeOnKeyDown
 	// can't both run the full close path on the same press.

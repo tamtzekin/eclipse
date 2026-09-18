@@ -104,6 +104,9 @@ protected:
 	// Empty until the first update, which suppresses a tick on open.
 	FString LastClockDisplay;
 
+	// Last whole in-game hour seen, for the hourly watch beep.
+	int32 LastClockHour = -1;
+
 	// Currency readout — same as above, lives on the phone face now.
 	// HUD instance collapsed at NativeConstruct.
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -217,6 +220,9 @@ private:
 	UFUNCTION()
 	void HandlePlayerDeath();
 
+	UFUNCTION()
+	void HandleConversationThirstCharged(int32 Delta);
+
 	// Repaints all three bars based on the current GameState meter values
 	// and the integer-value labels above each.
 	void UpdateBars();
@@ -275,6 +281,7 @@ private:
 		Inventory,   // I to open inventory    — after the first pickup
 		Talk,        // E to talk              — near an NPC for the first time
 		Stats,       // C to check your stats  — after the first conversation
+		Thirst,      // drink to keep up       — after the first conversation that cost thirst
 		Count
 	};
 
@@ -298,6 +305,7 @@ private:
 	float TipHoldTime    = 0.f;   // seconds the current tip has been up
 	bool  bSeenFirstPickup   = false;
 	bool  bSeenFirstDialogue = false;
+	bool  bSeenThirstCost    = false;
 	// Baseline for the "have they moved / looked yet" tests.
 	FVector  TipStartLocation = FVector::ZeroVector;
 	FRotator TipStartRotation = FRotator::ZeroRotator;

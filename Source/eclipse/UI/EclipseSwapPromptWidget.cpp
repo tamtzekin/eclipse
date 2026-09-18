@@ -227,7 +227,29 @@ void UEclipseSwapPromptWidget::BuildCandidateBoxes()
 		T->SetAutoWrapText(true);
 		Box->SetContent(T);
 
-		if (UHorizontalBoxSlot* HS = CandidateRow->AddChildToHorizontalBox(Box))
+		// Each box gets a caption so the two sides name themselves.
+		UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),
+			FName(*FString::Printf(TEXT("%s_Col"), *WidgetName.ToString())));
+
+		UTextBlock* Caption = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("%s_Caption"), *WidgetName.ToString())));
+		Caption->SetText(FText::FromString(bIsNew ? TEXT("Swap with:") : TEXT("Holding:")));
+		Caption->SetFont(MakeRodin(14));
+		Caption->SetColorAndOpacity(FSlateColor(CreamDim));
+		Caption->SetJustification(ETextJustify::Center);
+		if (UVerticalBoxSlot* VS = Col->AddChildToVerticalBox(Caption))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+			VS->SetHorizontalAlignment(HAlign_Center);
+			VS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+		if (UVerticalBoxSlot* VS = Col->AddChildToVerticalBox(WrapWithInnerGlow(WidgetTree, Box, /*EdgePx=*/12.f)))
+		{
+			VS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			VS->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UHorizontalBoxSlot* HS = CandidateRow->AddChildToHorizontalBox(Col))
 		{
 			HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			HS->SetPadding(FMargin(6.f, 0.f));
@@ -238,21 +260,6 @@ void UEclipseSwapPromptWidget::BuildCandidateBoxes()
 
 	OldBox = MakeBox(GS->GetItemDisplayName(OutgoingId), TEXT("OldBox"), /*bIsNew=*/false);
 	OldBox->OnClicked.AddDynamic(this, &UEclipseSwapPromptWidget::OnKeepOldClicked);
-
-	// The arrow carries the whole instruction — old becomes new — which is
-	// why there's no title text explaining it.
-	UTextBlock* Arrow = WidgetTree->ConstructWidget<UTextBlock>(
-		UTextBlock::StaticClass(), TEXT("SwapArrow"));
-	Arrow->SetText(FText::FromString(TEXT("→")));
-	Arrow->SetFont(MakeBerenjena(40, 0.f));
-	Arrow->SetColorAndOpacity(FSlateColor(DialogueRed));
-	Arrow->SetJustification(ETextJustify::Center);
-	if (UHorizontalBoxSlot* HS = CandidateRow->AddChildToHorizontalBox(Arrow))
-	{
-		HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		HS->SetPadding(FMargin(10.f, 0.f));
-		HS->SetVerticalAlignment(VAlign_Center);
-	}
 
 	NewBox = MakeBox(GS->GetItemDisplayName(IncomingId), TEXT("NewBox"), /*bIsNew=*/true);
 	NewBox->OnClicked.AddDynamic(this, &UEclipseSwapPromptWidget::OnTakeNewClicked);

@@ -1004,7 +1004,7 @@ bool UEclipseUiBuilder::PopulateInventoryWBP(const FString& WBPAssetPath)
 
 		// Centred chalk panel — Disco Elysium-style slate slab
 		UBorder* Panel = New<UBorder>(Tree, TEXT("InventoryPanel"));
-		Panel->SetBrush(RoundedBrush(PaperWhite, LinkBlue, 1.f, 6.f));
+		Panel->SetBrush(RoundedBrush(FLinearColor::Black, DialogueRed, 2.f, 0.f));
 		Panel->SetPadding(FMargin(36.f, 28.f));
 		Panel->SetHorizontalAlignment(HAlign_Fill);
 		Panel->SetVerticalAlignment(VAlign_Fill);
@@ -1318,7 +1318,7 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		// Centred navy panel — same RoundedBrush(PanelBg, DialogueRed) as the
 		// HUD background so the modal reads as "HUD expanded full-screen".
 		UBorder* Panel = New<UBorder>(Tree, TEXT("StatsPanel"));
-		Panel->SetBrush(RoundedBrush(PanelBg, DialogueRed, 1.f, 0.f));
+		Panel->SetBrush(RoundedBrush(FLinearColor::Black, DialogueRed, 2.f, 0.f));
 		Panel->SetPadding(FMargin(28.f, 22.f));
 		Panel->SetHorizontalAlignment(HAlign_Fill);
 		Panel->SetVerticalAlignment(VAlign_Fill);
@@ -1409,6 +1409,15 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 				VS->SetPadding(FMargin(0.f, 4.f));
 			}
 		};
+
+		UTextBlock* StatsHeader = New<UTextBlock>(Tree, TEXT("StatsHeader"));
+		StatsHeader->SetFont(MakeFragmentMono(13));
+		StatsHeader->SetColorAndOpacity(FSlateColor(CreamDim));
+		StatsHeader->SetText(FText::FromString(FString::Printf(TEXT("%13s %3s  %8s"), TEXT(""), TEXT("LVL"), TEXT("XP"))));
+		if (UVerticalBoxSlot* VS = StatList->AddChildToVerticalBox(StatsHeader))
+		{
+			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+		}
 
 		MakeStatRow(TEXT("AestheticsRow"),   TEXT("AESTHETICS     1"));
 		MakeStatRow(TEXT("RhythmRow"),       TEXT("RHYTHM         1"));

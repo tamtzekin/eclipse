@@ -25,6 +25,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
 #include "Data/EclipseItemDefinition.h"
 #include "Data/EclipseClothingDefinition.h"
@@ -165,6 +166,13 @@ bool UEclipseInventoryChipWidget::Initialize()
 		ChipNameText->SetJustification(ETextJustify::Center);
 		ChipNameText->SetColorAndOpacity(FSlateColor(LinkBlueDim));
 		Col->AddChildToVerticalBox(ChipNameText);
+	}
+
+	// Every slot, item or empty, in the modal inventory and the HUD strip.
+	// Skipped at design time for the same reason as the HUD bars.
+	if (bSuper && !IsDesignTime())
+	{
+		WrapWithInnerGlow(WidgetTree, ChipFrame, /*EdgePx=*/10.f);
 	}
 
 	// Back-compat: a designer-authored WBP may still bind a ChipButton via
@@ -437,17 +445,9 @@ bool UEclipseClothingSlotWidget::Initialize()
 		}
 
 		SlotFrame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotFrame"));
-		{
-			FSlateBrush B;
-			B.DrawAs    = ESlateBrushDrawType::RoundedBox;
-			// Near-black fill and the game's stall-door red on the rim.
-			B.TintColor = FSlateColor(FLinearColor(0.04f, 0.03f, 0.04f, 0.88f));
-			B.OutlineSettings.Color        = FSlateColor(DialogueRed);
-			B.OutlineSettings.Width        = 1.5f;
-			B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
-			B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-			SlotFrame->SetBrush(B);
-		}
+		// Solid black and a hard red rim: square corners and a whole-pixel
+		// width, because a 1.5px line anti-aliases into a soft pink edge.
+		SlotFrame->SetBrush(RoundedBrush(SlotGrey, DialogueRed, 2.f, 0.f));
 		SlotFrame->SetPadding(FMargin(2.f));
 		SlotFrame->SetHorizontalAlignment(HAlign_Fill);
 		SlotFrame->SetVerticalAlignment(VAlign_Fill);
@@ -455,6 +455,9 @@ bool UEclipseClothingSlotWidget::Initialize()
 		{
 			FS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
+		// Same light rim as the HEAT/THIRST bars. Drawn over the frame, so it
+		// sits on the item render too. Safe here: this tree is pre-Slate.
+		WrapWithInnerGlow(WidgetTree, SlotFrame, /*EdgePx=*/10.f);
 
 		// The badge and the prefab render share one cell — an item with a
 		// baked IconTexture shows the model, anything else falls back to
@@ -665,16 +668,10 @@ void UEclipseClothingSlotWidget::NativeTick(const FGeometry& G, float DeltaTime)
 	UseFlashAlpha = FMath::Max(0.f, UseFlashAlpha - DeltaTime / UseFlashSeconds);
 	const float K = FMath::Sqrt(UseFlashAlpha);
 
-	FSlateBrush B;
-	B.DrawAs = ESlateBrushDrawType::RoundedBox;
-	B.TintColor = FSlateColor(FLinearColor(
-		FMath::Lerp(0.04f, 1.0f, K), FMath::Lerp(0.03f, 0.92f, K),
-		FMath::Lerp(0.04f, 0.86f, K), 0.88f));
-	B.OutlineSettings.Color        = FSlateColor(FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, K));
-	B.OutlineSettings.Width        = FMath::Lerp(1.5f, 6.f, K);
-	B.OutlineSettings.CornerRadii  = FVector4(2.f, 2.f, 2.f, 2.f);
-	B.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-	SlotFrame->SetBrush(B);
+	SlotFrame->SetBrush(RoundedBrush(
+		FLinearColor(FMath::Lerp(0.f, 1.0f, K), FMath::Lerp(0.f, 0.92f, K), FMath::Lerp(0.f, 0.86f, K), 1.f),
+		FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, K),
+		FMath::Lerp(2.f, 6.f, K), 0.f));
 
 	const float Glow = 1.f + K * 4.f;   // >1 blows past white into a bloom
 	if (SlotThumb)
@@ -702,41 +699,28 @@ void UEclipseClothingSlotWidget::SetHoverFeedback(EHoverState State)
 
 	// Re-tint the slot frame to signal whether the dragged item belongs
 	// here. Invalid = greyed out (the "no" state the design asked for).
-	FSlateBrush B;
-	B.DrawAs                        = ESlateBrushDrawType::RoundedBox;
-	B.OutlineSettings.CornerRadii   = FVector4(2.f, 2.f, 2.f, 2.f);
-	B.OutlineSettings.RoundingType  = ESlateBrushRoundingType::FixedRadius;
-
 	const FLinearColor Green(0.36f, 0.85f, 0.45f, 1.f);
 	const FLinearColor Grey (0.45f, 0.45f, 0.48f, 1.f);
 
 	switch (State)
 	{
 	case EHoverState::Valid:
-		B.TintColor             = FSlateColor(FLinearColor(0.10f, 0.22f, 0.13f, 0.95f));
-		B.OutlineSettings.Color = FSlateColor(Green);
-		B.OutlineSettings.Width = 2.f;
+		SlotFrame->SetBrush(RoundedBrush(FLinearColor(0.10f, 0.22f, 0.13f, 1.f), Green, 2.f, 0.f));
 		break;
 	case EHoverState::Invalid:
-		B.TintColor             = FSlateColor(FLinearColor(0.10f, 0.10f, 0.11f, 0.92f));
-		B.OutlineSettings.Color = FSlateColor(Grey);
-		B.OutlineSettings.Width = 1.5f;
+		SlotFrame->SetBrush(RoundedBrush(FLinearColor(0.10f, 0.10f, 0.11f, 1.f), Grey, 2.f, 0.f));
 		break;
 	case EHoverState::Idle:
 	default:
 		// Hovering a slot lifts its fill and brightens the rim — the same
 		// "this one" cue the chips give, so an occupied slot reads as
 		// something you can pick up rather than a label.
-		B.TintColor             = FSlateColor(bSlotHovered
-			? FLinearColor(0.16f, 0.05f, 0.06f, 0.94f)
-			: FLinearColor(0.04f, 0.03f, 0.04f, 0.88f));
-		B.OutlineSettings.Color = FSlateColor(bSlotHovered
-			? FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, 0.45f)
-			: DialogueRed);
-		B.OutlineSettings.Width = bSlotHovered ? 2.5f : 1.5f;
+		SlotFrame->SetBrush(bSlotHovered
+			? RoundedBrush(FLinearColor(0.16f, 0.05f, 0.06f, 1.f),
+				FLinearColor::LerpUsingHSV(DialogueRed, FLinearColor::White, 0.45f), 3.f, 0.f)
+			: RoundedBrush(SlotGrey, DialogueRed, 2.f, 0.f));
 		break;
 	}
-	SlotFrame->SetBrush(B);
 
 	// Dim the label + icon when greyed out so the whole tile reads dead.
 	const float ContentAlpha = (State == EHoverState::Invalid) ? 0.35f : 1.f;
@@ -1015,6 +999,15 @@ bool UEclipseInventoryWidget::Initialize()
 	{
 		UE_LOG(LogEclipse, Log, TEXT("Inventory::Initialize — fallback skipped (HeldGrid present, or tree null)"));
 	}
+
+	// Same light rim as the HUD bars. Runtime-only: the glow texture is generated, so it can't live in the WBP.
+	if (WidgetTree && !IsDesignTime())
+	{
+		if (UWidget* Panel = WidgetTree->FindWidget(FName(TEXT("InventoryPanel"))))
+		{
+			EclipseUI::WrapWithInnerGlow(WidgetTree, Panel, /*EdgePx=*/42.f);
+		}
+	}
 	return Super::Initialize();
 }
 
@@ -1037,7 +1030,7 @@ void UEclipseInventoryWidget::BuildFallbackTree()
 
 	// Centred paper panel — white ground, hyperlink-blue rule.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryPanel"));
-	Panel->SetBrush(RoundedBrush(PaperWhite, LinkBlue, 1.f, 8.f));
+	Panel->SetBrush(RoundedBrush(FLinearColor::Black, DialogueRed, 2.f, 0.f));
 	Panel->SetPadding(FMargin(36.f, 28.f));
 	Panel->SetHorizontalAlignment(HAlign_Fill);
 	Panel->SetVerticalAlignment(VAlign_Fill);
@@ -1170,8 +1163,27 @@ void UEclipseInventoryWidget::NativeConstruct()
 	if (UseBtn)         UseBtn->OnClicked.AddDynamic(this, &UEclipseInventoryWidget::OnUse);
 	if (CloseBtn)       CloseBtn->OnClicked.AddDynamic(this, &UEclipseInventoryWidget::OnCloseClicked);
 
-	UButton* AllBtns[] = { UseBtn, CloseBtn };
-	for (UButton* B : AllBtns) if (B) B->SetClickMethod(EButtonClickMethod::MouseDown);
+	// Hard red frame on black, set here rather than in the fallback tree so
+	// the WBP_Inventory copy gets it too — the WBP ships its own styles.
+	// Disabled keeps the frame but dims it, so an unusable USE reads dead.
+	{
+		using namespace EclipseUI;
+		FButtonStyle BS;
+		BS.Normal   = RoundedBrush(Cream, DialogueRed, 2.f, 0.f);
+		BS.Hovered  = BS.Normal;
+		BS.Pressed  = RoundedBrush(FLinearColor::White, DialogueRed, 2.f, 0.f);
+		BS.Disabled = RoundedBrush(Cream.CopyWithNewOpacity(0.35f), DialogueRed.CopyWithNewOpacity(0.3f), 2.f, 0.f);
+
+		UButton* AllBtns[] = { UseBtn, CloseBtn };
+		for (UButton* B : AllBtns)
+		{
+			if (!B) continue;
+			B->SetClickMethod(EButtonClickMethod::MouseDown);
+			B->SetStyle(BS);
+			// Red on white now the fill is light.
+			if (UTextBlock* L = Cast<UTextBlock>(B->GetChildAt(0))) L->SetColorAndOpacity(FSlateColor(DialogueRed));
+		}
+	}
 
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
@@ -1650,11 +1662,18 @@ void UEclipseInventoryWidget::RefreshDetailPanel()
 		FEclipseItemRow EffRow;
 		if (GS->GetItemRow(SelectedItemId, EffRow))
 		{
-			bCanUse = EffRow.Effect.HeatDelta != 0
+			bCanUse = (EffRow.Effect.HeatDelta != 0
 			       || EffRow.Effect.ThirstDelta != 0
 			       || EffRow.Effect.RestoreThirst > 0.f
-			       || (!EffRow.StatBoost.IsNone() && EffRow.StatBoostLevels != 0);
+			       || (!EffRow.StatBoost.IsNone() && EffRow.StatBoostLevels != 0))
+			       && !GS->IsDrinkBlocked(EffRow);
 		}
+	}
+
+	FEclipseItemRow KnotRow;
+	if (!bSelectedIsClothing && GS->GetItemRow(SelectedItemId, KnotRow) && !KnotRow.DialogueId.IsNone())
+	{
+		bCanUse = true;   // opens its knot rather than being consumed
 	}
 
 	if (UseBtn)  UseBtn->SetIsEnabled(bCanUse);
@@ -1668,9 +1687,8 @@ void UEclipseInventoryWidget::NativeTick(const FGeometry& G, float DeltaTime)
 }
 
 // UButton swaps its Hovered brush on the frame the cursor crosses the edge,
-// which pops. The styles are all the same red now and the fade lives in the
-// BackgroundColor tint, which multiplies the brush — so alpha 0 is "at rest"
-// and the interp does the rest.
+// which pops. Normal and Hovered share one brush, so the hover is carried
+// entirely by the label's opacity fading up.
 void UEclipseInventoryWidget::TickButtonHovers(float DeltaTime)
 {
 	using namespace EclipseUI;
@@ -1684,11 +1702,7 @@ void UEclipseInventoryWidget::TickButtonHovers(float DeltaTime)
 		const float Target = (B->IsHovered() && B->GetIsEnabled()) ? 1.f : 0.f;
 		A = FMath::FInterpConstantTo(A, Target, DeltaTime, 6.f);
 
-		// The hover reads as the LABEL coming up, not a card lighting up
-		// behind it. These are flat words on the panel — fading a
-		// background in and out made them look like chrome that isn't
-		// there at rest.
-		B->SetBackgroundColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
+		// The hover reads as the LABEL coming up; the frame stays put.
 		constexpr float RestOpacity = 0.55f;
 		if (UWidget* Label = B->GetChildAt(0))
 		{
@@ -1701,6 +1715,19 @@ void UEclipseInventoryWidget::OnUse()
 {
 	if (SelectedItemId.IsNone() || bSelectedIsClothing) return;
 	if (!PendingUseId.IsNone()) return;          // already going off
+
+	// Items with an Ink knot (the phone) open it instead of being consumed.
+	UGameInstance* GI = GetGameInstance();
+	UEclipseGameStateSubsystem* UseGS = GI ? GI->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	UEclipseDialogueSubsystem* UseDS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
+	FEclipseItemRow UseRow;
+	if (UseGS && UseDS && UseGS->GetItemRow(SelectedItemId, UseRow) && !UseRow.DialogueId.IsNone())
+	{
+		const FName HeldId = SelectedItemId;
+		Close();
+		UseDS->OpenHeldItemDialogue(HeldId);
+		return;
+	}
 
 	if (UEclipseAudioSubsystem* A = GetGameInstance()
 			? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)

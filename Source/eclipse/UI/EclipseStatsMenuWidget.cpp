@@ -146,6 +146,7 @@ bool UEclipseStatsMenuWidget::Initialize()
 void UEclipseStatsMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	ApplyTooltips();
 
 	if (CloseBtn)
 	{
@@ -215,10 +216,7 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 
 	// Centred panel
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("StatsPanel"));
-	Panel->SetBrush(RoundedBrush(
-		FLinearColor(0.039f, 0.043f, 0.059f, 0.97f),
-		FLinearColor(0.945f, 0.929f, 0.851f, 0.85f),
-		1.f, 8.f));
+	Panel->SetBrush(RoundedBrush(FLinearColor::Black, DialogueRed, 2.f, 0.f));
 	Panel->SetPadding(FMargin(36.f, 28.f));
 	Panel->SetHorizontalAlignment(HAlign_Fill);
 	Panel->SetVerticalAlignment(VAlign_Fill);
@@ -261,6 +259,16 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 		return T;
 	};
 
+	// Column headings, padded to the same widths RefreshAll writes.
+	UTextBlock* Header = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatsHeader"));
+	Header->SetFont(MakeFragmentMono(13));
+	Header->SetColorAndOpacity(FSlateColor(CreamDim));
+	Header->SetText(FText::FromString(FString::Printf(TEXT("%13s %3s  %8s"), TEXT(""), TEXT("LVL"), TEXT("XP"))));
+	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Header))
+	{
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+	}
+
 	AestheticsRow   = MakeStatRow(TEXT("AestheticsRow"));
 	RhythmRow       = MakeStatRow(TEXT("RhythmRow"));
 	ZenRow          = MakeStatRow(TEXT("ZenRow"));
@@ -276,16 +284,16 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	CloseBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseBtn"));
 	{
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-		BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-		BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+		BS.Normal   = RoundedBrush(Cream, DialogueRed, 2.f, 0.f);
+		BS.Hovered  = BS.Normal;
+		BS.Pressed  = RoundedBrush(FLinearColor::White, DialogueRed, 2.f, 0.f);
+		BS.Disabled = RoundedBrush(Cream.CopyWithNewOpacity(0.35f), DialogueRed.CopyWithNewOpacity(0.3f), 2.f, 0.f);
 		CloseBtn->SetStyle(BS);
 	}
 	UTextBlock* CloseLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloseBtn_Label"));
 	CloseLabel->SetText(FText::FromString(TEXT("CLOSE")));
 	CloseLabel->SetFont(MakeBMSPA(18, 4.f));
-	CloseLabel->SetColorAndOpacity(FSlateColor(Cream));
+	CloseLabel->SetColorAndOpacity(FSlateColor(DialogueRed));
 	CloseLabel->SetJustification(ETextJustify::Center);
 	CloseBtn->SetContent(CloseLabel);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(CloseBtn))
@@ -297,6 +305,24 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 // ─────────────────────────────────────────────────────────────────────────────
 //  Refresh — pulls live values from the GameStateSubsystem onto each row
 // ─────────────────────────────────────────────────────────────────────────────
+
+void UEclipseStatsMenuWidget::ApplyTooltips()
+{
+	// Rows default to SelfHitTestInvisible, which never receives a hover.
+	struct FTip { UTextBlock* Row; const TCHAR* Text; };
+	const FTip Tips[] = {
+		{ AestheticsRow, TEXT("AESTHETICS — how you look and read a room. Clothes, taste, first impressions.") },
+		{ RhythmRow, TEXT("RHYTHM — timing and nerve in conversation. Banter, pushing your luck.") },
+		{ ZenRow, TEXT("ZEN — composure and silence. Staying level when it gets loud.") },
+		{ PsychedelicsRow, TEXT("PSYCHEDELICS — perception, and openness to weird input.") },
+	};
+	for (const FTip& T : Tips)
+	{
+		if (!T.Row) continue;
+		T.Row->SetVisibility(ESlateVisibility::Visible);
+		T.Row->SetToolTipText(FText::FromString(T.Text));
+	}
+}
 
 void UEclipseStatsMenuWidget::RefreshAll()
 {
@@ -316,7 +342,7 @@ void UEclipseStatsMenuWidget::RefreshAll()
 		while (Name.Len() < 13) Name.AppendChar(TEXT(' '));
 		const FString Progress = FString::Printf(TEXT("%d/%d"),
 			XP, UEclipseGameStateSubsystem::StatXPToLevel);
-		T->SetText(FText::FromString(FString::Printf(TEXT("%s %2d  %8s"),
+		T->SetText(FText::FromString(FString::Printf(TEXT("%s %3d  %8s"),
 			*Name, Val, *Progress)));
 	};
 	SetRow(AestheticsRow,   TEXT("AESTHETICS"),   GS->Aesthetics,   GS->AestheticsXP);

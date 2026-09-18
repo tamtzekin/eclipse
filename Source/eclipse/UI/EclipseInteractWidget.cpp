@@ -17,6 +17,8 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/HorizontalBox.h"
 #include "NPC/EclipseNpcCharacter.h"
 #include "Items/EclipseItemActor.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
@@ -185,7 +187,10 @@ void UEclipseInteractWidget::TickPromptPosition()
 	              : (CachedItem.IsValid() ? CachedItem.Get() : nullptr);
 	if (!Target) return;
 
-	UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(PromptText->Slot);
+	// The label may be wrapped (PromptRow adds the key mark), so move whichever ancestor sits on the canvas.
+	UWidget* Label = PromptText;
+	while (Label && !Cast<UCanvasPanelSlot>(Label->Slot)) Label = Label->GetParent();
+	UCanvasPanelSlot* Slot = Label ? Cast<UCanvasPanelSlot>(Label->Slot) : nullptr;
 	APlayerController* PC  = GetOwningPlayer();
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 	if (!Slot || !Pawn) return;   // WBP put the label outside a canvas — leave it put
@@ -224,7 +229,7 @@ void UEclipseInteractWidget::TickPromptPosition()
 
 	// Behind the camera projects to a mirrored point in front of it, which
 	// would park the label on the wrong side of the screen.
-	PromptText->SetRenderOpacity(bOnScreen ? 1.f : 0.f);
+	Label->SetRenderOpacity(bOnScreen ? 1.f : 0.f);
 	if (!bOnScreen) return;
 
 	if (!bPromptSlotReady)
@@ -271,6 +276,8 @@ void UEclipseInteractWidget::NativeConstruct()
 	// Root always ticks (see RefreshPrompt); the label starts hidden.
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	if (PromptText) PromptText->SetVisibility(ESlateVisibility::Collapsed);
+
+	BuildPromptMark();
 
 	if (UEclipseInteractSubsystem* IS = GetWorld()->GetSubsystem<UEclipseInteractSubsystem>())
 	{
@@ -356,12 +363,11 @@ void UEclipseInteractWidget::RefreshPrompt()
 		return;
 	}
 
-	// Talkable NPC takes priority over item. Just the name — the "[E] TALK
-	// TO ..." banner is gone; position next to the subject is what tells you
-	// which thing the label is about.
+	// Talkable NPC takes priority over item; the mark shows people are interactable too.
 	if (CachedNpc.IsValid())
 	{
 		PromptText->SetText(FText::FromString(CachedNpc->GetDisplayName().ToString().ToUpper()));
+		if (PromptMark) PromptMark->SetVisibility(ESlateVisibility::HitTestInvisible);
 		PromptText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		TickPromptPosition();   // place it before the first frame draws
 		return;
@@ -394,14 +400,54 @@ void UEclipseInteractWidget::RefreshPrompt()
 			ItemDisplay = FText::FromString(CachedItem->GetName().ToUpper());
 		}
 
-		// Leading "x" marks the spot the label is pointing at — the name on
-		// its own reads as scenery text rather than a thing you can take.
-		PromptText->SetText(FText::FromString(
-			FString::Printf(TEXT("x  %s"), *ItemDisplay.ToString().ToUpper())));
+		// The mark is a sibling widget now, so only the name goes in the label.
+		PromptText->SetText(FText::FromString(ItemDisplay.ToString().ToUpper()));
+		if (PromptMark) PromptMark->SetVisibility(ESlateVisibility::HitTestInvisible);
 		PromptText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		TickPromptPosition();
 		return;
 	}
 
 	PromptText->SetVisibility(ESlateVisibility::Collapsed);
+	if (PromptMark) PromptMark->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+// Slips a row in around PromptText so the mark can sit centred on the word.
+void UEclipseInteractWidget::BuildPromptMark()
+{
+	if (PromptMark || !PromptText || !WidgetTree) return;
+
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("PromptRow"));
+	if (UPanelWidget* Parent = PromptText->GetParent())
+	{
+		Parent->ReplaceChild(PromptText, Row);
+		PromptText->Slot = nullptr;
+	}
+	else if (WidgetTree->RootWidget == PromptText)
+	{
+		WidgetTree->RootWidget = Row;
+	}
+	else
+	{
+		return;
+	}
+
+	PromptMark = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PromptMark"));
+	FSlateFontInfo F = EclipseUI::MakeBMSPA(/*Size=*/14, /*LetterSpacingPx=*/0.f);
+	F.OutlineSettings.OutlineSize = 2;
+	F.OutlineSettings.OutlineColor = EclipseUI::DialogueRed.CopyWithNewOpacity(0.85f);
+	F.OutlineSettings.bApplyOutlineToDropShadows = true;
+	PromptMark->SetFont(F);
+	PromptMark->SetText(FText::FromString(TEXT("x")));
+	PromptMark->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
+	PromptMark->SetVisibility(ESlateVisibility::Collapsed);
+	if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(PromptMark))
+	{
+		HS->SetVerticalAlignment(VAlign_Center);
+		HS->SetPadding(FMargin(3.f, 0.f, 7.f, 0.f));   // nudged right, gap before the word
+	}
+	if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(PromptText))
+	{
+		HS->SetVerticalAlignment(VAlign_Center);
+	}
 }

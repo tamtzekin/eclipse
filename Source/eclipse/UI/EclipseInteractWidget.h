@@ -32,6 +32,11 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> PromptText;
 
+	// The marker before an item's name — its own widget so it can be smaller and centred.
+	UPROPERTY() TObjectPtr<UTextBlock> PromptMark;
+
+	void BuildPromptMark();
+
 private:
 	UFUNCTION()
 	void HandleNearTalkableChanged(AEclipseNpcCharacter* Npc);

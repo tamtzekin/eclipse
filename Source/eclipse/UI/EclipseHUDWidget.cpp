@@ -81,7 +81,7 @@ namespace
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("%sValueText"), Suffix)));
 		OutValueText->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), UEclipseGameStateSubsystem::MeterMax)));
-		OutValueText->SetFont(MakeBMSPA(/*Size=*/17, /*Letter=*/1.5f));
+		OutValueText->SetFont(MakeBMSPA(/*Size=*/13, /*Letter=*/1.5f));
 		OutValueText->SetColorAndOpacity(FSlateColor(Cream));
 		OutValueText->SetJustification(ETextJustify::Right);
 		if (UHorizontalBoxSlot* HS = TopRow->AddChildToHorizontalBox(OutValueText))
@@ -171,7 +171,17 @@ bool UEclipseHUDWidget::Initialize()
 		// Heat + Thirst only — Stimulation was removed from the game.
 	}
 
-	return Super::Initialize();
+	const bool bFirstInit = Super::Initialize();
+
+	// After Super so WBP-bound bars get it as well as the fallback tree's.
+	// Never at design time: the glow texture is transient and must not end
+	// up referenced from anything the editor might save.
+	if (bFirstInit && !IsDesignTime())
+	{
+		WrapWithInnerGlow(WidgetTree, HeatBar,   /*EdgePx=*/4.f);
+		WrapWithInnerGlow(WidgetTree, ThirstBar, /*EdgePx=*/4.f);
+	}
+	return bFirstInit;
 }
 
 void UEclipseHUDWidget::NativeConstruct()
@@ -282,7 +292,7 @@ void UEclipseHUDWidget::NativeConstruct()
 				UVerticalBox::StaticClass(), TEXT("QuestList_Runtime"));
 			if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(MeterCol->AddChild(QuestList)))
 			{
-				VS->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+				VS->SetPadding(FMargin(0.f, 46.f, 0.f, 0.f));
 				VS->SetHorizontalAlignment(HAlign_Left);
 			}
 			UpdateQuestList();
@@ -294,6 +304,11 @@ void UEclipseHUDWidget::NativeConstruct()
 	{
 		GS->OnStateChanged.AddDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
 		GS->OnPlayerDeath.AddDynamic(this, &UEclipseHUDWidget::HandlePlayerDeath);
+	}
+	if (UEclipseDialogueSubsystem* DS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr)
+	{
+		DS->OnConversationThirstCharged.AddDynamic(this, &UEclipseHUDWidget::HandleConversationThirstCharged);
 	}
 
 	UpdateBars();
@@ -307,6 +322,10 @@ void UEclipseHUDWidget::NativeDestruct()
 		{
 			GS->OnStateChanged.RemoveDynamic(this, &UEclipseHUDWidget::HandleStateChanged);
 			GS->OnPlayerDeath.RemoveDynamic(this, &UEclipseHUDWidget::HandlePlayerDeath);
+		}
+		if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
+		{
+			DS->OnConversationThirstCharged.RemoveDynamic(this, &UEclipseHUDWidget::HandleConversationThirstCharged);
 		}
 	}
 	Super::NativeDestruct();
@@ -364,6 +383,11 @@ void UEclipseHUDWidget::HandlePlayerDeath()
 	UEclipseDeathOverlayWidget::OpenForPlayer(GetOwningPlayer());
 }
 
+void UEclipseHUDWidget::HandleConversationThirstCharged(int32 /*Delta*/)
+{
+	bSeenThirstCost = true;
+}
+
 void UEclipseHUDWidget::UpdateBars()
 {
 	using namespace EclipseUI;
@@ -397,11 +421,10 @@ void UEclipseHUDWidget::UpdateBars()
 	DetectChange(GS->Heat,        LastHeat,        HeatPulse);
 	DetectChange(GS->Thirst,      LastThirst,      ThirstPulse);
 
-	// Two colours for the whole readout: red fill, white when critical.
-	// The bars used to be red and purple with a third red for the critical
-	// zone, which read as three unrelated states rather than one meter.
-	const FLinearColor HeatFill   = DialogueRed;
-	const FLinearColor ThirstFill = DialogueRed;
+	// Heat red, Thirst light blue — the colour says which meter it is —
+	// and both go white when critical, so the alarm reads the same on each.
+	const FLinearColor HeatFill   = HeatRed;
+	const FLinearColor ThirstFill = ThirstBlue;
 
 	// Pulse value passed to ApplyBarStyle: 0..1, peaking at full timer.
 	const float HeatPulseAlpha = HeatPulse        / PulseDuration;
@@ -424,8 +447,8 @@ void UEclipseHUDWidget::ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearCol
 	using namespace EclipseUI;
 	if (!Bar) return;
 
-	// White is the alarm now that every bar is red at rest — it's the only
-	// other colour in the cluster, so it can't be read as anything else.
+	// White is the alarm: neither bar is white at rest, so it can't be
+	// read as anything else.
 	const FLinearColor CriticalTint = Cream;
 	// Which end counts as critical is the caller's call — see UpdateBars.
 	// MeterCriticalHigh is 9 so Heat's starting value of 8 is not already
@@ -467,14 +490,21 @@ void UEclipseHUDWidget::UpdateChapterClock()
 		const bool bFlickedOver = !LastClockDisplay.IsEmpty() && LastClockDisplay != NewClockStr;
 		LastClockDisplay = NewClockStr;
 
+		// The clock starts at 0:00, so elapsed hours are the displayed hours; -1 skips a chime on open.
+		const int32 Hour = FMath::FloorToInt(FMath::Max(0.f, GS->ChapterElapsedSeconds) / 3600.f);
+		const bool bHourPassed = LastClockHour >= 0 && Hour > LastClockHour;
+		LastClockHour = Hour;
+
 		ChapterClockText->SetText(NewClock);
 
-		if (bFlickedOver)
+		if (bFlickedOver || bHourPassed)
 		{
 			if (UEclipseAudioSubsystem* Audio = GetGameInstance()
 					? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 			{
-				Audio->PlayUI(ClockTickSound);
+				// The watch beep replaces the tick on the hour.
+				if (bHourPassed) Audio->PlayCue(EEclipseUiCue::HourChime);
+				else             Audio->PlayUI(ClockTickSound);
 			}
 		}
 	}
@@ -894,6 +924,9 @@ UEclipseHUDWidget::ETip UEclipseHUDWidget::PickTip() const
 	// happened to the thing they just took.
 	if (bSeenFirstPickup && !IsTipDone(ETip::Inventory)) return ETip::Inventory;
 	if (bSeenFirstDialogue && !IsTipDone(ETip::Stats))   return ETip::Stats;
+	// Waits for the conversation to close: it explains the THIRST drop the
+	// player just watched happen, so it follows the moment, not overlaps it.
+	if (bSeenThirstCost && !bBusy && !IsTipDone(ETip::Thirst)) return ETip::Thirst;
 
 	if (bBusy) return ETip::Count;
 
@@ -985,6 +1018,7 @@ void UEclipseHUDWidget::TickTutorial(float DeltaTime)
 		case ETip::Inventory: Line = TEXT("I to open your inventory");break;
 		case ETip::Talk:      Line = TEXT("E to talk");               break;
 		case ETip::Stats:     Line = TEXT("C to check your stats");   break;
+		case ETip::Thirst:    Line = TEXT("Drink to keep your endurance up"); break;
 		default: break;
 		}
 		TutorialText->SetText(FText::FromString(Line));

@@ -12,6 +12,10 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Fonts/FontMeasure.h"
 #include "Engine/Texture2D.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 
 /**
  * Centralised UI tokens — colors and fonts pulled directly from the HTML
@@ -54,6 +58,9 @@ namespace EclipseUI
 	// Replaced the cyan accents on the dialogue UI (speaker captions,
 	// portrait outline) per design direction.
 	inline const FLinearColor DialogueRed = FLinearColor(0.902f, 0.165f, 0.165f, 1.f); // #e62a2a
+	inline const FLinearColor ThirstBlue  = FLinearColor(FColor(0xD6, 0xF2, 0xFF)); // #d6f2ff icy
+	inline const FLinearColor HeatRed     = FLinearColor(FColor(0xB3, 0x12, 0x12)); // #b31212 deeper than DialogueRed
+	inline const FLinearColor SlotGrey    = FLinearColor(0.13f, 0.13f, 0.14f, 1.f); // carry slots, a step off the black panel
 	inline const FLinearColor DialogueRedDim = FLinearColor(0.902f, 0.165f, 0.165f, 0.5f);
 
 	// Per-stat hue — shared by the dialogue widget's skill-check choice tints
@@ -311,5 +318,95 @@ namespace EclipseUI
 			B.TintColor = FSlateColor(FLinearColor(0.23f, 0.02f, 0.04f, 0.8f));
 		}
 		return B;
+	}
+
+	// ── Inner glow ──────────────────────────────────────────────────────
+	// A light gradient hugging the inside of a box's edges: full at the rim,
+	// gone by EdgePx in. Generated rather than imported — it's a formula,
+	// not art — and rooted once so every box shares the one texture.
+	inline UTexture2D* GetInnerGlowTexture()
+	{
+		static TWeakObjectPtr<UTexture2D> Cache;
+		if (!Cache.IsValid())
+		{
+			constexpr int32 N = 32;
+			const float Half = N * 0.5f - 1.f;
+			TArray<uint8> Px;
+			Px.SetNumUninitialized(N * N * 4);
+			for (int32 Y = 0; Y < N; ++Y)
+			{
+				for (int32 X = 0; X < N; ++X)
+				{
+					// Nearest-edge distance, 0 at the rim to 1 at the centre.
+					// Squared falloff so it reads as light, not a second border.
+					const int32 Edge = FMath::Min(FMath::Min(X, N - 1 - X), FMath::Min(Y, N - 1 - Y));
+					const float D = FMath::Clamp(Edge / Half, 0.f, 1.f);
+					const int32 I = (Y * N + X) * 4;
+					Px[I] = Px[I + 1] = Px[I + 2] = 255; // white; the brush tint colours it
+					Px[I + 3] = (uint8)FMath::RoundToInt(255.f * FMath::Square(1.f - D));
+				}
+			}
+			if (UTexture2D* T = UTexture2D::CreateTransient(N, N, PF_B8G8R8A8, TEXT("T_InnerGlow"), Px))
+			{
+				T->AddToRoot();
+				Cache = T;
+			}
+		}
+		return Cache.Get();
+	}
+
+	// 9-sliced at half the texture, so the band is EdgePx on every side
+	// whatever the box's size. A missing texture draws nothing — Box mode
+	// with no resource is invisible — which is the right failure here.
+	inline FSlateBrush InnerGlowBrush(float EdgePx, float Alpha = 0.14f)
+	{
+		FSlateBrush B;
+		B.SetResourceObject(GetInnerGlowTexture());
+		B.DrawAs    = ESlateBrushDrawType::Box;
+		B.Margin    = FMargin(0.5f);
+		B.ImageSize = FVector2D(EdgePx * 2.f, EdgePx * 2.f);
+		B.TintColor = FSlateColor(Cream.CopyWithNewOpacity(Alpha));
+		return B;
+	}
+
+	// Stacks InnerGlowBrush over Target in a new Overlay, so the glow draws
+	// on top of everything the box paints — fill, progress, hover state.
+	//
+	// A Target already in a panel is swapped into its slot in place, keeping
+	// its padding / anchors / size rule. That swap doesn't rebuild Slate, so
+	// it's only valid from Initialize(). Anything built into a live tree must
+	// pass an unparented Target and add the returned Overlay itself.
+	inline UOverlay* WrapWithInnerGlow(UWidgetTree* Tree, UWidget* Target, float EdgePx, float Alpha = 0.14f)
+	{
+		if (!Tree || !Target) return nullptr;
+
+		const FString Base = Target->GetName();
+		UOverlay* Wrap = Tree->ConstructWidget<UOverlay>(
+			UOverlay::StaticClass(), FName(*(Base + TEXT("_Glow"))));
+		if (UPanelWidget* Parent = Target->GetParent())
+		{
+			Parent->ReplaceChild(Target, Wrap);
+			// ReplaceChild leaves this pointing at the slot Wrap now owns.
+			Target->Slot = nullptr;
+		}
+		else if (Tree->RootWidget == Target)
+		{
+			Tree->RootWidget = Wrap;
+		}
+
+		UImage* Glow = Tree->ConstructWidget<UImage>(
+			UImage::StaticClass(), FName(*(Base + TEXT("_GlowImage"))));
+		Glow->SetBrush(InnerGlowBrush(EdgePx, Alpha));
+		Glow->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+		for (UWidget* Child : { Target, static_cast<UWidget*>(Glow) })
+		{
+			if (UOverlaySlot* S = Wrap->AddChildToOverlay(Child))
+			{
+				S->SetHorizontalAlignment(HAlign_Fill);
+				S->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
+		return Wrap;
 	}
 }
