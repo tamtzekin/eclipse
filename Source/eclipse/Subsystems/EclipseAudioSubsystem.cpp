@@ -50,6 +50,7 @@ void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
 	{
 	case EEclipseUiCue::MenuOpen:  Real = TEXT("Items/S_Item_Rustle"); break;
 	case EEclipseUiCue::MenuClose: Real = TEXT("Items/S_Item_Rustle"); Pitch = 0.88f; break;
+	case EEclipseUiCue::HourChime: Real = TEXT("UI/S_UI_HourChime"); break;
 	default: break;
 	}
 	if (Real)

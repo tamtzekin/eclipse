@@ -36,6 +36,7 @@ enum class EEclipseUiCue : uint8
 	DialogueLine UMETA(DisplayName = "New dialogue line"),
 	MeterUp      UMETA(DisplayName = "Heat/Thirst gained"),
 	MeterDown    UMETA(DisplayName = "Heat/Thirst lost"),
+	HourChime    UMETA(DisplayName = "In-game hour passed"),
 };
 
 UCLASS()
