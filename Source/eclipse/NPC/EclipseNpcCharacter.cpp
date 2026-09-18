@@ -285,19 +285,6 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 {
 	if (bIsHidden || !BubbleWidget) return;
 
-	// Resolved once. An empty array after the lookup means this character
-	// has no yaps knot, and the entry stays empty so we don't ask again.
-	if (YapLines.Num() == 0)
-	{
-		if (LastYapIndex == -2) return;   // looked up already, nothing there
-		const UGameInstance* GI = GetGameInstance();
-		const UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
-		if (!DS) return;
-		YapLines = DS->GetYaps(NpcName);
-		if (YapLines.Num() == 0) { LastYapIndex = -2; return; }
-		YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds) * 0.4f;
-	}
-
 	// Never talk over a conversation — the dialogue panel is the voice then.
 	const UGameInstance* GI = GetGameInstance();
 	const UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
@@ -307,6 +294,7 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 		return;
 	}
 
+	// Counted down first so a Yap() forced on a character without a yaps knot still clears.
 	if (YapShowing > 0.f)
 	{
 		YapShowing -= DeltaTime;
@@ -316,6 +304,17 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 			YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds);
 		}
 		return;
+	}
+
+	// Resolved once. An empty array after the lookup means this character
+	// has no yaps knot, and the entry stays empty so we don't ask again.
+	if (YapLines.Num() == 0)
+	{
+		if (LastYapIndex == -2) return;   // looked up already, nothing there
+		if (!DS) return;
+		YapLines = DS->GetYaps(NpcName);
+		if (YapLines.Num() == 0) { LastYapIndex = -2; return; }
+		YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds) * 0.4f;
 	}
 
 	YapTimer -= DeltaTime;
@@ -336,12 +335,17 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 		Index = (Index + 1) % YapLines.Num();
 	}
 	LastYapIndex = Index;
+	Yap(YapLines[Index], YapHoldSeconds);
+}
 
+void AEclipseNpcCharacter::Yap(const FString& Line, float HoldSeconds)
+{
+	if (!BubbleWidget) return;
 	BubbleWidget->SetDrawSize(FVector2D(360.f, 90.f));
 	BubbleWidget->SetVisibility(true);
 	if (UEclipseSpeechBubbleWidget* BW = Cast<UEclipseSpeechBubbleWidget>(BubbleWidget->GetUserWidgetObject()))
 	{
-		BW->SetYap(FText::FromString(YapLines[Index]));
+		BW->SetYap(FText::FromString(Line));
 	}
-	YapShowing = YapHoldSeconds;
+	YapShowing = HoldSeconds;
 }

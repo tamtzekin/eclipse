@@ -26,6 +26,8 @@
 #include "Ink/Value.h"
 #include "Inkpot/InkpotList.h"
 #include "Inkpot/InkpotValue.h"
+#include "Subsystems/EclipseDanceBattleSubsystem.h"
+#include "Data/EclipseDanceTrackData.h"
 
 namespace
 {
@@ -72,19 +74,31 @@ void UEclipseDialogueSubsystem::HarvestYaps()
 
 	for (const TCHAR* Name : Names)
 	{
-		const FString Knot = FString::Printf(TEXT("%s_yaps"), Name);
-		Story->ChoosePath(Knot);
-		const FString Block = Story->ContinueMaximally();
-		if (Block.IsEmpty()) continue;
-
-		TArray<FString> Lines;
-		Block.ParseIntoArrayLines(Lines);
-		for (FString& L : Lines) L.TrimStartAndEndInline();
-		Lines.RemoveAll([](const FString& L) { return L.IsEmpty(); });
+		TArray<FString> Lines = ReadKnotLines(FString::Printf(TEXT("%s_yaps"), Name));
 		if (Lines.Num() > 0) YapCache.Add(FName(Name), MoveTemp(Lines));
 	}
 
 	UE_LOG(LogEclipse, Log, TEXT("DialogueSubsystem: harvested yaps for %d characters"), YapCache.Num());
+}
+
+TArray<FString> UEclipseDialogueSubsystem::ReadKnotLines(const FString& Knot)
+{
+	TArray<FString> Lines;
+	if (!Story || bDialogueOpen) return Lines;
+	Story->ChoosePath(Knot);
+	Story->ContinueMaximally().ParseIntoArrayLines(Lines);
+	for (FString& L : Lines) L.TrimStartAndEndInline();
+	Lines.RemoveAll([](const FString& L) { return L.IsEmpty(); });
+	return Lines;
+}
+
+int32 UEclipseDialogueSubsystem::GetInkInt(const FString& Variable, int32 Default)
+{
+	if (!Story) return Default;
+	int32 Value = Default;
+	bool bOk = false;
+	Story->GetInt(Variable, Value, bOk);
+	return bOk ? Value : Default;
 }
 
 const TArray<FString>& UEclipseDialogueSubsystem::GetYaps(FName NpcName) const
@@ -1335,6 +1349,19 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 			ActiveItem->Pickup();
 		}
 		CloseDialogue();
+	}
+	else if (ActionName == TEXT("danceBattle") || ActionName == TEXT("danceTutorial"))
+	{
+		// CloseDialogue nulls ActiveNpc, so take the opponent first.
+		AEclipseNpcCharacter* Opponent = ActiveNpc;
+		CloseDialogue();
+		UEclipseDanceTrackData* Track = LoadObject<UEclipseDanceTrackData>(nullptr,
+			TEXT("/Game/Justin/Audio/Dance/DA_DanceTrack_ClubMusic.DA_DanceTrack_ClubMusic"));
+		UEclipseDanceBattleSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>() : nullptr;
+		if (!Track || !Dance || !Dance->StartBattle(Track, Opponent, ActionName == TEXT("danceTutorial")))
+		{
+			UE_LOG(LogEclipse, Warning, TEXT("danceBattle: no track asset yet — run Tools/analyse_dance_track.py first"));
+		}
 	}
 }
 

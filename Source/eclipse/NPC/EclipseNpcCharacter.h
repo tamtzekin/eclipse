@@ -191,6 +191,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
 	void StopFacePlayer();
 
+	// Shows Line in the overhead yap bubble for HoldSeconds, e.g. dance battle trash talk.
+	void Yap(const FString& Line, float HoldSeconds);
+
 	// ── Approach turn: gradual pre-lock lean toward the player as they close
 	//    in from the wide outer radius, well before the tight lock-on radius
 	//    fires StartFacePlayer. Alpha 0 = original facing, 1 = fully facing

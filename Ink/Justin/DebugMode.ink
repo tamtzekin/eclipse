@@ -39,6 +39,7 @@ INCLUDE Characters/Figure4.ink
 INCLUDE Characters/Figure5.ink
 INCLUDE Characters/Zbigniewa.ink
 INCLUDE Characters/Ending.ink
+INCLUDE Characters/DanceTester.ink
 
 
 INCLUDE Items/Items.ink

@@ -22,6 +22,7 @@
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
 #include "UI/EclipseInventoryWidget.h"   // UEclipseClothingSlotWidget
+#include "UI/EclipseDanceBattleWidget.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Components/UniformGridPanel.h"
@@ -1733,5 +1734,14 @@ UFont* UEclipseUiBuilder::BuildFontComposite(UFontFace* FontFace,
 #else
 	(void)FontFace; (void)PackagePath; (void)AssetName;
 	return nullptr;
+#endif
+}
+
+bool UEclipseUiBuilder::PopulateDanceBattleWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree) { UEclipseDanceBattleWidget::BuildTree(Tree); });
+#else
+	(void)WBPAssetPath; return false;
 #endif
 }

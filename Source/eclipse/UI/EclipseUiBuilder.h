@@ -89,6 +89,11 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulatePhoneWBP(const FString& WBPAssetPath);
 
+	// Dance battle HUD; tree comes from UEclipseDanceBattleWidget::BuildTree so it matches the fallback.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateDanceBattleWBP(const FString& WBPAssetPath);
+
 	/**
 	 * Builds a UFont composite that wraps a UFontFace so Slate text widgets
 	 * (which expect UFont, not raw UFontFace) can resolve glyphs.

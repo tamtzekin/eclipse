@@ -58,6 +58,13 @@
         {
             "Name": "Inkpot",
             "Enabled": true
+        },
+        {
+            "Name": "AudioSynesthesia",
+            "Enabled": true,
+            "TargetAllowList": [
+                "Editor"
+            ]
         }
     ]
 }

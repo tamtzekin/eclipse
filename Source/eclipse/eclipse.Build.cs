@@ -29,7 +29,9 @@ public class eclipse : ModuleRules
 			"RenderCore",
 			// UDeveloperSettings — backs UEclipseDemoSettings, which puts the
 			// demo start/end flow switches in Project Settings -> Game.
-			"DeveloperSettings"
+			"DeveloperSettings",
+			// Quartz music clock for the dance battle
+			"AudioMixer"
 		});
 
 		// Editor-only dependencies — only linked when building the editor target

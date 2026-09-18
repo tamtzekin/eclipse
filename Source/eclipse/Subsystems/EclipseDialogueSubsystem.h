@@ -252,6 +252,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	const TArray<FString>& GetYaps(FName NpcName) const;
 
+	// Runs a choice-free knot and returns its non-empty lines; empty if the knot doesn't exist. Not during a conversation.
+	TArray<FString> ReadKnotLines(const FString& Knot);
+
+	// An Ink int variable, or Default when it isn't declared.
+	int32 GetInkInt(const FString& Variable, int32 Default);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
 
