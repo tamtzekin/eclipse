@@ -884,6 +884,11 @@ bool UEclipseGameStateSubsystem::UseItem(FName ItemId)
 					*ItemId.ToString());
 				return false;
 			}
+			if (IsDrinkBlocked(Row))
+			{
+				UE_LOG(LogEclipse, Log, TEXT("UseItem '%s' refused — WASTED, can't drink"), *ItemId.ToString());
+				return false;
+			}
 
 			if (bAnyDelta)
 			{
@@ -1150,10 +1155,9 @@ bool UEclipseGameStateSubsystem::GetClothingRow(FName ClothingId, FEclipseClothi
 
 // ── Life meters (Heat / Thirst) ────────────────────────────────────────────
 //
-// Sweet-spot 0..10 model. Meters do NOT drain over time — they only move
-// when consumables, dialogue effects, or other explicit events push them
-// via ChangeMeter / ChangeXxx. Death triggers at Heat == 0 (frozen);
-// Thirst extremes are dialogue-gates and HUD-tint cues, not killers.
+// Sweet-spot 0..10 model. Both meters bleed with game time (AdvanceGameTime)
+// and move when consumables, dialogue effects or other explicit events push
+// them via ChangeMeter / ChangeXxx. The player passes out when BOTH are 0.
 
 int32 UEclipseGameStateSubsystem::GetMeterValue(FName MeterKey) const
 {
@@ -1176,16 +1180,25 @@ void UEclipseGameStateSubsystem::ChangeMeter(FName MeterKey, int32 Delta)
 	}
 
 	const int32 Before = *Field;
+	const bool bWasOut = Heat == 0 && Thirst == 0;
+
+	// Overflow past the cap starts (or restarts) that meter's cooldown state.
+	if (Delta > 0 && Before + Delta > MeterMax)
+	{
+		if (Field == &Thirst) WastedTimeLeft     = WastedSeconds;
+		else                  OverheatedTimeLeft = OverheatedSeconds;
+		UE_LOG(LogEclipse, Log, TEXT("%s overflowed -> %s"), *MeterKey.ToString(), Field == &Thirst ? TEXT("WASTED") : TEXT("OVERHEATED"));
+	}
 	*Field = FMath::Clamp(*Field + Delta, 0, MeterMax);
 	UE_LOG(LogEclipse, Log, TEXT("ChangeMeter: %s %d %+d -> %d"),
 		*MeterKey.ToString(), Before, Delta, *Field);
 
-	// Death is single-shot on the Heat 0 transition — freezing out is the
-	// fail state now that Stimulation is gone. No re-fire if the meter is
-	// repeatedly pushed past zero while already at 0.
-	if (Field == &Heat && Before > 0 && *Field == 0)
+	// Passing out needs BOTH meters empty, and fires on the transition into
+	// that state only — pushing either meter further past zero while
+	// already out doesn't re-open the overlay.
+	if (!bWasOut && Heat == 0 && Thirst == 0)
 	{
-		UE_LOG(LogEclipse, Log, TEXT("Heat reached 0 — player died"));
+		UE_LOG(LogEclipse, Log, TEXT("Heat and Thirst both 0 — player passed out"));
 		OnPlayerDeath.Broadcast();
 	}
 
@@ -1221,14 +1234,17 @@ void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
 	// Bleed Heat once per whole HeatDecayIntervalMinutes crossed. Loops
 	// rather than firing once so a big jump (a debug skip, a scripted
 	// time-of-night change) applies every interval it passed through.
+	//
+	// An EMPTY meter's bleed spills into the other one: out of warmth, the
+	// cold starts costing you water; bone dry, you start losing heat. So one
+	// meter at 0 makes the other fall twice as fast, and the clock carries
+	// you the rest of the way to passing out. Routed through ChangeMeter so
+	// the pass-out check and the OnStateChanged broadcast still happen.
 	const float IntervalSeconds = FMath::Max(1, HeatDecayIntervalMinutes) * 60.f;
 	while (ChapterElapsedSeconds - LastHeatDecayAtSeconds >= IntervalSeconds)
 	{
 		LastHeatDecayAtSeconds += IntervalSeconds;
-		// Routed through ChangeMeter so the Heat==0 death trigger and the
-		// OnStateChanged broadcast still happen — the clock is what kills
-		// you if you never warm back up.
-		ChangeMeter(TEXT("heat"), -1);
+		ChangeMeter(Heat > 0 ? TEXT("heat") : TEXT("thirst"), -1);
 	}
 
 	// Same shape for Thirst on its own, slower interval. Separate accumulator
@@ -1237,10 +1253,23 @@ void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
 	while (ChapterElapsedSeconds - LastThirstDecayAtSeconds >= ThirstIntervalSeconds)
 	{
 		LastThirstDecayAtSeconds += ThirstIntervalSeconds;
-		ChangeMeter(TEXT("thirst"), -1);
+		ChangeMeter(Thirst > 0 ? TEXT("thirst") : TEXT("heat"), -1);
 	}
 
 	NotifyChanged();
+}
+
+bool UEclipseGameStateSubsystem::IsDrinkBlocked(const FEclipseItemRow& Row) const
+{
+	return IsWasted() && (Row.Effect.ThirstDelta > 0 || Row.Effect.RestoreThirst > 0.f);
+}
+
+void UEclipseGameStateSubsystem::TickStatusEffects(float DeltaSeconds)
+{
+	const bool bWasActive = IsWasted() || IsOverheated();
+	WastedTimeLeft     = FMath::Max(0.f, WastedTimeLeft     - DeltaSeconds);
+	OverheatedTimeLeft = FMath::Max(0.f, OverheatedTimeLeft - DeltaSeconds);
+	if (bWasActive && !IsWasted() && !IsOverheated()) NotifyChanged();
 }
 
 void UEclipseGameStateSubsystem::ChangeHeat(int32 Delta)        { ChangeMeter(TEXT("heat"),        Delta); }
@@ -1362,7 +1391,7 @@ void UEclipseGameStateSubsystem::RecordMetNPC(FName Name, FName DialogueId)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Save / Load — autosave at "ECLIPSE_AUTOSAVE" + manual slots
+//  Save / Load — autosave only, at "ECLIPSE_AUTOSAVE"
 //  ("ECLIPSE_SLOT_0/1/2"). Both reuse the snapshot helpers below; the only
 //  difference is the slot string.
 //
@@ -1409,6 +1438,7 @@ namespace
 		Save->ChapterElapsedSeconds    = GS.ChapterElapsedSeconds;
 		Save->SavedAt                  = FDateTime::Now();
 
+		if (W) Save->LevelName = UGameplayStatics::GetCurrentLevelName(W, /*bRemovePrefixString=*/true);
 		if (W)
 		{
 			for (TActorIterator<AActor> It(W); It; ++It)
@@ -1541,6 +1571,7 @@ bool UEclipseGameStateSubsystem::SaveCurrent()
 
 	const bool bOk = UGameplayStatics::SaveGameToSlot(Save,
 		UEclipseSaveGame::SlotName, UEclipseSaveGame::UserIndex);
+	if (bOk) LastSavedAt = Save->SavedAt;
 	UE_LOG(LogEclipse, Log,
 		TEXT("SaveCurrent → %s (Room=%s Loc=%s)"),
 		bOk ? TEXT("OK") : TEXT("FAILED"),
@@ -1574,96 +1605,46 @@ bool UEclipseGameStateSubsystem::TryLoadCurrent()
 		PendingTeleportLocation  = Save->PlayerWorldLocation;
 		PendingTeleportRotation  = Save->PlayerWorldRotation;
 	}
+	LastSavedAt = Save->SavedAt;
 	NotifyChanged();
 	UE_LOG(LogEclipse, Log, TEXT("TryLoadCurrent: restored Room=%s teleported=%s"),
 		*Save->CurrentLevelKey.ToString(), bImmediate ? TEXT("now") : TEXT("pending"));
 	return true;
 }
 
-bool UEclipseGameStateSubsystem::SaveToSlot(int32 SlotIndex)
+bool UEclipseGameStateSubsystem::RetryFromSave()
 {
-	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots)
-	{
-		UE_LOG(LogEclipse, Warning, TEXT("SaveToSlot: invalid slot %d"), SlotIndex);
-		return false;
-	}
-	UEclipseSaveGame* Save = CreateSnapshot(*this, GetWorld());
-	if (!Save) return false;
+	if (!TryLoadCurrent()) return false;
+	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(UGameplayStatics::LoadGameFromSlot(UEclipseSaveGame::SlotName, UEclipseSaveGame::UserIndex));
+	UWorld* W = GetWorld();
+	if (!Save || !W) return false;
 
-	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
-	const bool bOk = UGameplayStatics::SaveGameToSlot(Save, SlotName, UEclipseSaveGame::UserIndex);
-	UE_LOG(LogEclipse, Log, TEXT("SaveToSlot[%d] -> %s (Room=%s Loc=%s)"),
-		SlotIndex, bOk ? TEXT("OK") : TEXT("FAILED"),
-		*Save->CurrentLevelKey.ToString(), *Save->PlayerWorldLocation.ToString());
-	return bOk;
-}
-
-bool UEclipseGameStateSubsystem::LoadFromSlot(int32 SlotIndex)
-{
-	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return false;
-	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
-	if (!UGameplayStatics::DoesSaveGameExist(SlotName, UEclipseSaveGame::UserIndex))
-	{
-		UE_LOG(LogEclipse, Log, TEXT("LoadFromSlot[%d]: empty"), SlotIndex);
-		return false;
-	}
-	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
-		UGameplayStatics::LoadGameFromSlot(SlotName, UEclipseSaveGame::UserIndex));
-	if (!Save) return false;
-
-	bool bImmediate = false;
-	ApplySnapshot(*this, Save, GetWorld(), bImmediate);
-	if (!bImmediate)
-	{
-		bPendingTeleport         = true;
-		PendingTeleportLocation  = Save->PlayerWorldLocation;
-		PendingTeleportRotation  = Save->PlayerWorldRotation;
-	}
-	NotifyChanged();
-	UE_LOG(LogEclipse, Log, TEXT("LoadFromSlot[%d] -> OK (teleported=%s)"),
-		SlotIndex, bImmediate ? TEXT("now") : TEXT("pending"));
+	// Reopen the map so the world is back as it was too, then drop the player where they saved.
+	bPendingTeleport        = true;
+	PendingTeleportLocation = Save->PlayerWorldLocation;
+	PendingTeleportRotation = Save->PlayerWorldRotation;
+	const FString Level = Save->LevelName.IsEmpty() ? UGameplayStatics::GetCurrentLevelName(W, true) : Save->LevelName;
+	UGameplayStatics::OpenLevel(W, FName(*Level));
 	return true;
 }
 
-FEclipseSaveSlotInfo UEclipseGameStateSubsystem::GetSlotInfo(int32 SlotIndex) const
+bool UEclipseGameStateSubsystem::Autosave()
 {
-	FEclipseSaveSlotInfo Info;
-	Info.SlotIndex = SlotIndex;
-	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return Info;
-
-	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
-	if (!UGameplayStatics::DoesSaveGameExist(SlotName, UEclipseSaveGame::UserIndex))
-	{
-		Info.DisplayLabel = FString::Printf(TEXT("SLOT %d  ·  EMPTY"), SlotIndex + 1);
-		return Info;
-	}
-
-	UEclipseSaveGame* Save = Cast<UEclipseSaveGame>(
-		UGameplayStatics::LoadGameFromSlot(SlotName, UEclipseSaveGame::UserIndex));
-	if (!Save) return Info;
-
-	Info.bExists           = true;
-	Info.RoomDisplayName   = Save->RoomDisplayName.IsEmpty() ? Save->CurrentLevelKey.ToString() : Save->RoomDisplayName;
-	Info.CurrentLevelKey   = Save->CurrentLevelKey;
-	Info.Chapter           = Save->Chapter;
-	Info.SavedAt           = Save->SavedAt;
-
-	const FString TimeStr = Save->SavedAt.ToString(TEXT("%Y-%m-%d %H:%M"));
-	Info.DisplayLabel = FString::Printf(TEXT("SLOT %d  ·  %s  ·  CH %d  ·  %s"),
-		SlotIndex + 1,
-		Info.RoomDisplayName.IsEmpty() ? TEXT("?") : *Info.RoomDisplayName,
-		Info.Chapter,
-		*TimeStr);
-	return Info;
+	if (Heat == 0 && Thirst == 0) return false;
+	return SaveCurrent();
 }
 
-bool UEclipseGameStateSubsystem::DeleteSlot(int32 SlotIndex)
+FText UEclipseGameStateSubsystem::GetLastSavedText() const
 {
-	if (SlotIndex < 0 || SlotIndex >= UEclipseSaveGame::NumManualSlots) return false;
-	const FString SlotName = UEclipseSaveGame::ManualSlotName(SlotIndex);
-	const bool bOk = UGameplayStatics::DeleteGameInSlot(SlotName, UEclipseSaveGame::UserIndex);
-	UE_LOG(LogEclipse, Log, TEXT("DeleteSlot[%d] -> %s"), SlotIndex, bOk ? TEXT("OK") : TEXT("FAILED"));
-	return bOk;
+	if (LastSavedAt.GetTicks() == 0) return FText::FromString(TEXT("Not saved yet"));
+
+	const int64 Secs = FMath::Max<int64>(0, (int64)(FDateTime::Now() - LastSavedAt).GetTotalSeconds());
+	auto Unit = [](int64 N, const TCHAR* Name) { return FString::Printf(TEXT("%lld %s%s"), N, Name, N == 1 ? TEXT("") : TEXT("s")); };
+	const FString Ago = Secs < 60    ? Unit(Secs, TEXT("second"))
+	                  : Secs < 3600  ? Unit(Secs / 60, TEXT("minute"))
+	                  : Secs < 86400 ? Unit(Secs / 3600, TEXT("hour"))
+	                  :                Unit(Secs / 86400, TEXT("day"));
+	return FText::FromString(FString::Printf(TEXT("Last saved: %s ago"), *Ago));
 }
 
 void UEclipseGameStateSubsystem::ConsumePendingTeleport(APawn* Pawn)

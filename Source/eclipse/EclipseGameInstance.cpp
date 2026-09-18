@@ -24,7 +24,7 @@ void UEclipseGameInstance::Shutdown()
 
 	if (UEclipseGameStateSubsystem* GS = GetSubsystem<UEclipseGameStateSubsystem>())
 	{
-		GS->SaveCurrent();
+		GS->Autosave();
 	}
 
 	Super::Shutdown();

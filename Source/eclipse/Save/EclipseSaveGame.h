@@ -41,7 +41,7 @@ public:
 
 	// Meters — sweet-spot 0..10 ints. Defaults match the subsystem
 	// (Heat=8, Thirst=5). Old float-scale saves from prior
-	// builds are migrated at load time in TryLoadCurrent / LoadFromSlot:
+	// builds are migrated at load time in TryLoadCurrent:
 	// any value > 10 is divided by 10 and clamped to [0, 10].
 	UPROPERTY() int32 Heat        = 8;
 	UPROPERTY() int32 Thirst      = 5;
@@ -78,26 +78,15 @@ public:
 
 	// World state
 	UPROPERTY() FName CurrentLevelKey;          // e.g. "Bathroom"
+	UPROPERTY() FString LevelName;              // map to reopen on RETRY, e.g. "L_CLUB_NEW1"
 	UPROPERTY() FVector PlayerWorldLocation = FVector::ZeroVector;
 	UPROPERTY() FRotator PlayerWorldRotation = FRotator::ZeroRotator;
 
-	// Metadata — populated on save, used by the pause menu's slot picker
-	// to render "Slot 1 · Bathroom · Ch 1 · 2026-05-07 14:23" labels.
+	// Drives the pause menu's "Last saved: X ago".
 	UPROPERTY() FDateTime SavedAt = FDateTime(0);
 	UPROPERTY() FString  RoomDisplayName;       // human label for CurrentLevelKey
 
-	// Autosave slot (used by GameInstance::Init/Shutdown + dialogue startGame).
+	// The only slot: no manual saves, so every decision sticks.
 	static constexpr const TCHAR* SlotName = TEXT("ECLIPSE_AUTOSAVE");
 	static constexpr int32 UserIndex = 0;
-
-	// Manual slots — pause menu's "SAVE 1/2/3" / "LOAD 1/2/3" actions.
-	static constexpr int32 NumManualSlots = 3;
-	static FString ManualSlotName(int32 SlotIndex)
-	{
-		return FString::Printf(TEXT("ECLIPSE_SLOT_%d"), FMath::Clamp(SlotIndex, 0, NumManualSlots - 1));
-	}
 };
-
-// FEclipseSaveSlotInfo is declared in EclipseGameStateSubsystem.h to avoid a
-// circular include — that header is consumed by SaveGame, and the subsystem
-// is the place the slot-info struct is returned from.

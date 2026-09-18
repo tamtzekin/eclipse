@@ -224,6 +224,17 @@ private:
 	UFUNCTION()
 	void HandleStatXPGranted(FName StatKey, int32 Amount, int32 NewLevel, bool bLeveledUp);
 
+	// "THIRST: -1" under the NPC's last line when a conversation's cost is charged.
+	UFUNCTION()
+	void HandleConversationThirstCharged(int32 Delta);
+
+	// One naked system line (XP, meter costs) at the end of the transcript,
+	// kept above the choices.
+	void AppendSystemLine(const FString& Msg, const FLinearColor& Color);
+
+	// Detach ChoicesBox and re-add it as the transcript's last child.
+	void DockChoicesAtEnd();
+
 	UFUNCTION()
 	void OnCloseClicked();
 

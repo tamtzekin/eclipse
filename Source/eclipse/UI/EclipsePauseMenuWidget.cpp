@@ -22,16 +22,7 @@
 #include "GameFramework/PlayerController.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Pause menu — single-screen overlay. Centred panel, 360×320, chalk style.
-//
-//   [PAUSED]
-//   ─────────────
-//   Resume
-//   Save
-//   Load
-//   Main Menu
-//   Quit
-//   <status line>
+//  Pause menu — CONTINUE / QUIT, then "Last saved: X ago". No manual saves.
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace
@@ -233,54 +224,28 @@ void UEclipsePauseMenuWidget::BuildFallbackTree()
 		return Btn;
 	};
 
-	// ── Main list: Resume / Save / Load / Main Menu / Quit ──
-	MainList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainList"));
+	UVerticalBox* MainList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainList"));
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(MainList))
 	{
 		VS->SetHorizontalAlignment(HAlign_Fill);
 	}
-	// QUIT returns to the main menu (MainMenuBtn's handler); the old
-	// exit-the-application row is gone.
+	// QUIT returns to the main menu (MainMenuBtn's handler).
 	ResumeBtn   = MakeBtnIn(MainList, TEXT("CONTINUE"), TEXT("ResumeBtn"));
-	SaveBtn     = MakeBtnIn(MainList, TEXT("SAVE"),     TEXT("SaveBtn"));
-	LoadBtn     = MakeBtnIn(MainList, TEXT("LOAD"),     TEXT("LoadBtn"));
 	MainMenuBtn = MakeBtnIn(MainList, TEXT("QUIT"),     TEXT("MainMenuBtn"));
 
-	// ── Slot picker: 3 slot rows + Back. Hidden until OnSave/OnLoad. ──
-	SlotPicker = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SlotPicker"));
-	SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
-	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(SlotPicker))
-	{
-		VS->SetHorizontalAlignment(HAlign_Fill);
-	}
-
-	SlotPickerTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotPickerTitle"));
-	SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
-	SlotPickerTitle->SetFont(MakeRodin(22));
-	SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
-	SlotPickerTitle->SetJustification(ETextJustify::Center);
-	if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
-	{
-		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 32.f));
-		VS->SetHorizontalAlignment(HAlign_Center);
-	}
-
-	// Slot row labels are filled in by RefreshSlotLabels() at runtime.
-	Slot0Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 20, &Slot0Btn_Label);
-	Slot1Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 20, &Slot1Btn_Label);
-	Slot2Btn = MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 20, &Slot2Btn_Label);
-	SlotBackBtn = MakeBtnIn(SlotPicker, TEXT("BACK"), TEXT("SlotBackBtn"), 20);
-
-	// Status line — reports save/load result. Lives below both sub-states.
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatusText"));
 	StatusText->SetText(FText::GetEmpty());
-	StatusText->SetFont(MakeRodin(18));
+	{
+		FSlateFontInfo F = MakeRodin(14);
+		F.SkewAmount = 0.2f;   // the font ships no italic face, so fake the slant
+		StatusText->SetFont(F);
+	}
 	StatusText->SetColorAndOpacity(FSlateColor(EclipseUI::CreamDim));
-	StatusText->SetJustification(ETextJustify::Center);
+	StatusText->SetJustification(ETextJustify::Left);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 	{
 		VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
-		VS->SetHorizontalAlignment(HAlign_Center);
+		VS->SetHorizontalAlignment(HAlign_Left);
 	}
 }
 
@@ -288,25 +253,23 @@ void UEclipsePauseMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	if (ResumeBtn)   ResumeBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnResume);
-	if (SaveBtn)     SaveBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSave);
-	if (LoadBtn)     LoadBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnLoad);
 	if (MainMenuBtn) MainMenuBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnMainMenu);
 	if (QuitBtn)     QuitBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnQuit);
 
-	if (Slot0Btn)    Slot0Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot0);
-	if (Slot1Btn)    Slot1Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot1);
-	if (Slot2Btn)    Slot2Btn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlot2);
-	if (SlotBackBtn) SlotBackBtn->OnClicked.AddDynamic(this, &UEclipsePauseMenuWidget::OnSlotBack);
-
 	// Force MouseDown click-method on each — single-click select like dialogue.
-	UButton* AllBtns[] = { ResumeBtn, SaveBtn, LoadBtn, MainMenuBtn, QuitBtn,
-	                       Slot0Btn, Slot1Btn, Slot2Btn, SlotBackBtn };
+	UButton* AllBtns[] = { ResumeBtn, MainMenuBtn, QuitBtn };
 	for (UButton* B : AllBtns) if (B) B->SetClickMethod(EButtonClickMethod::MouseDown);
+}
 
-	// Start in main-list view; pre-fill slot labels so the picker is responsive
-	// the first time the user opens it.
-	ShowMainList();
-	RefreshSlotLabels();
+void UEclipsePauseMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!StatusText) return;
+	if (const UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		StatusText->SetText(GS->GetLastSavedText());
+	}
 }
 
 FReply UEclipsePauseMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -334,92 +297,6 @@ void UEclipsePauseMenuWidget::OnResume()
 	UEclipseBlinkWipeWidget::PlayFull(PC, Cb);
 }
 
-void UEclipsePauseMenuWidget::OnSave()
-{
-	ShowSlotPicker(/*bSaveMode=*/true);
-}
-
-void UEclipsePauseMenuWidget::OnLoad()
-{
-	ShowSlotPicker(/*bSaveMode=*/false);
-}
-
-void UEclipsePauseMenuWidget::OnSlot0() { HandleSlot(0); }
-void UEclipsePauseMenuWidget::OnSlot1() { HandleSlot(1); }
-void UEclipsePauseMenuWidget::OnSlot2() { HandleSlot(2); }
-void UEclipsePauseMenuWidget::OnSlotBack() { ShowMainList(); }
-
-void UEclipsePauseMenuWidget::HandleSlot(int32 SlotIndex)
-{
-	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	if (!GS) { SetStatus(TEXT("State subsystem missing.")); return; }
-
-	if (bSaveMode)
-	{
-		const bool bOk = GS->SaveToSlot(SlotIndex);
-		SetStatus(bOk ? FString::Printf(TEXT("Saved to slot %d."), SlotIndex + 1)
-		             : FString::Printf(TEXT("Save to slot %d failed."), SlotIndex + 1));
-		// Save: stay in the menu so the player can keep configuring; just
-		// refresh labels and drop back to the main list.
-		RefreshSlotLabels();
-		ShowMainList();
-		return;
-	}
-
-	// Load: applying the snapshot mutates the live subsystem. Once it succeeds
-	// the player wants to be *back in the world* — not still staring at the
-	// pause overlay. Close the menu (which also unpauses + restores game-only
-	// input mode) so the load lands the player in the restored state.
-	const bool bOk = GS->LoadFromSlot(SlotIndex);
-	if (bOk)
-	{
-		UE_LOG(LogEclipse, Log, TEXT("PauseMenu: load slot %d → closing menu, returning to world"),
-			SlotIndex + 1);
-		Close();
-		return;
-	}
-	SetStatus(FString::Printf(TEXT("Slot %d empty."), SlotIndex + 1));
-	RefreshSlotLabels();
-	ShowMainList();
-}
-
-void UEclipsePauseMenuWidget::ShowSlotPicker(bool bInSaveMode)
-{
-	bSaveMode = bInSaveMode;
-	bSlotMode = true;
-	if (MainList)        MainList->SetVisibility(ESlateVisibility::Collapsed);
-	if (SlotPicker)      SlotPicker->SetVisibility(ESlateVisibility::Visible);
-	if (SlotPickerTitle) SlotPickerTitle->SetText(FText::FromString(bSaveMode ? TEXT("SAVE GAME") : TEXT("LOAD GAME")));
-	RefreshSlotLabels();
-}
-
-void UEclipsePauseMenuWidget::ShowMainList()
-{
-	bSlotMode = false;
-	if (MainList)   MainList->SetVisibility(ESlateVisibility::Visible);
-	if (SlotPicker) SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
-}
-
-void UEclipsePauseMenuWidget::RefreshSlotLabels()
-{
-	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
-	if (!GS) return;
-
-	UTextBlock* Labels[] = { Slot0Btn_Label, Slot1Btn_Label, Slot2Btn_Label };
-	UButton*    Btns[]   = { Slot0Btn,   Slot1Btn,   Slot2Btn   };
-	for (int32 i = 0; i < 3; ++i)
-	{
-		const FEclipseSaveSlotInfo Info = GS->GetSlotInfo(i);
-		if (Labels[i]) Labels[i]->SetText(FText::FromString(Info.DisplayLabel));
-		// In Load mode, grey out empty slots so the player can't try to load nothing.
-		if (Btns[i])
-		{
-			const bool bEnabled = bSaveMode || Info.bExists;
-			Btns[i]->SetIsEnabled(bEnabled);
-		}
-	}
-}
-
 void UEclipsePauseMenuWidget::OnMainMenu()
 {
 	// Unpause first so OpenLevel doesn't hit the paused-world fast-path,
@@ -432,6 +309,13 @@ void UEclipsePauseMenuWidget::OnMainMenu()
 		PC->SetInputMode(Mode);
 		PC->SetShowMouseCursor(true);   // L_MainMenu wants cursor; OK to keep on
 	}
+	// Leaving is the last chance to save; without it CONTINUE could rewind the session.
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		GS->Autosave();
+	}
+
 	UWorld* W = GetWorld();
 	if (!W) return;
 	UGameplayStatics::SetGamePaused(W, false);
@@ -452,10 +336,4 @@ void UEclipsePauseMenuWidget::OnQuit()
 	APlayerController* PC = GetOwningPlayer();
 	UKismetSystemLibrary::QuitGame(GetWorld(), PC,
 		EQuitPreference::Quit, /*bIgnorePlatformRestrictions=*/false);
-}
-
-void UEclipsePauseMenuWidget::SetStatus(const FString& Msg)
-{
-	if (StatusText) StatusText->SetText(FText::FromString(Msg));
-	UE_LOG(LogEclipse, Log, TEXT("PauseMenu: %s"), *Msg);
 }

@@ -400,6 +400,7 @@ void AEclipseItemActor::Pickup_Implementation()
 			// Base id, not the runtime "__actor" form: listeners want the
 			// row key so they can look up a name and a picture.
 			State->OnItemPickedUp.Broadcast(UEclipseGameStateSubsystem::GetBaseItemId(ItemId));
+			State->Autosave();
 			ConsumePickup();
 		}
 	}

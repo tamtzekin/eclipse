@@ -100,7 +100,8 @@ void AEclipseNpcCharacter::BeginPlay()
 			{
 				if (UEclipseDialogueSubsystem* DS = GI->GetSubsystem<UEclipseDialogueSubsystem>())
 				{
-					if (!DS->IsDialogueOpen()) DS->OpenDialogue(this);
+					// The opening scene is free: the player didn't choose to start it.
+					if (!DS->IsDialogueOpen()) DS->OpenDialogue(this, /*bCostsThirst=*/false);
 				}
 			}
 		}), 0.1f, false);

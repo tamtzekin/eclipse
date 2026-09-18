@@ -825,55 +825,29 @@ bool UEclipseUiBuilder::PopulatePauseMenuWBP(const FString& WBPAssetPath)
 			}
 		};
 
-		// MainList — Resume/Save/Load/MainMenu/Quit
 		UVerticalBox* MainList = New<UVerticalBox>(Tree, TEXT("MainList"));
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(MainList))
 		{
 			VS->SetHorizontalAlignment(HAlign_Fill);
 		}
-		// QUIT is wired to MainMenuBtn — it returns to the main menu rather
-		// than exiting the application. The old app-quit row is gone.
+		// QUIT is wired to MainMenuBtn — it returns to the main menu.
 		MakeBtnIn(MainList, TEXT("CONTINUE"), TEXT("ResumeBtn"));
-		MakeBtnIn(MainList, TEXT("SAVE"),     TEXT("SaveBtn"));
-		MakeBtnIn(MainList, TEXT("LOAD"),     TEXT("LoadBtn"));
 		MakeBtnIn(MainList, TEXT("QUIT"),     TEXT("MainMenuBtn"));
 
-		// SlotPicker — title + 3 slot rows + Back. Hidden by default; the
-		// runtime widget toggles visibility when SAVE/LOAD is clicked.
-		UVerticalBox* SlotPicker = New<UVerticalBox>(Tree, TEXT("SlotPicker"));
-		SlotPicker->SetVisibility(ESlateVisibility::Collapsed);
-		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(SlotPicker))
-		{
-			VS->SetHorizontalAlignment(HAlign_Fill);
-		}
-		UTextBlock* SlotPickerTitle = New<UTextBlock>(Tree, TEXT("SlotPickerTitle"));
-		SlotPickerTitle->SetText(FText::FromString(TEXT("SAVE GAME")));
-		SlotPickerTitle->SetFont(MakeRodin(22));
-		SlotPickerTitle->SetColorAndOpacity(FSlateColor(Cyan));
-		SlotPickerTitle->SetJustification(ETextJustify::Left);
-		if (UVerticalBoxSlot* VS = SlotPicker->AddChildToVerticalBox(SlotPickerTitle))
-		{
-			VS->SetPadding(FMargin(0.f, 0.f, 0.f, 32.f));
-			VS->SetHorizontalAlignment(HAlign_Center);
-		}
-		// Labels keep the populator's natural "<WidgetName>_Label" naming —
-		// the C++ UPROPERTYs Slot0Btn_Label / Slot1Btn_Label / Slot2Btn_Label
-		// match this so BindWidgetOptional resolves without any post-rename.
-		MakeBtnIn(SlotPicker, TEXT("SLOT 1  ·  EMPTY"), TEXT("Slot0Btn"), 20);
-		MakeBtnIn(SlotPicker, TEXT("SLOT 2  ·  EMPTY"), TEXT("Slot1Btn"), 20);
-		MakeBtnIn(SlotPicker, TEXT("SLOT 3  ·  EMPTY"), TEXT("Slot2Btn"), 20);
-		MakeBtnIn(SlotPicker, TEXT("BACK"),             TEXT("SlotBackBtn"), 20);
-
-		// Status line — reports save/load result. Lives below both sub-states.
+		// "Last saved: X ago" — filled in at runtime.
 		UTextBlock* StatusText = New<UTextBlock>(Tree, TEXT("StatusText"));
 		StatusText->SetText(FText::GetEmpty());
-		StatusText->SetFont(MakeRodin(18));
+		{
+			FSlateFontInfo F = MakeRodin(14);
+			F.SkewAmount = 0.2f;   // no italic face in the font, so fake the slant
+			StatusText->SetFont(F);
+		}
 		StatusText->SetColorAndOpacity(FSlateColor(CreamDim));
 		StatusText->SetJustification(ETextJustify::Left);
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StatusText))
 		{
 			VS->SetPadding(FMargin(0.f, 48.f, 0.f, 0.f));
-			VS->SetHorizontalAlignment(HAlign_Center);
+			VS->SetHorizontalAlignment(HAlign_Left);
 		}
 	});
 #else

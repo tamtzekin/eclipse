@@ -10,13 +10,13 @@ class UButton;
 class UTextBlock;
 
 /**
- * Death overlay — opens when UEclipseGameStateSubsystem::OnPlayerDeath fires.
- * Modal pause + UIOnly input, two buttons:
- *   • TRY AGAIN — rewinds to last save (calls LoadLastSave on the subsystem)
- *   • QUIT      — returns to the main menu level
+ * "YOU PASSED OUT" overlay — opens when UEclipseGameStateSubsystem::
+ * OnPlayerDeath fires (Heat and Thirst both 0). Modal pause, two buttons:
+ *   • RETRY — rewinds to save slot 0, or resets the meters if there isn't one
+ *   • QUIT  — returns to the main menu level
  *
- * Same visual language as the pause / stats menus: navy panel, cream/cyan
- * accents, BMSPA caps. Built via fallback tree when no WBP exists, or via
+ * The frozen frame behind it is blurred and vignetted, so the night reads as
+ * slipping away rather than cutting to a menu. Built via fallback tree when no WBP exists, or via
  * /Game/Justin/UI/WBP_DeathOverlay.WBP_DeathOverlay_C when a designer-styled
  * WBP is available.
  */
@@ -35,6 +35,7 @@ public:
 protected:
 	virtual bool Initialize() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> TryAgainBtn;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> QuitBtn;
@@ -49,4 +50,6 @@ private:
 	// One-shot guard to prevent double-firing if both buttons get clicked
 	// before the level swap kicks in.
 	bool bDismissed = false;
+
+	float FadeT = 0.f;   // 0..1 fade into the passed-out screen
 };

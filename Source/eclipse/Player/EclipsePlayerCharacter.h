@@ -189,6 +189,16 @@ public:
 	float SmoothedClimbRate = 0.f;
 	bool  bWasClimbing      = false;
 
+	// WASTED: how quickly movement catches up with input (lower = more lag), and how far speed wanders either way.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Movement")
+	float WastedInputCatchUp = 2.5f;
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Movement")
+	float WastedSpeedSwing = 0.45f;
+
+	FVector RawMoveInput    = FVector::ZeroVector;   // this frame's input, consumed in Tick while WASTED
+	FVector LaggedMoveInput = FVector::ZeroVector;   // what actually drives movement while WASTED
+	bool IsWasted() const;
+
 	void TickSlopeSpeed(float DeltaTime);
 
 private:

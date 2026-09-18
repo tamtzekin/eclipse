@@ -127,7 +127,7 @@ void UEclipseDialogueSubsystem::Deinitialize()
 // driven by these synced variables (see Globals.ink).
 // ─────────────────────────────────────────────────────────────────────────────
 
-bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
+bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc, bool bCostsThirst)
 {
 	if (!Npc || Npc->DialogueId == NAME_None || !Story)
 	{
@@ -135,10 +135,21 @@ bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc)
 		return false;
 	}
 
+	// Too hot to talk: every route into a conversation ends in the player's "…".
+	if (UEclipseGameStateSubsystem* HeatGS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		if (HeatGS->IsOverheated())
+		{
+			OnPlayerMumbled.Broadcast();
+			return false;
+		}
+	}
+
 	ActiveNpc = Npc;
 	ActiveItem = nullptr;
 	CurrentDialogueId = Npc->DialogueId;
 	bDialogueOpen = true;
+	bThirstCostPending = bCostsThirst;
 
 	// Pause the chapter clock while dialogue is open — TickChapterClock
 	// early-returns on !bClockRunning so no game-time elapses during
@@ -224,6 +235,7 @@ bool UEclipseDialogueSubsystem::OpenKnot(FName Knot)
 	ActiveItem = nullptr;
 	CurrentDialogueId = Knot;
 	bDialogueOpen = true;
+	bThirstCostPending = false;   // not a conversation with anyone
 
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -265,6 +277,7 @@ bool UEclipseDialogueSubsystem::OpenItemDialogue(AEclipseItemActor* Item)
 	ActiveItem = Item;
 	CurrentDialogueId = Item->DialogueId;
 	bDialogueOpen = true;
+	bThirstCostPending = false;   // not a conversation with anyone
 
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -629,7 +642,7 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 		}
 
 		// Stage directives: parse + attach + evaluate gates. Same grammar as
-		// when this read from an Articy stage-directions field — just fed
+		// when this read from a stage-directions field — just fed
 		// the choice's own Ink tags (minus the MENU:/SKILLCHECK: ones
 		// already pulled out above) instead.
 		// EvaluateChoiceGates only flips bAvailable to FALSE; it never
@@ -652,7 +665,8 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 	// (or every choice got hidden-gate-filtered above). Everything else,
 	// including any mid-scene "[CONTINUE]" pacing beat, is hand-authored as
 	// a real choice in the .ink source.
-	if (CurrentNode.Choices.IsEmpty())
+	const bool bDeadEnd = CurrentNode.Choices.IsEmpty();
+	if (bDeadEnd)
 	{
 		FEclipseDialogueChoice Leave;
 		Leave.Text = FText::FromString(TEXT("[LEAVE]"));
@@ -663,6 +677,10 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 	}
 
 	OnNodeChanged.Broadcast(CurrentNode);
+
+	// After the broadcast, so the dialogue box has already printed the NPC's
+	// last line and the cost lands under it rather than above.
+	if (bDeadEnd) ChargeConversationThirst();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -670,6 +688,8 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 void UEclipseDialogueSubsystem::CloseDialogue()
 {
 	if (!bDialogueOpen) return;
+	// Walking off before the dead end still costs — no dodging it with Esc.
+	ChargeConversationThirst();
 	bDialogueOpen = false;
 	AEclipseNpcCharacter* NpcToRelease = ActiveNpc;   // ActiveNpc gets nulled below
 	ActiveNpc = nullptr;
@@ -710,6 +730,27 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 
 	OnDialogueClosed.Broadcast();
 	UE_LOG(LogEclipse, Log, TEXT("Dialogue closed"));
+
+	// A finished conversation is a decision made — lock it in.
+	if (UGameInstance* GI = GetGameInstance())
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+			GS->Autosave();
+}
+
+void UEclipseDialogueSubsystem::ChargeConversationThirst()
+{
+	if (!bThirstCostPending) return;
+	bThirstCostPending = false;
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
+		{
+			UE_LOG(LogEclipse, Log, TEXT("Dlg: conversation ended -> -%d Thirst"), ConversationThirstCost);
+			GS->ChangeThirst(-ConversationThirstCost);
+			OnConversationThirstCharged.Broadcast(-ConversationThirstCost);
+		}
+	}
 }
 
 bool UEclipseDialogueSubsystem::ParseSkillCheck(const FText& ChoiceText, FName& OutStat, int32& OutValue) const
@@ -1070,7 +1111,7 @@ void UEclipseDialogueSubsystem::ApplyStageEffect(const FEclipseStageDirective& E
 		break;
 	case EEclipseStageDirectiveKind::MeterEffect:
 		// Signed delta on the 0..10 meter scale, clamped + broadcast inside
-		// ChangeMeter. Heat==0 also fires OnPlayerDeath from there.
+		// ChangeMeter, which also fires OnPlayerDeath once both meters are 0.
 		State->ChangeMeter(Eff.Stat, Eff.Value);
 		break;
 	case EEclipseStageDirectiveKind::HiddenStatEffect:

@@ -481,6 +481,7 @@ void UEclipseDialogueWidget::NativeConstruct()
 		DS->OnDialogueOpened.AddDynamic(this, &UEclipseDialogueWidget::HandleDialogueOpened);
 		DS->OnNodeChanged.AddDynamic(this, &UEclipseDialogueWidget::HandleNodeChanged);
 		DS->OnDialogueClosed.AddDynamic(this, &UEclipseDialogueWidget::HandleDialogueClosed);
+		DS->OnConversationThirstCharged.AddDynamic(this, &UEclipseDialogueWidget::HandleConversationThirstCharged);
 	}
 	if (UEclipseGameStateSubsystem* GS = GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
 	{
@@ -497,6 +498,7 @@ void UEclipseDialogueWidget::NativeDestruct()
 			DS->OnDialogueOpened.RemoveDynamic(this, &UEclipseDialogueWidget::HandleDialogueOpened);
 			DS->OnNodeChanged.RemoveDynamic(this, &UEclipseDialogueWidget::HandleNodeChanged);
 			DS->OnDialogueClosed.RemoveDynamic(this, &UEclipseDialogueWidget::HandleDialogueClosed);
+			DS->OnConversationThirstCharged.RemoveDynamic(this, &UEclipseDialogueWidget::HandleConversationThirstCharged);
 		}
 		if (UEclipseGameStateSubsystem* GS = GI->GetSubsystem<UEclipseGameStateSubsystem>())
 		{
@@ -876,16 +878,7 @@ void UEclipseDialogueWidget::ApplyNodeChanged(const FEclipseDialogueNodeView& No
 	// Same UVerticalBox instance every turn (never destroyed), just
 	// detached and re-added at the new end; RebuildChoices (below) then
 	// fills it with this node's rows.
-	if (RightHistoryScroll && ChoicesBox)
-	{
-		ChoicesBox->RemoveFromParent();
-		if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(ChoicesBox)))
-		{
-			SS->SetHorizontalAlignment(HAlign_Fill);
-			SS->SetPadding(FMargin(0.f, 4.f, 0.f, 160.f));
-		}
-		ChoicesBox->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	DockChoicesAtEnd();
 
 	// Runtime-inject + render the orange effects line below the body if the
 	// fragment has any. Empty Text → keep widget collapsed so it doesn't
@@ -961,22 +954,53 @@ void UEclipseDialogueWidget::HandleStatXPGranted(FName StatKey, int32 Amount, in
 	{
 		Msg += FString::Printf(TEXT("  —  LEVEL UP! %d"), NewLevel);
 	}
+	AppendSystemLine(Msg, XPGreen);
+}
 
+void UEclipseDialogueWidget::HandleConversationThirstCharged(int32 Delta)
+{
+	if (!RightHistoryScroll || !WidgetTree || GetVisibility() == ESlateVisibility::Collapsed) return;
+
+	// Thirst-bar blue, so the line and the bar that just dropped read as one thing.
+	AppendSystemLine(FString::Printf(TEXT("THIRST: %+d"), Delta),
+		EclipseUI::ThirstBlue);
+}
+
+void UEclipseDialogueWidget::AppendSystemLine(const FString& Msg, const FLinearColor& Color)
+{
 	UTextBlock* Line = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), NAME_None);
 	Line->SetFont(EclipseUI::MakeBMSPA(/*Size=*/11, /*Letter=*/1.5f));
-	Line->SetColorAndOpacity(FSlateColor(XPGreen));
+	Line->SetColorAndOpacity(FSlateColor(Color));
 	Line->SetText(FText::FromString(Msg));
 
-	// Naked line (no chip), left-aligned under the player's chosen line.
+	// Naked line (no chip), left-aligned under the last line printed.
 	// Appears immediately — no fade.
 	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(Line)))
 	{
 		SS->SetHorizontalAlignment(HAlign_Left);
 		SS->SetPadding(FMargin(6.f, 0.f, 0.f, 10.f));
 	}
+	// A line added after the choices were docked would sit under them;
+	// move them back to the end so the options stay the last thing.
+	if (ChoicesBox && ChoicesBox->GetParent() == RightHistoryScroll)
+	{
+		DockChoicesAtEnd();
+	}
 	RightHistoryScroll->ScrollToEnd();
 	bDialogueScrollTargetActive = false;
+}
+
+void UEclipseDialogueWidget::DockChoicesAtEnd()
+{
+	if (!RightHistoryScroll || !ChoicesBox) return;
+	ChoicesBox->RemoveFromParent();
+	if (UScrollBoxSlot* SS = Cast<UScrollBoxSlot>(RightHistoryScroll->AddChild(ChoicesBox)))
+	{
+		SS->SetHorizontalAlignment(HAlign_Fill);
+		SS->SetPadding(FMargin(0.f, 4.f, 0.f, 160.f));
+	}
+	ChoicesBox->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 void UEclipseDialogueWidget::HandleDialogueClosed()

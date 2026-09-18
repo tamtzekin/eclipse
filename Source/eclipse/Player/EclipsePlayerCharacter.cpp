@@ -211,8 +211,20 @@ void AEclipsePlayerCharacter::OnMove(const FInputActionValue& Value)
 	const FVector  Forward = FRotationMatrix(YawRot).GetUnitAxis(EAxis::X);
 	const FVector  Right   = FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y);
 
-	AddMovementInput(Forward, Axis.Y);
-	AddMovementInput(Right,   Axis.X);
+	// WASTED queues the input for Tick to trail behind instead of moving now.
+	const FVector Wanted = Forward * Axis.Y + Right * Axis.X;
+	if (IsWasted())
+	{
+		RawMoveInput += Wanted;
+		return;
+	}
+	AddMovementInput(Wanted);
+}
+
+bool AEclipsePlayerCharacter::IsWasted() const
+{
+	const UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	return GS && GS->IsWasted();
 }
 
 void AEclipsePlayerCharacter::OnLook(const FInputActionValue& Value)
@@ -495,6 +507,12 @@ void AEclipsePlayerCharacter::TickSlopeSpeed(float DeltaTime)
 		Target = FMath::Lerp(BaseWalkSpeed, BaseWalkSpeed * StairSpeedScale, K);
 	}
 
+	// WASTED: speed drifts faster and slower on slow noise so no two stretches of walking feel the same.
+	if (IsWasted())
+	{
+		Target *= 1.f + WastedSpeedSwing * FMath::PerlinNoise1D(GetWorld()->GetTimeSeconds() * 0.35f);
+	}
+
 	Move->MaxWalkSpeed = FMath::FInterpTo(Move->MaxWalkSpeed, Target, DeltaTime, 6.f);
 
 	const bool bSlowed = Target < BaseWalkSpeed * 0.98f;
@@ -510,6 +528,23 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 {
 	TickSlopeSpeed(DeltaTime);
 	Super::Tick(DeltaTime);
+
+	if (UEclipseGameStateSubsystem* FxGS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		FxGS->TickStatusEffects(DeltaTime);
+	}
+
+	// WASTED: movement trails the input; sober, drop any leftover drift.
+	if (IsWasted())
+	{
+		LaggedMoveInput = FMath::VInterpTo(LaggedMoveInput, RawMoveInput, DeltaTime, WastedInputCatchUp);
+		if (!LaggedMoveInput.IsNearlyZero(0.01f)) AddMovementInput(LaggedMoveInput);
+	}
+	else
+	{
+		LaggedMoveInput = FVector::ZeroVector;
+	}
+	RawMoveInput = FVector::ZeroVector;
 
 	// ── Chapter clock tick ──
 	// Life meters no longer drain over time (sweet-spot 0..10 model — values

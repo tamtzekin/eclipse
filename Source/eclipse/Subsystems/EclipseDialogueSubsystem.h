@@ -168,6 +168,8 @@ struct FEclipseDialogueNodeView
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueOpened,      AEclipseNpcCharacter*, Npc);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseDialogueNodeChanged, FEclipseDialogueNodeView, Node);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseDialogueClosed);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEclipseConversationThirstCharged, int32, Delta);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipsePlayerMumbled);
 
 /**
  * Inkpot (Ink) runtime wrapper. Drives a single compiled story asset
@@ -185,7 +187,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseDialogueClosed);
  *     Ink tags on the relevant line/choice — same grammar as before, see
  *     ParseStageDirections below, just sourced from
  *     UInkpotStory::GetCurrentTags() / UInkpotChoice::GetTags() instead of
- *     an Articy field. Bracket-form directives (StatGate "[ZEN: 1]",
+ *     a stage-directions field. Bracket-form directives (StatGate "[ZEN: 1]",
  *     ItemGate "[EMPTY_BOTTLE]") are written WITHOUT brackets in .ink
  *     source as "GATE:ZEN: 1" / "GATE:EMPTY_BOTTLE" — Ink's own
  *     choice-bracket syntax scans the whole raw line, including tags, so a
@@ -215,8 +217,11 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
+	// bCostsThirst: every NPC conversation costs ConversationThirstCost once
+	// it ends. Pass false for the scene a level opens on — the player didn't
+	// choose to start that one.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
-	bool OpenDialogue(AEclipseNpcCharacter* Npc);
+	bool OpenDialogue(AEclipseNpcCharacter* Npc, bool bCostsThirst = true);
 
 	// Item-interaction dialogue — same node-view/choice flow as OpenDialogue,
 	// no NPC involved. Broadcasts the same OnDialogueOpened delegate with
@@ -261,6 +266,11 @@ public:
 	// Only the explicit "[STAT:N]" marker form can be failed this way —
 	// Ink-native "{stat > N}" gates never reach the player unmet.
 	static constexpr int32 ThirstDamageOnFail = 1;
+
+	// Talking is thirsty work: charged once per NPC conversation, at its dead
+	// end (so the dialogue box can show it) or on close if the player walked
+	// off before reaching one.
+	static constexpr int32 ConversationThirstCost = 1;
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	void CloseDialogue();
@@ -319,6 +329,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
 	FEclipseDialogueClosed       OnDialogueClosed;
 
+	// Fires when a conversation's thirst cost is charged; Delta is the
+	// (negative) change. The dialogue box annotates it, the HUD tips on it.
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
+	FEclipseConversationThirstCharged OnConversationThirstCharged;
+
+	// Fires when OVERHEATED stops a conversation opening; the HUD shows the player's "…".
+	UPROPERTY(BlueprintAssignable, Category = "Eclipse|Dialogue")
+	FEclipsePlayerMumbled OnPlayerMumbled;
+
 private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> ActiveNpc;
 	UPROPERTY() TObjectPtr<AEclipseItemActor> ActiveItem;
@@ -331,6 +350,11 @@ private:
 	void HarvestYaps();
 	UPROPERTY() FEclipseDialogueNodeView CurrentNode;
 	bool bDialogueOpen = false;
+
+	// Set by OpenDialogue for a conversation that costs thirst; cleared the
+	// moment it's charged so a conversation can never pay twice.
+	bool bThirstCostPending = false;
+	void ChargeConversationThirst();
 	bool bBodyPrinting = false;   // see IsBodyPrinting
 	FName CurrentDialogueId = NAME_None;
 
@@ -392,13 +416,13 @@ private:
 	// array. Tokens that don't match any kind are skipped silently (with a
 	// Log warning so authors notice typos). Fed the current line's/choice's
 	// Ink tags (joined with commas) — same grammar as when this read from
-	// an Articy stage-directions field.
+	// a stage-directions field.
 	static TArray<FEclipseStageDirective> ParseStageDirections(const FString& Raw);
 
 	// Apply a single effect-kind directive to the player's state. StatEffect
 	// keys route through UEclipseGameStateSubsystem::ApplyStatDelta;
 	// MeterEffect keys route through ChangeMeter (which clamps to [0,10]
-	// and fires OnPlayerDeath on a Heat→0 transition). No-op for
+	// and fires OnPlayerDeath once Heat and Thirst are both 0). No-op for
 	// non-effect kinds (defensive).
 	void ApplyStageEffect(const FEclipseStageDirective& Eff) const;
 

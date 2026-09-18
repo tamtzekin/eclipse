@@ -31,20 +31,6 @@ struct FEclipseMetNpc
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName DialogueId;
 };
 
-/** Lightweight summary of a save slot for UI display. */
-USTRUCT(BlueprintType)
-struct FEclipseSaveSlotInfo
-{
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadOnly) bool bExists = false;
-	UPROPERTY(BlueprintReadOnly) int32 SlotIndex = 0;
-	UPROPERTY(BlueprintReadOnly) FString RoomDisplayName;
-	UPROPERTY(BlueprintReadOnly) FName CurrentLevelKey;
-	UPROPERTY(BlueprintReadOnly) int32 Chapter = 0;
-	UPROPERTY(BlueprintReadOnly) FDateTime SavedAt = FDateTime(0);
-	UPROPERTY(BlueprintReadOnly) FString DisplayLabel;   // pre-formatted for menu
-};
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipseGameStateChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEclipsePlayerDied);
@@ -95,7 +81,8 @@ public:
 	//   Psychedelics  — perception, openness to weird input.
 	//
 	// (Stimulation was previously a fifth stat, then a life meter; it has
-	// now been removed entirely — Heat is the meter that can kill you.)
+	// now been removed entirely — Heat and Thirst both running out is what
+	// ends the night.)
 	//
 	// Skill checks reference these via lowercase StatKey strings:
 	//   "aesthetics" | "rhythm" | "zen" | "psychedelics"
@@ -233,12 +220,10 @@ public:
 	// ── Life meters (Heat / Thirst) ───────────────────────────────────
 	//
 	// Integer 0..10 "sweet-spot" model: BOTH extremes are bad. 5 is neutral;
-	// the critical zones are ≤2 (too low) and ≥8 (too high). Meters do NOT
-	// drain over time — they only move when consumables, dialogue effects,
-	// or other explicit events push them via ChangeXxx(Delta). The HUD
-	// renders all three bars at identical dimensions with dotted lines at
-	// the 2 and 8 boundaries so the player can read at a glance how far
-	// each meter is from danger.
+	// the critical zones are ≤2 (too low) and ≥9 (too high). Both meters
+	// bleed with game time (see AdvanceGameTime) and otherwise move when
+	// consumables, dialogue effects or other explicit events push them via
+	// ChangeXxx(Delta).
 	//
 	// Semantic per meter (both ends bad; 5 = sweet spot):
 	//   HEAT     0 freezing · 5 comfortable · 10 overheated
@@ -246,8 +231,8 @@ public:
 	//
 	// THIRST orientation: LOW = dry, HIGH = wet — i.e. drinking water
 	// or beer raises the meter (toward sloshing), chewing gum lowers it
-	// (toward dry). Both extremes are bad but only Heat == 0 kills the
-	// player (see OnPlayerDeath in ChangeMeter).
+	// (toward dry). Both extremes are bad; neither kills on its own
+	// (see OnPlayerDeath in ChangeMeter).
 	//
 	// Dialogue content gates these via stage directives like
 	//   "HEAT > 8"   — choice available only when overheating
@@ -255,9 +240,9 @@ public:
 	// and apply changes via the same syntax as stat changes:
 	//   "+1 HEAT", "-2 THIRST"
 	//
-	// Death: ONLY Heat == 0 (freezing out) fires OnPlayerDeath. Thirst at
-	// either extreme just locks dialogue gates and surfaces the critical
-	// HUD tint; it doesn't kill the player directly.
+	// Passing out: an empty meter's time bleed spills into the other one
+	// (see AdvanceGameTime), and OnPlayerDeath fires only once Heat AND
+	// Thirst are both 0. One meter empty is a warning, not a fail state.
 	static constexpr int32 MeterMax          = 10;
 	static constexpr int32 MeterCriticalLow  = 2;   // value ≤ this → critical
 	// 9, not 8: Heat starts at 8, and a meter that is already in its alarm
@@ -268,9 +253,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") int32 Thirst      = 5;
 
 	// Adds Delta (signed) to the named meter (lowercase "heat" / "thirst"),
-	// clamps to [0, MeterMax], broadcasts OnStateChanged. If the meter is
-	// Heat and the post-clamp value is 0, also fires OnPlayerDeath
-	// (single-shot — won't re-fire if you stay at 0).
+	// clamps to [0, MeterMax], broadcasts OnStateChanged. If this change
+	// leaves Heat and Thirst both at 0, also fires OnPlayerDeath
+	// (single-shot — won't re-fire while both stay at 0).
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Meters")
 	void ChangeMeter(FName MeterKey, int32 Delta);
 
@@ -395,7 +380,7 @@ public:
 	// thing that moves the clock — it does not advance with wall-clock time
 	// (see TickChapterClock). Two in-game minutes per choice.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time")
-	float DialogueChoiceSeconds = 120.f;
+	float DialogueChoiceSeconds = 300.f;
 
 	// The clock READOUT is quantised to this many minutes — the underlying
 	// ChapterElapsedSeconds still advances two minutes at a time, but the
@@ -429,7 +414,7 @@ public:
 	float LastThirstDecayAtSeconds = 0.f;
 
 	// Adds game-time and applies anything that keys off it (currently the
-	// Heat bleed). Callers should use this rather than writing
+	// Heat and Thirst bleeds). Callers should use this rather than writing
 	// ChapterElapsedSeconds directly, or the time-driven effects silently
 	// stop firing.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Time")
@@ -440,6 +425,25 @@ public:
 	// fire again on the next climb to 10.
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters")
 	bool bMaxHeatThirstPenaltyApplied = false;
+
+	// ── Overflow states: pushing a meter past MeterMax. Real seconds, since game time only moves in dialogue. ──
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters") float WastedSeconds     = 45.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Meters") float OverheatedSeconds = 30.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float WastedTimeLeft     = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Meters") float OverheatedTimeLeft = 0.f;
+
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Meters") bool IsWasted() const     { return WastedTimeLeft > 0.f; }
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Meters") bool IsOverheated() const { return OverheatedTimeLeft > 0.f; }
+
+	// 1 as a cooldown starts, easing to 0 as it runs out — drives the bar glow.
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Meters") float GetWastedIntensity() const     { return WastedSeconds > 0.f ? FMath::Clamp(WastedTimeLeft / WastedSeconds, 0.f, 1.f) : 0.f; }
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Meters") float GetOverheatedIntensity() const { return OverheatedSeconds > 0.f ? FMath::Clamp(OverheatedTimeLeft / OverheatedSeconds, 0.f, 1.f) : 0.f; }
+
+	// True for anything that would add Thirst while WASTED.
+	bool IsDrinkBlocked(const struct FEclipseItemRow& Row) const;
+
+	// Counts the overflow cooldowns down; called every unpaused frame by the player.
+	void TickStatusEffects(float DeltaSeconds);
 
 	// True while the clock is ticking. Auto-paused during dialogue (the
 	// player character skips TickChapterClock when dialogue is open) and
@@ -687,9 +691,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipseGameStateChanged OnStateChanged;
 
-	// Fires once when Heat transitions from > 0 to 0. The HUD
-	// listens and opens the death overlay (TRY AGAIN / QUIT). Reset by
-	// Load or by ChangeHeat lifting the value back above 0.
+	// Fires once when Heat and Thirst both reach 0 — the player passes out.
+	// The HUD listens and opens the death overlay (RETRY / QUIT). Re-arms
+	// as soon as either meter is lifted back above 0.
 	UPROPERTY(BlueprintAssignable, Category = "Eclipse|State")
 	FEclipsePlayerDied OnPlayerDeath;
 
@@ -716,28 +720,27 @@ public:
 	void NotifyChanged() { OnStateChanged.Broadcast(); }
 
 	// ── Save / Load ──
-	// Single-slot autosave at "ECLIPSE_AUTOSAVE" (user index 0). Persists every
-	// serializable field above; called by EclipseGameInstance::Shutdown for
-	// quit-autosave and Init for load-on-boot.
+	// Autosave only, one slot ("ECLIPSE_AUTOSAVE"): no manual saves means no save-scumming.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
 	bool SaveCurrent();
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
 	bool TryLoadCurrent();
 
-	// Manual slot save/load — slot index 0..NumManualSlots-1. The autosave
-	// slot is independent (used by GameInstance + dialogue startGame).
+	// Loads the autosave and reopens its map with the player at the saved spot. False if there's no save.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
-	bool SaveToSlot(int32 SlotIndex);
+	bool RetryFromSave();
 
+	// SaveCurrent, skipped while passed out so RETRY can never load a dead save.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
-	bool LoadFromSlot(int32 SlotIndex);
+	bool Autosave();
 
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
-	struct FEclipseSaveSlotInfo GetSlotInfo(int32 SlotIndex) const;
+	// "Last saved: 2 minutes ago", or "Not saved yet".
+	UFUNCTION(BlueprintPure, Category = "Eclipse|Save")
+	FText GetLastSavedText() const;
 
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|Save")
-	bool DeleteSlot(int32 SlotIndex);
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Save")
+	FDateTime LastSavedAt = FDateTime(0);
 
 	// World transform restore. SaveCurrent captures the active player pawn's
 	// location/rotation + the room key. TryLoadCurrent restores them if the
