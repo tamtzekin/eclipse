@@ -232,6 +232,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool OpenKnot(FName Knot);
 
+	// Reopens a held item's knot (its DT_Items DialogueId) from the inventory; Ink sees item_in_inventory = true.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
+	bool OpenHeldItemDialogue(FName ItemId);
+
 	/**
 	 * Overhead one-liners for a character — the "<npc>_yaps" knot in their
 	 * Ink file, if it has one. Harvested once at Initialize (see
@@ -318,6 +322,8 @@ public:
 private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> ActiveNpc;
 	UPROPERTY() TObjectPtr<AEclipseItemActor> ActiveItem;
+	// Speaker label while a held item's knot is open (no actor behind it).
+	FName HeldItemLabel;
 	UPROPERTY() TObjectPtr<UInkpotStory> Story;
 
 	// npc name -> the lines from that character's "<name>_yaps" knot.

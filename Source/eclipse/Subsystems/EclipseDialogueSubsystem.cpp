@@ -288,12 +288,29 @@ bool UEclipseDialogueSubsystem::OpenItemDialogue(AEclipseItemActor* Item)
 		}
 	}
 
+	// Lying in the world: Ink offers "Take it".
+	bool bInvOk = false;
+	Story->SetBool(TEXT("item_in_inventory"), false, bInvOk);
+
 	Story->ChoosePath(CurrentDialogueId.ToString());
 	BuildNodeFromStory();
 
 	OnDialogueOpened.Broadcast(nullptr);
 	UE_LOG(LogEclipse, Log, TEXT("Opened item dialogue '%s'"), *CurrentDialogueId.ToString());
 	return true;
+}
+
+bool UEclipseDialogueSubsystem::OpenHeldItemDialogue(FName ItemId)
+{
+	UEclipseGameStateSubsystem* GS = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	FEclipseItemRow Row;
+	if (!GS || !Story || !GS->GetItemRow(ItemId, Row) || Row.DialogueId.IsNone()) return false;
+
+	bool bOk = false;
+	Story->SetBool(TEXT("item_in_inventory"), true, bOk);
+	HeldItemLabel = FName(*UEclipseGameStateSubsystem::GetBaseItemId(ItemId).ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper());
+	return OpenKnot(Row.DialogueId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,7 +464,7 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 		? FName(*ActiveNpc->GetDisplayName().ToString())
 		: (ActiveItem
 			? FName(*ActiveItem->ItemId.ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper())
-			: FName(TEXT("NPC")));
+			: (HeldItemLabel.IsNone() ? FName(TEXT("NPC")) : HeldItemLabel));
 
 	// Pull everything Ink has up to the next choice point / dead end, in one
 	// go. Pacing inside that block is NOT auto-inserted — no "# BEAT" tags,
@@ -500,9 +517,22 @@ void UEclipseDialogueSubsystem::BuildNodeFromStory(const FText* EchoedChoiceText
 	// Node-level tags → EffectsLine (display only — a preview, not
 	// auto-applied; only choice-level directives get applied on click, in
 	// MakeChoice).
+	// A tag written after a choice's "]" lands on the next output line, not the choice, so MENU: can arrive here.
+	FName OutputMenuAction = NAME_None;
 	{
-		const FString NodeTags = FString::Join(Story->GetCurrentTags(), TEXT(","));
-		CurrentNode.EffectsLine = BuildEffectsLineText(ParseStageDirections(NodeTags));
+		TArray<FString> Kept;
+		for (const FString& Tag : Story->GetCurrentTags())
+		{
+			const FString T = Tag.TrimStartAndEnd();
+			if (T.StartsWith(TEXT("MENU:"))) OutputMenuAction = FName(*T.Mid(5).TrimStartAndEnd());
+			else                             Kept.Add(Tag);
+		}
+		CurrentNode.EffectsLine = BuildEffectsLineText(ParseStageDirections(FString::Join(Kept, TEXT(","))));
+	}
+	if (!OutputMenuAction.IsNone())
+	{
+		DispatchMenuAction(OutputMenuAction);
+		if (!bDialogueOpen) return;   // the action closed the conversation
 	}
 
 	BuildChoicesFromStory();
@@ -644,6 +674,7 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	AEclipseNpcCharacter* NpcToRelease = ActiveNpc;   // ActiveNpc gets nulled below
 	ActiveNpc = nullptr;
 	ActiveItem = nullptr;
+	HeldItemLabel = NAME_None;
 	CurrentDialogueId = NAME_None;
 	bBodyPrinting = false;   // widget is going away mid-cascade — don't strand the flag
 	CurrentNode = FEclipseDialogueNodeView{};

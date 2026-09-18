@@ -97,6 +97,8 @@ struct FEclipseItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName StatBoost;         // "aesthetics"|"rhythm"|"zen"|"psychedelics"|None
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 StatBoostLevels = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName QuestFlag;         // e.g. "hasHair" — for Angel's Hair drink
+	// Ink knot that inventory USE opens instead of consuming the item (e.g. the phone).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FName DialogueId;
 
 	// ── Visual ──
 	// The mesh every actor with this Id wears. Set it once here and every
