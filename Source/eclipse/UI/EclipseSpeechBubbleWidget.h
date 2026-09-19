@@ -31,14 +31,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	void SetBubble(EEclipseBubbleType InType, bool bMuted);
 
-	/**
-	 * Overhead caption — a "yap". Reuses this widget rather than adding a
-	 * second UWidgetComponent per NPC: only one thing can sit above a head
-	 * at a time anyway, and SetBubble puts the ?/! pill back afterwards.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
-	void SetYap(const FText& Line);
-
 protected:
 	virtual bool Initialize() override;
 

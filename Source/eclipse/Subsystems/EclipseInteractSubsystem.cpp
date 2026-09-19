@@ -10,6 +10,7 @@
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Player/EclipsePlayerCharacter.h"
+#include "Subsystems/EclipseDanceBattleSubsystem.h"
 
 void UEclipseInteractSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -31,6 +32,14 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	if (!PC) return;
 	APawn* Pawn = PC->GetPawn();
 	if (!Pawn) return;
+
+	// Nothing is interactable mid dance battle: clears the name label and keeps E from opening a conversation.
+	if (const UEclipseDanceBattleSubsystem* Dance = World->GetSubsystem<UEclipseDanceBattleSubsystem>(); Dance && Dance->IsRunning())
+	{
+		if (NearTalkable) { NearTalkable = nullptr; OnNearTalkableChanged.Broadcast(nullptr); }
+		if (NearItem)     { NearItem = nullptr;     OnNearItemChanged.Broadcast(nullptr); }
+		return;
+	}
 
 	const FVector PlayerPos = Pawn->GetActorLocation();
 	// "Eye" point used for the LOS trace — Pawn location is at feet on

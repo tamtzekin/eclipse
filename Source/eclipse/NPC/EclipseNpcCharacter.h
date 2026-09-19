@@ -191,8 +191,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|NPC")
 	void StopFacePlayer();
 
-	// Shows Line in the overhead yap bubble for HoldSeconds, e.g. dance battle trash talk.
-	void Yap(const FString& Line, float HoldSeconds);
+	// Says Line overhead for HoldSeconds. A _word_ is picked out in Highlight; BeatSeconds > 0 bumps the line on the beat.
+	void Yap(const FString& Line, float HoldSeconds, const FLinearColor& Highlight = FLinearColor::White, float BeatSeconds = 0.f);
 
 	// ── Approach turn: gradual pre-lock lean toward the player as they close
 	//    in from the wide outer radius, well before the tight lock-on radius
@@ -257,6 +257,7 @@ private:
 	float YapTimer     = 0.f;   // counts down to the next yap
 	float YapShowing   = 0.f;   // >0 while a caption is on screen
 	int32 LastYapIndex = -1;
+	TWeakObjectPtr<class UEclipseYapWidget> ActiveYap;
 	void TickYaps(float DeltaTime);
 	bool     bFacingPlayer          = false;
 	TWeakObjectPtr<AActor> FacePlayerTarget;

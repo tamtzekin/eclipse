@@ -1247,7 +1247,19 @@ void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
 		ChangeMeter(Heat > 0 ? TEXT("heat") : TEXT("thirst"), -1);
 	}
 
-	// Same shape for Thirst on its own, slower interval. Separate accumulator
+	if (!bHoldThirstDrain) ApplyThirstDrain();
+	NotifyChanged();
+}
+
+void UEclipseGameStateSubsystem::SetHoldThirstDrain(bool bHold)
+{
+	bHoldThirstDrain = bHold;
+	if (!bHold) ApplyThirstDrain();   // everything the conversation owed, in one go
+}
+
+void UEclipseGameStateSubsystem::ApplyThirstDrain()
+{
+	// Same shape as Heat on its own, slower interval. Separate accumulator
 	// so the two never have to share a period.
 	const float ThirstIntervalSeconds = FMath::Max(1, ThirstDecayIntervalMinutes) * 60.f;
 	while (ChapterElapsedSeconds - LastThirstDecayAtSeconds >= ThirstIntervalSeconds)
@@ -1255,8 +1267,6 @@ void UEclipseGameStateSubsystem::AdvanceGameTime(float Seconds)
 		LastThirstDecayAtSeconds += ThirstIntervalSeconds;
 		ChangeMeter(Thirst > 0 ? TEXT("thirst") : TEXT("heat"), -1);
 	}
-
-	NotifyChanged();
 }
 
 bool UEclipseGameStateSubsystem::IsDrinkBlocked(const FEclipseItemRow& Row) const
@@ -1434,6 +1444,9 @@ namespace
 		Save->MetNPCs                  = GS.MetNPCs;
 		Save->FailedChoicesThisChapter = GS.FailedChoicesThisChapter;
 		Save->bVipAccessGranted        = GS.bVipAccessGranted;
+		Save->UnlockedDanceStyles      = GS.UnlockedDanceStyles;
+		Save->DanceStyleLevels         = GS.DanceStyleLevels;
+		Save->DanceStyleXP             = GS.DanceStyleXP;
 		Save->Chapter                  = GS.Chapter;
 		Save->ChapterElapsedSeconds    = GS.ChapterElapsedSeconds;
 		Save->SavedAt                  = FDateTime::Now();
@@ -1519,6 +1532,9 @@ namespace
 		GS.MetNPCs                  = Save->MetNPCs;
 		GS.FailedChoicesThisChapter = Save->FailedChoicesThisChapter;
 		GS.bVipAccessGranted        = Save->bVipAccessGranted;
+		if (Save->UnlockedDanceStyles >= 0) GS.UnlockedDanceStyles = Save->UnlockedDanceStyles;
+		if (Save->DanceStyleLevels.Num() == GS.DanceStyleLevels.Num()) GS.DanceStyleLevels = Save->DanceStyleLevels;
+		if (Save->DanceStyleXP.Num() == GS.DanceStyleXP.Num()) GS.DanceStyleXP = Save->DanceStyleXP;
 		GS.Chapter                  = Save->Chapter;
 		GS.ChapterElapsedSeconds    = Save->ChapterElapsedSeconds;
 
@@ -1665,4 +1681,17 @@ void UEclipseGameStateSubsystem::ConsumePendingTeleport(APawn* Pawn)
 	bPendingTeleport = false;
 	PendingTeleportLocation = FVector::ZeroVector;
 	PendingTeleportRotation = FRotator::ZeroRotator;
+}
+
+void UEclipseGameStateSubsystem::AddDanceStyleXP(EEclipseDanceStyle Style, int32 Amount)
+{
+	const int32 i = (int32)Style;
+	if (!DanceStyleXP.IsValidIndex(i) || !DanceStyleLevels.IsValidIndex(i)) return;
+	DanceStyleXP[i] += Amount;
+	while (DanceStyleXP[i] >= StatXPToLevel)
+	{
+		DanceStyleXP[i] -= StatXPToLevel;
+		++DanceStyleLevels[i];
+	}
+	NotifyChanged();
 }

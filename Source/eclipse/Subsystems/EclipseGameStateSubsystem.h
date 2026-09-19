@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Data/EclipseClothingDefinition.h"   // EEclipseSlotType
+#include "Data/EclipseDanceStyle.h"
 #include "EclipseGameStateSubsystem.generated.h"
 
 /**
@@ -355,6 +356,22 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Quest") TSet<FName> FailedChoicesThisChapter;
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Quest") bool bVipAccessGranted = false;
 
+	// Conversations pass game time; the THIRST that time costs is held while talking and charged when it ends.
+	void SetHoldThirstDrain(bool bHold);
+
+	// ── Dance ──
+	// Bit per EEclipseDanceStyle the player can dance; Muzzing and Tektonik to start, the rest are learned later.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance")
+	int32 UnlockedDanceStyles = (1 << (int32)EEclipseDanceStyle::Muzzing) | (1 << (int32)EEclipseDanceStyle::Tektonik);
+
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dance")
+	void UnlockDanceStyle(EEclipseDanceStyle Style) { UnlockedDanceStyles |= 1 << (int32)Style; NotifyChanged(); }
+
+	// Per-style level and XP toward the next, indexed by EEclipseDanceStyle; levels up every StatXPToLevel like the other stats.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleLevels = { 1, 1, 1, 1, 1 };
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleXP = { 0, 0, 0, 0, 0 };
+	void AddDanceStyleXP(EEclipseDanceStyle Style, int32 Amount);
+
 	// ── Time ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time") int32 Chapter = 0;
 
@@ -409,6 +426,9 @@ public:
 	// conversation leaves you dry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Time", meta = (ClampMin = "1"))
 	int32 ThirstDecayIntervalMinutes = 20;
+
+	bool bHoldThirstDrain = false;
+	void ApplyThirstDrain();
 
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time")
 	float LastThirstDecayAtSeconds = 0.f;

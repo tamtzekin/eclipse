@@ -73,6 +73,9 @@ public:
 	UPROPERTY() TSet<FName> FailedChoicesThisChapter;
 
 	UPROPERTY() bool bVipAccessGranted = false;
+	UPROPERTY() int32 UnlockedDanceStyles = -1;   // -1 = saved before dance styles existed; keep the starting set
+	UPROPERTY() TArray<int32> DanceStyleLevels;   // empty on older saves: keep the defaults
+	UPROPERTY() TArray<int32> DanceStyleXP;
 	UPROPERTY() int32 Chapter = 0;
 	UPROPERTY() float ChapterElapsedSeconds = 0.f;
 

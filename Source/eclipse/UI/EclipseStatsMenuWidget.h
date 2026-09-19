@@ -49,6 +49,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> RhythmRow;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ZenRow;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PsychedelicsRow;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StylesRows;   // one line per unlocked dance style
 
 	// Legacy meter / currency rows — kept as BindWidgetOptional so older
 	// WBPs that bound them don't break the build. Resolved to null on the

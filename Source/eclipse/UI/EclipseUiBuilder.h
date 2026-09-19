@@ -94,6 +94,11 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateDanceBattleWBP(const FString& WBPAssetPath);
 
+	// Overhead yap line; tree comes from UEclipseYapWidget::BuildTree.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateYapWBP(const FString& WBPAssetPath);
+
 	/**
 	 * Builds a UFont composite that wraps a UFontFace so Slate text widgets
 	 * (which expect UFont, not raw UFontFace) can resolve glyphs.

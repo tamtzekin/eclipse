@@ -224,7 +224,7 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	{
 		S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 		S->SetAlignment(FVector2D(0.5f, 0.5f));
-		S->SetSize(FVector2D(560.f, 520.f));
+		S->SetSize(FVector2D(560.f, 700.f));
 		S->SetZOrder(1);
 	}
 
@@ -273,6 +273,16 @@ void UEclipseStatsMenuWidget::BuildFallbackTree()
 	RhythmRow       = MakeStatRow(TEXT("RhythmRow"));
 	ZenRow          = MakeStatRow(TEXT("ZenRow"));
 	PsychedelicsRow = MakeStatRow(TEXT("PsychedelicsRow"));
+
+	UTextBlock* StylesTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StylesTitle"));
+	StylesTitle->SetText(FText::FromString(TEXT("STYLES")));
+	StylesTitle->SetFont(MakeBMSPA(22, 5.f));
+	StylesTitle->SetColorAndOpacity(FSlateColor(DialogueRed));
+	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(StylesTitle))
+	{
+		VS->SetPadding(FMargin(0.f, 20.f, 0.f, 4.f));
+	}
+	StylesRows = MakeStatRow(TEXT("StylesRows"));
 	// (Stimulation row removed — the stat no longer exists at all. The
 	// binding was dropped too; this comment stays
 	// as BindWidgetOptional for backward-compat with older WBPs.)
@@ -349,6 +359,21 @@ void UEclipseStatsMenuWidget::RefreshAll()
 	SetRow(RhythmRow,       TEXT("RHYTHM"),       GS->Rhythm,       GS->RhythmXP);
 	SetRow(ZenRow,          TEXT("ZEN"),          GS->Zen,          GS->ZenXP);
 	SetRow(PsychedelicsRow, TEXT("PSYCHEDELICS"), GS->Psychedelics, GS->PsychedelicsXP);
+
+	// Dance styles in the same columns, only the ones the player has learned.
+	if (StylesRows)
+	{
+		TArray<FString> Lines;
+		for (int32 i = 0; i < (int32)EEclipseDanceStyle::Count; ++i)
+		{
+			if (!((GS->UnlockedDanceStyles >> i) & 1) || !GS->DanceStyleLevels.IsValidIndex(i)) continue;
+			FString Name = EclipseDance::Info((EEclipseDanceStyle)i).Name;
+			while (Name.Len() < 13) Name.AppendChar(TEXT(' '));
+			Lines.Add(FString::Printf(TEXT("%s %3d  %8s"), *Name, GS->DanceStyleLevels[i],
+				*FString::Printf(TEXT("%d/%d"), GS->DanceStyleXP[i], UEclipseGameStateSubsystem::StatXPToLevel)));
+		}
+		StylesRows->SetText(FText::FromString(FString::Join(Lines, TEXT("\n"))));
+	}
 	// (Stimulation removed from the game — no row to populate.)
 
 	// HEAT / THIRST / CURRENCY intentionally NOT rendered here — those live

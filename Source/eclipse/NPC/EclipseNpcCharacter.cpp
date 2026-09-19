@@ -9,6 +9,8 @@
 #include "Materials/MaterialInterface.h"
 #include "Subsystems/EclipseInteractSubsystem.h"
 #include "UI/EclipseSpeechBubbleWidget.h"
+#include "UI/EclipseYapWidget.h"
+#include "Subsystems/EclipseDanceBattleSubsystem.h"
 #include "UI/EclipseUiStyle.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -271,16 +273,13 @@ void AEclipseNpcCharacter::RefreshBubble(bool bMuted)
 	}
 
 	BubbleWidget->SetVisibility(true);
-	BubbleWidget->SetDrawSize(FVector2D(80.f, 60.f));   // undo a yap's wider plate
 	if (UEclipseSpeechBubbleWidget* BW = Cast<UEclipseSpeechBubbleWidget>(BubbleWidget->GetUserWidgetObject()))
 	{
 		BW->SetBubble(BubbleType, bMuted);
 	}
 }
 
-// Overhead one-liners between conversations. Borrows the speech-bubble
-// widget component rather than adding a second one — only one thing can be
-// above a head at a time, and RefreshBubble puts the ?/! back afterwards.
+// Overhead one-liners between conversations, shown by UEclipseYapWidget; the ?/! bubble steps aside meanwhile.
 void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 {
 	if (bIsHidden || !BubbleWidget) return;
@@ -290,7 +289,12 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 	const UEclipseDialogueSubsystem* DS = GI ? GI->GetSubsystem<UEclipseDialogueSubsystem>() : nullptr;
 	if (DS && DS->IsDialogueOpen())
 	{
-		if (YapShowing > 0.f) { YapShowing = 0.f; RefreshBubble(); }
+		if (YapShowing > 0.f)
+		{
+			if (ActiveYap.IsValid()) ActiveYap->FadeOut();
+			YapShowing = 0.f;
+			RefreshBubble();
+		}
 		return;
 	}
 
@@ -317,6 +321,9 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 		YapTimer = FMath::FRandRange(YapGapMinSeconds, YapGapMaxSeconds) * 0.4f;
 	}
 
+	// The room hushes for a dance battle; the opponent's own lines come through Yap() directly.
+	if (const UEclipseDanceBattleSubsystem* Dance = GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>(); Dance && Dance->IsRunning()) return;
+
 	YapTimer -= DeltaTime;
 	if (YapTimer > 0.f) return;
 
@@ -338,14 +345,10 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 	Yap(YapLines[Index], YapHoldSeconds);
 }
 
-void AEclipseNpcCharacter::Yap(const FString& Line, float HoldSeconds)
+void AEclipseNpcCharacter::Yap(const FString& Line, float HoldSeconds, const FLinearColor& Highlight, float BeatSeconds)
 {
-	if (!BubbleWidget) return;
-	BubbleWidget->SetDrawSize(FVector2D(360.f, 90.f));
-	BubbleWidget->SetVisibility(true);
-	if (UEclipseSpeechBubbleWidget* BW = Cast<UEclipseSpeechBubbleWidget>(BubbleWidget->GetUserWidgetObject()))
-	{
-		BW->SetYap(FText::FromString(Line));
-	}
-	YapShowing = HoldSeconds;
+	if (ActiveYap.IsValid()) ActiveYap->RemoveFromParent();
+	ActiveYap = UEclipseYapWidget::Show(this, Line, HoldSeconds, Highlight, BeatSeconds);
+	if (BubbleWidget) BubbleWidget->SetVisibility(false);   // one thing above a head at a time; RefreshBubble brings the ?/! back
+	YapShowing = HoldSeconds + 1.f;   // covers the fade in and out
 }

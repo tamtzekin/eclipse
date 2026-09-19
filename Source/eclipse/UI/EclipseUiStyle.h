@@ -279,27 +279,6 @@ namespace EclipseUI
 	// Soft dark-red wash behind the tutorial line. A texture rather than a
 	// flat colour because Slate brushes have no gradient of their own, and a
 	// hard-edged plate reads as a UI box the rest of this HUD doesn't have.
-	// Black vertical gradient behind an overhead caption — the film-subtitle
-	// trick, so a light line stays legible over whatever is behind the NPC.
-	inline FSlateBrush CaptionPlateBrush()
-	{
-		FSlateBrush B;
-		if (UTexture2D* T = LoadObject<UTexture2D>(nullptr,
-				TEXT("/Game/Justin/UI/Tex/T_CaptionPlate.T_CaptionPlate")))
-		{
-			B.SetResourceObject(T);
-			B.DrawAs    = ESlateBrushDrawType::Image;
-			B.ImageSize = FVector2D(256.f, 64.f);
-			B.TintColor = FSlateColor(FLinearColor::White);
-		}
-		else
-		{
-			B.DrawAs    = ESlateBrushDrawType::Box;
-			B.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.72f));
-		}
-		return B;
-	}
-
 	inline FSlateBrush TutorialPlateBrush()
 	{
 		FSlateBrush B;

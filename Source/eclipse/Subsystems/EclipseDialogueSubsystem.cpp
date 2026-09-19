@@ -427,6 +427,7 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 				// per-frame tick is a deliberate no-op). AdvanceGameTime
 				// also applies everything that keys off elapsed time — the
 				// Heat bleed — and broadcasts, so the HUD refreshes.
+				GS->SetHoldThirstDrain(true);   // the THIRST this time costs lands when the conversation ends
 				GS->AdvanceGameTime(GS->DialogueChoiceSeconds);
 				UE_LOG(LogEclipse, Log, TEXT("Dlg: choice +%.0fs  %.1f -> %.1f"),
 					GS->DialogueChoiceSeconds, Before, GS->ChapterElapsedSeconds);
@@ -705,6 +706,10 @@ void UEclipseDialogueSubsystem::CloseDialogue()
 	// Walking off before the dead end still costs — no dodging it with Esc.
 	ChargeConversationThirst();
 	bDialogueOpen = false;
+	if (UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+	{
+		GS->SetHoldThirstDrain(false);
+	}
 	AEclipseNpcCharacter* NpcToRelease = ActiveNpc;   // ActiveNpc gets nulled below
 	ActiveNpc = nullptr;
 	ActiveItem = nullptr;
@@ -1350,7 +1355,16 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 		}
 		CloseDialogue();
 	}
-	else if (ActionName == TEXT("danceBattle") || ActionName == TEXT("danceTutorial"))
+	else if (ActionName.ToString().StartsWith(TEXT("unlockStyle:")))
+	{
+		const FString Wanted = ActionName.ToString().Mid(12).TrimStartAndEnd();
+		UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+		for (int32 i = 0; GS && i < (int32)EEclipseDanceStyle::Count; ++i)
+		{
+			if (Wanted.Equals(EclipseDance::Info((EEclipseDanceStyle)i).Name, ESearchCase::IgnoreCase)) GS->UnlockDanceStyle((EEclipseDanceStyle)i);
+		}
+	}
+	else if (ActionName == TEXT("danceBattle"))
 	{
 		// CloseDialogue nulls ActiveNpc, so take the opponent first.
 		AEclipseNpcCharacter* Opponent = ActiveNpc;
@@ -1358,7 +1372,7 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 		UEclipseDanceTrackData* Track = LoadObject<UEclipseDanceTrackData>(nullptr,
 			TEXT("/Game/Justin/Audio/Dance/DA_DanceTrack_ClubMusic.DA_DanceTrack_ClubMusic"));
 		UEclipseDanceBattleSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>() : nullptr;
-		if (!Track || !Dance || !Dance->StartBattle(Track, Opponent, ActionName == TEXT("danceTutorial")))
+		if (!Track || !Dance || !Dance->StartBattle(Track, Opponent))
 		{
 			UE_LOG(LogEclipse, Warning, TEXT("danceBattle: no track asset yet — run Tools/analyse_dance_track.py first"));
 		}

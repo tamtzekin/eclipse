@@ -23,6 +23,7 @@
 #include "Components/ScrollBox.h"
 #include "UI/EclipseInventoryWidget.h"   // UEclipseClothingSlotWidget
 #include "UI/EclipseDanceBattleWidget.h"
+#include "UI/EclipseYapWidget.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Components/UniformGridPanel.h"
@@ -1301,7 +1302,7 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		{
 			S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 			S->SetAlignment(FVector2D(0.5f, 0.5f));
-			S->SetSize(FVector2D(720.f, 560.f));
+			S->SetSize(FVector2D(720.f, 740.f));
 			S->SetZOrder(1);
 		}
 
@@ -1398,6 +1399,16 @@ bool UEclipseUiBuilder::PopulateStatsMenuWBP(const FString& WBPAssetPath)
 		MakeStatRow(TEXT("RhythmRow"),       TEXT("RHYTHM         1"));
 		MakeStatRow(TEXT("ZenRow"),          TEXT("ZEN            1"));
 		MakeStatRow(TEXT("PsychedelicsRow"), TEXT("PSYCHEDELICS   1"));
+
+		UTextBlock* StylesTitle = New<UTextBlock>(Tree, TEXT("StylesTitle"));
+		StylesTitle->SetText(FText::FromString(TEXT("STYLES")));
+		StylesTitle->SetFont(MakeBMSPA(22, 5.f));
+		StylesTitle->SetColorAndOpacity(FSlateColor(DialogueRed));
+		if (UVerticalBoxSlot* VS = StatList->AddChildToVerticalBox(StylesTitle))
+		{
+			VS->SetPadding(FMargin(0.f, 20.f, 0.f, 4.f));
+		}
+		MakeStatRow(TEXT("StylesRows"), TEXT("MUZZING        1"));
 
 		// (Heat / Thirst meters and currency readout intentionally omitted —
 		// stats panel is for the 5 character stats only. Heat/Thirst already
@@ -1741,6 +1752,15 @@ bool UEclipseUiBuilder::PopulateDanceBattleWBP(const FString& WBPAssetPath)
 {
 #if WITH_EDITOR
 	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree) { UEclipseDanceBattleWidget::BuildTree(Tree); });
+#else
+	(void)WBPAssetPath; return false;
+#endif
+}
+
+bool UEclipseUiBuilder::PopulateYapWBP(const FString& WBPAssetPath)
+{
+#if WITH_EDITOR
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree) { UEclipseYapWidget::BuildTree(Tree); });
 #else
 	(void)WBPAssetPath; return false;
 #endif

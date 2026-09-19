@@ -139,7 +139,7 @@ def run(sound_path, track_asset_name):
     state['h'] = unreal.register_slate_post_tick_callback(tick)
 
 
-def bake_envelope(track_asset_name, rate=50.0):
+def bake_envelope(track_asset_name, rate=100.0):
     """Loudness envelope for the battle's scrolling waveform, via LoudnessNRT; result in dance_analysis.txt."""
     track = unreal.load_asset(f'{DANCE_DIR}/{track_asset_name}')
     sound = track.get_editor_property('sound')
