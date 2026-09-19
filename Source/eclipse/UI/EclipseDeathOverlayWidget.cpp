@@ -14,6 +14,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -39,6 +40,11 @@ UEclipseDeathOverlayWidget* UEclipseDeathOverlayWidget::OpenForPlayer(APlayerCon
 	W->AddToViewport(/*ZOrder=*/1000);   // above everything else
 	W->SetIsFocusable(true);
 
+	// The music winds down to a stop like a turntable losing power as you go under.
+	if (UEclipseAudioSubsystem* Audio = PC->GetGameInstance() ? PC->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->VinylStopAllMusic(2.5f);
+	}
 	UGameplayStatics::SetGamePaused(W->GetWorld(), true);
 
 	// GameAndUI (not UIOnly) so the PC's pause-menu Esc binding still works
@@ -59,6 +65,13 @@ UEclipseDeathOverlayWidget* UEclipseDeathOverlayWidget::OpenForPlayer(APlayerCon
 void UEclipseDeathOverlayWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (SavedText)
+	{
+		if (UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
+		{
+			SavedText->SetText(GS->GetLastSavedText());
+		}
+	}
 	if (FadeT >= 1.f) return;
 
 	// The world sinks into black over ~1.5 s, then the panel surfaces out of it.
@@ -210,14 +223,15 @@ void UEclipseDeathOverlayWidget::BuildFallbackTree()
 	// Centred panel — same RoundedBrush(PanelBg, PanelBorder) navy as HUD
 	// and stats menu so the visual language is consistent.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DeathPanel"));
-	Panel->SetBrush(RoundedBrush(PanelBg, PanelBorder, 1.f, 0.f));
-	Panel->SetPadding(FMargin(36.f, 28.f));
+	// Same plain black box and Rodin type as the pause menu.
+	Panel->SetBrush(SolidBrush(FLinearColor::Black));
+	Panel->SetPadding(FMargin(56.f, 40.f));
 	Panel->SetRenderOpacity(0.f);
 	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Panel))
 	{
 		S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 		S->SetAlignment(FVector2D(0.5f, 0.5f));
-		// Sized to content: "YOU PASSED OUT" is twice the width of the old
+		// Sized to content: "YOU BLACKED OUT" is twice the width of the old
 		// title and would overflow a fixed box.
 		S->SetAutoSize(true);
 		S->SetZOrder(1);
@@ -226,15 +240,14 @@ void UEclipseDeathOverlayWidget::BuildFallbackTree()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DeathColumn"));
 	Panel->SetContent(Column);
 
-	// Title — red-shifted cyan to match the bleeding-energy pulse.
 	Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DeathTitle"));
-	Title->SetText(FText::FromString(TEXT("YOU PASSED OUT")));
-	Title->SetFont(MakeBerenjena(72, 10.f));
-	Title->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.30f, 0.25f, 1.f)));
+	Title->SetText(FText::FromString(TEXT("YOU BLACKED OUT")));
+	Title->SetFont(MakeRodin(34));
+	Title->SetColorAndOpacity(FSlateColor(Cream));
 	Title->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Title))
 	{
-		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 40.f));
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 28.f));
 		VS->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -243,27 +256,42 @@ void UEclipseDeathOverlayWidget::BuildFallbackTree()
 	{
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
 		FButtonStyle BS;
-		BS.Normal   = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.05f));
-		BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
-		BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.22f));
-		BS.Disabled = SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.04f));
+		BS.Normal   = SolidBrush(FLinearColor::Transparent);
+		BS.Hovered  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.08f));
+		BS.Pressed  = SolidBrush(FLinearColor(0.945f, 0.929f, 0.851f, 0.15f));
+		BS.Disabled = SolidBrush(FLinearColor::Transparent);
 		Btn->SetStyle(BS);
 
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("%s_Label"), *WidgetName.ToString())));
 		T->SetText(FText::FromString(Label));
-		T->SetFont(MakeBerenjena(28, 5.f));
+		T->SetFont(MakeRodin(22));
 		T->SetColorAndOpacity(FSlateColor(Cream));
 		T->SetJustification(ETextJustify::Center);
 		Btn->SetContent(T);
 
 		if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(Btn))
 		{
-			VS->SetPadding(FMargin(0.f, 8.f));
+			VS->SetPadding(FMargin(0.f, 4.f));
 			VS->SetHorizontalAlignment(HAlign_Fill);
 		}
 		return Btn;
 	};
+
+	// Where RETRY will put you back.
+	SavedText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SavedText"));
+	{
+		FSlateFontInfo F = MakeRodin(14);
+		F.SkewAmount = 0.2f;
+		SavedText->SetFont(F);
+	}
+	SavedText->SetColorAndOpacity(FSlateColor(CreamDim));
+	SavedText->SetJustification(ETextJustify::Center);
+	if (UVerticalBoxSlot* VS = Column->AddChildToVerticalBox(SavedText))
+	{
+		VS->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+		VS->SetHorizontalAlignment(HAlign_Center);
+	}
 
 	TryAgainBtn = MakeBtn(TEXT("RETRY"), TEXT("TryAgainBtn"));
 	QuitBtn     = MakeBtn(TEXT("QUIT"),  TEXT("QuitBtn"));

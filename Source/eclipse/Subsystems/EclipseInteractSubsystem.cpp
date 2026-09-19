@@ -260,6 +260,8 @@ bool UEclipseInteractSubsystem::TryInteract()
 		if (bBlockedByThirst)
 		{
 			UE_LOG(LogEclipse, Log, TEXT("Thirst=0 — blocked from talking to non-key NPC"));
+			// Say why, or it reads as the NPC being broken.
+			NearTalkable->Yap(TEXT("You're parched. Get a drink first."), 2.5f);
 			return false;
 		}
 		if (UEclipseDialogueSubsystem* Dlg = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())

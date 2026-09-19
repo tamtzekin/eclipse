@@ -17,6 +17,7 @@
 #include "EclipseHUDWidget.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -70,7 +71,7 @@ UEclipsePauseMenuWidget* UEclipsePauseMenuWidget::OpenForPlayer(APlayerControlle
 		W ? TEXT("OK") : TEXT("FAILED"));
 	if (!W) return nullptr;
 
-	W->AddToViewport(/*ZOrder=*/100);
+	W->AddToViewport(/*ZOrder=*/900);   // over the dance battle screen and yaps; under the black-out screen
 	W->SetIsFocusable(true);
 	W->SetKeyboardFocus();
 	SetGameplayHUDVisible(PC, false);
@@ -100,7 +101,16 @@ UEclipsePauseMenuWidget* UEclipsePauseMenuWidget::OpenForPlayer(APlayerControlle
 	// Pause world + UI input mode + cursor on. SetGamePaused respects a
 	// PlayerController, so input that's bound to "executes when paused"
 	// (which we set on the IA later if needed) still fires.
-	UGameplayStatics::SetGamePaused(W->GetWorld(), true);
+	// Music drags down like a deck losing power, then the world pauses; input goes to the menu straight away.
+	TWeakObjectPtr<UWorld> PauseWorld = W->GetWorld();
+	if (UEclipseAudioSubsystem* Audio = PC->GetGameInstance() ? PC->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->RampDeckSpeed(0.4f, 0.9f, [PauseWorld]() { if (PauseWorld.IsValid()) UGameplayStatics::SetGamePaused(PauseWorld.Get(), true); });
+	}
+	else
+	{
+		UGameplayStatics::SetGamePaused(W->GetWorld(), true);
+	}
 	FInputModeUIOnly Mode;
 	Mode.SetWidgetToFocus(W->TakeWidget());
 	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -116,6 +126,11 @@ void UEclipsePauseMenuWidget::Close()
 	if (UWorld* W = GetWorld())
 	{
 		UGameplayStatics::SetGamePaused(W, false);
+	}
+	// And spins back up to speed.
+	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->RampDeckSpeed(1.f, 0.35f);
 	}
 	if (PC)
 	{

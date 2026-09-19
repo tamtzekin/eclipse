@@ -257,6 +257,12 @@ private:
 	// like instant feedback, long enough that the eye catches it.
 	static constexpr float PulseDuration = 0.9f;
 
+	// Low meters beat like a heart: the bar thumps and its text fizzes like static on every beat.
+	float HeartTime = 0.f;
+	bool bHeatBeating = false;
+	bool bThirstBeating = false;
+	void TickHeartbeat(float DeltaSeconds);
+
 	// (Kept for back-compat — formats the chapter clock from the shared
 	// subsystem helper. HUD instance is collapsed so this is dormant
 	// today.)

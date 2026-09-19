@@ -6,6 +6,7 @@
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "UObject/UObjectIterator.h"
 
 void UEclipseAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -16,6 +17,8 @@ void UEclipseAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UEclipseAudioSubsystem::Deinitialize()
 {
 	UE_LOG(LogEclipse, Log, TEXT("AudioSubsystem::Deinitialize"));
+	FTSTicker::GetCoreTicker().RemoveTicker(WindDownTicker);
+	FTSTicker::GetCoreTicker().RemoveTicker(DeckTicker);
 	if (CurrentMusic)
 	{
 		CurrentMusic->Stop();
@@ -128,6 +131,7 @@ void UEclipseAudioSubsystem::PlayMusic(USoundBase* Sound, float FadeInSeconds, f
 
 	if (CurrentMusic)
 	{
+		CurrentMusic->bIsUISound = false;   // SpawnSound2D marks it UI, which would keep it playing through the pause menu
 		// Fade up to the global MusicVolume multiplier — 0 keeps the track
 		// silent (slice currently ships muted; flip via SetMusicVolume later).
 		CurrentMusic->FadeIn(FadeInSeconds, /*FadeVolumeLevel=*/MusicVolume);
@@ -195,4 +199,68 @@ UAudioComponent* UEclipseAudioSubsystem::PlaySliced(USoundBase* Sound,
 			Duration, /*bLoop=*/false);
 	}
 	return C;
+}
+
+void UEclipseAudioSubsystem::ForEachMusic(UWorld* World, TFunctionRef<void(UAudioComponent*)> Fn)
+{
+	// ponytail: "music" = anything playing longer than a minute; tag components properly if SFX ever run that long.
+	for (TObjectIterator<UAudioComponent> It; It && World; ++It)
+	{
+		UAudioComponent* C = *It;
+		if (C->GetWorld() == World && C->IsPlaying() && C->Sound && C->Sound->GetDuration() >= 60.f) Fn(C);
+	}
+}
+
+void UEclipseAudioSubsystem::VinylStopAllMusic(float Seconds)
+{
+	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	if (!World) return;
+
+	WindingDown.Reset();
+	ForEachMusic(World, [this](UAudioComponent* C)
+	{
+		C->bIsUISound = true;   // keeps it audible through the pass-out pause while it winds down
+		WindingDown.Emplace(C, C->PitchMultiplier);
+	});
+	WindDownT = 0.f;
+	WindDownSeconds = FMath::Max(0.1f, Seconds);
+	FTSTicker::GetCoreTicker().RemoveTicker(WindDownTicker);
+	WindDownTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float Dt)
+	{
+		WindDownT += Dt;
+		const float A = FMath::Clamp(WindDownT / WindDownSeconds, 0.f, 1.f);
+		for (const TPair<TWeakObjectPtr<UAudioComponent>, float>& W : WindingDown)
+		{
+			UAudioComponent* C = W.Key.Get();
+			if (!C) continue;
+			if (A >= 1.f) { C->Stop(); continue; }
+			C->SetPitchMultiplier(FMath::Lerp(W.Value, 0.4f, FMath::Sqrt(A)));
+			C->SetVolumeMultiplier(1.f - FMath::Clamp((A - 0.4f) / 0.6f, 0.f, 1.f));
+		}
+		return A < 1.f;
+	}));
+}
+
+const FName UEclipseAudioSubsystem::DeckManagedTag(TEXT("DeckManaged"));
+
+void UEclipseAudioSubsystem::RampDeckSpeed(float Target, float Seconds, TFunction<void()> OnDone)
+{
+	FTSTicker::GetCoreTicker().RemoveTicker(DeckTicker);
+	const float From = DeckSpeed;
+	const float Duration = FMath::Max(0.01f, Seconds);
+	TSharedRef<float> T = MakeShared<float>(0.f);
+	// A core ticker so it keeps running through the pause it leads into or out of.
+	DeckTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this, From, Target, Duration, T, OnDone](float Dt)
+	{
+		*T += Dt;
+		const float A = FMath::Clamp(*T / Duration, 0.f, 1.f);
+		DeckSpeed = FMath::Lerp(From, Target, A);
+		ForEachMusic(GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr, [this](UAudioComponent* C)
+		{
+			if (!C->ComponentHasTag(DeckManagedTag)) C->SetPitchMultiplier(DeckSpeed);
+		});
+		if (A < 1.f) return true;
+		if (OnDone) OnDone();
+		return false;
+	}));
 }

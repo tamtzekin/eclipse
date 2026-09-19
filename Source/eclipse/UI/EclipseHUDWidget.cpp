@@ -355,6 +355,8 @@ void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSecon
 		}
 	}
 
+	TickHeartbeat(DeltaSeconds);
+
 	// Per-meter pulse decay. Only repaint when at least one pulse is
 	// still alive — the static bar state doesn't change per frame.
 	const bool bAnyAlive =
@@ -367,6 +369,40 @@ void UEclipseHUDWidget::NativeTick(const FGeometry& InGeometry, float DeltaSecon
 	// Repaint with updated pulse values. UpdateBars will not re-trigger
 	// pulses because the Last* values are already current.
 	UpdateBars();
+}
+
+void UEclipseHUDWidget::TickHeartbeat(float DeltaSeconds)
+{
+	UEclipseGameStateSubsystem* GS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr;
+	if (!GS) return;
+	HeartTime += DeltaSeconds;
+
+	// Lub-dub: a hard beat, a softer one just behind it, then rest, about 70 bpm.
+	constexpr float Period = 0.85f;
+	const float T = FMath::Fmod(HeartTime, Period);
+	const auto Thump = [](float X) { return X < 0.f ? 0.f : FMath::Exp(-X * 16.f); };
+	const float Beat = FMath::Max(Thump(T), 0.6f * Thump(T - 0.2f));
+
+	const auto Apply = [&](bool bLow, bool& bWasBeating, UWidget* Bar, UTextBlock* Label, UTextBlock* Value)
+	{
+		if (!bLow && !bWasBeating) return;
+		bWasBeating = bLow;
+		const float B = bLow ? Beat : 0.f;
+		if (Bar) Bar->SetRenderScale(FVector2D(1.f + 0.08f * B, 1.f + 0.25f * B));
+		for (UTextBlock* Text : { Label, Value })
+		{
+			if (!Text) continue;
+			// Static: on each thump the letters jump, shear and ghost, then snap back clean between beats.
+			const float J = B * B;
+			Text->SetRenderTranslation(FVector2D(FMath::FRandRange(-3.f, 3.f), FMath::FRandRange(-1.5f, 1.5f)) * J);
+			Text->SetRenderShear(FVector2D(FMath::FRandRange(-14.f, 14.f) * J, 0.f));
+			Text->SetRenderOpacity(1.f - 0.45f * J * FMath::FRand());
+			Text->SetShadowOffset(FVector2D(FMath::FRandRange(-4.f, 4.f), FMath::FRandRange(-2.f, 2.f)) * J);
+			Text->SetShadowColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.5f * J));
+		}
+	};
+	Apply(GS->Heat <= UEclipseGameStateSubsystem::MeterCriticalLow, bHeatBeating, HeatBar, HeatLabelText, HeatValueText);
+	Apply(GS->Thirst <= UEclipseGameStateSubsystem::MeterCriticalLow, bThirstBeating, ThirstBar, ThirstLabelText, ThirstValueText);
 }
 
 void UEclipseHUDWidget::HandleStateChanged()
@@ -466,7 +502,11 @@ void UEclipseHUDWidget::ApplyBarStyle(UProgressBar* Bar, int32 Value, FLinearCol
 		T = FMath::Lerp(T, FLinearColor::White, FlashAmount);
 	}
 
-	Bar->SetPercent((float)Value / (float)UEclipseGameStateSubsystem::MeterMax);
+	// The lower the meter, the more washed-out its fill.
+	const float Full = (float)Value / (float)UEclipseGameStateSubsystem::MeterMax;
+	const float Grey = T.GetLuminance();
+	T = FMath::Lerp(FLinearColor(Grey, Grey, Grey, 0.45f), T, FMath::Lerp(0.25f, 1.f, Full));
+	Bar->SetPercent(Full);
 	Bar->SetFillColorAndOpacity(T);
 }
 

@@ -10,7 +10,7 @@ class UButton;
 class UTextBlock;
 
 /**
- * "YOU PASSED OUT" overlay — opens when UEclipseGameStateSubsystem::
+ * "YOU BLACKED OUT" overlay — opens when UEclipseGameStateSubsystem::
  * OnPlayerDeath fires (Heat and Thirst both 0). Modal pause, two buttons:
  *   • RETRY — rewinds to save slot 0, or resets the meters if there isn't one
  *   • QUIT  — returns to the main menu level
@@ -40,6 +40,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> TryAgainBtn;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> QuitBtn;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Title;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SavedText;   // "Last saved: 2 minutes ago"
 
 private:
 	UFUNCTION() void OnTryAgainClicked();

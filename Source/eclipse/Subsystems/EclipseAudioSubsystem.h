@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Containers/Ticker.h"
 #include "EclipseAudioSubsystem.generated.h"
 
 class USoundBase;
@@ -78,6 +79,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
 	void StopMusic(float FadeOutSeconds = 1.f);
 
+	// Deck speed for all music: ramps linearly to Target over Seconds (pause menu slows to a crawl, resume spins back up).
+	// Music that sets its own pitch (tagged DeckManaged, e.g. the dance battle) reads GetDeckSpeed and multiplies it in.
+	void RampDeckSpeed(float Target, float Seconds, TFunction<void()> OnDone = nullptr);
+	float GetDeckSpeed() const { return DeckSpeed; }
+	static const FName DeckManagedTag;
+
+	// Every music track in the world winds down like a turntable losing power, then stops. Runs through a pause.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Audio")
+	void VinylStopAllMusic(float Seconds = 2.5f);
+
 	// Global music multiplier — 0.0 mutes all music tracks, 1.0 plays at the
 	// asset's authored level. Lives separately from PlayMusic's per-call
 	// VolumeMultiplier so we can ship the slice with music wired-up but
@@ -111,6 +122,16 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> CurrentMusic;
+
+	TArray<TPair<TWeakObjectPtr<UAudioComponent>, float>> WindingDown;   // component, its pitch when the stop began
+	float WindDownT = 0.f;
+	float WindDownSeconds = 2.5f;
+	FTSTicker::FDelegateHandle WindDownTicker;
+
+	void ForEachMusic(UWorld* World, TFunctionRef<void(UAudioComponent*)> Fn);
+
+	float DeckSpeed = 1.f;
+	FTSTicker::FDelegateHandle DeckTicker;
 
 	// Was 0 while the slice shipped deliberately muted. Room music now comes
 	// through PlayMusic (2D, from the room's BeginPlay) rather than an

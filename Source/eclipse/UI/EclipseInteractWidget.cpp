@@ -360,6 +360,7 @@ void UEclipseInteractWidget::RefreshPrompt()
 	if (bDialogueOpen)
 	{
 		PromptText->SetVisibility(ESlateVisibility::Collapsed);
+		if (PromptMark) PromptMark->SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
 
@@ -438,7 +439,7 @@ void UEclipseInteractWidget::BuildPromptMark()
 	F.OutlineSettings.OutlineColor = EclipseUI::DialogueRed.CopyWithNewOpacity(0.85f);
 	F.OutlineSettings.bApplyOutlineToDropShadows = true;
 	PromptMark->SetFont(F);
-	PromptMark->SetText(FText::FromString(TEXT("x")));
+	PromptMark->SetText(FText::FromString(TEXT("[x]")));
 	PromptMark->SetColorAndOpacity(FSlateColor(EclipseUI::Cream));
 	PromptMark->SetVisibility(ESlateVisibility::Collapsed);
 	if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(PromptMark))

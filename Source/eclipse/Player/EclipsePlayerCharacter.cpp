@@ -16,6 +16,7 @@
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
+#include "Engine/PostProcessVolume.h"
 
 AEclipsePlayerCharacter::AEclipsePlayerCharacter()
 {
@@ -532,6 +533,7 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 	if (UEclipseGameStateSubsystem* FxGS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)
 	{
 		FxGS->TickStatusEffects(DeltaTime);
+		TickLowMeterScreen(FxGS, DeltaTime);
 	}
 
 	// WASTED: movement trails the input; sober, drop any leftover drift.
@@ -723,4 +725,25 @@ void AEclipsePlayerCharacter::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+void AEclipsePlayerCharacter::TickLowMeterScreen(const UEclipseGameStateSubsystem* GS, float DeltaTime)
+{
+	// One unbound volume over the whole level: low HEAT closes the edges in like an eye shutting, low THIRST drains the colour.
+	if (!LowMeterVolume)
+	{
+		LowMeterVolume = GetWorld()->SpawnActor<APostProcessVolume>();
+		if (!LowMeterVolume) return;
+		LowMeterVolume->bUnbound = true;
+		LowMeterVolume->Priority = 1000.f;
+		LowMeterVolume->Settings.bOverride_VignetteIntensity = true;
+		LowMeterVolume->Settings.bOverride_ColorSaturation = true;
+	}
+	// Starts at 4 and is full-on at 0.
+	const auto Low = [](int32 V) { return FMath::Clamp((4.f - V) / 4.f, 0.f, 1.f); };
+	HeatDark = FMath::FInterpTo(HeatDark, Low(GS->Heat), DeltaTime, 1.5f);
+	ThirstGrey = FMath::FInterpTo(ThirstGrey, Low(GS->Thirst), DeltaTime, 1.5f);
+	LowMeterVolume->Settings.VignetteIntensity = FMath::Lerp(0.4f, 2.5f, HeatDark);
+	const float Sat = FMath::Lerp(1.f, 0.05f, ThirstGrey);
+	LowMeterVolume->Settings.ColorSaturation = FVector4(Sat, Sat, Sat, 1.f);
 }

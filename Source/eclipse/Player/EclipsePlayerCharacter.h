@@ -217,6 +217,12 @@ private:
 	// Spawned on first use by FocusOnActor, reused for every later inspect.
 	UPROPERTY() TObjectPtr<ACameraActor> InspectCamera;
 
+	// Low-meter screen: vignette for HEAT, desaturation for THIRST, eased so they creep in.
+	UPROPERTY() TObjectPtr<class APostProcessVolume> LowMeterVolume;
+	float HeatDark = 0.f;
+	float ThirstGrey = 0.f;
+	void TickLowMeterScreen(const class UEclipseGameStateSubsystem* GS, float DeltaTime);
+
 	bool    bFacingTarget = false;
 	FVector FaceTargetLocation = FVector::ZeroVector;
 
