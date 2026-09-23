@@ -1,70 +1,70 @@
 {
-    "FileVersion": 3,
-    "EngineAssociation": "5.8",
-    "Category": "",
-    "Description": "ECLIPSE — nightclub vertical slice (UE 5.8.2).",
-    "Modules": [
-        {
-            "Name": "eclipse",
-            "Type": "Runtime",
-            "LoadingPhase": "Default",
-            "AdditionalDependencies": [
-                "Engine",
-                "AIModule",
-                "UMG",
-                "EnhancedInput"
-            ]
-        }
-    ],
-    "Plugins": [
-        {
-            "Name": "ModelingToolsEditorMode",
-            "Enabled": true,
-            "TargetAllowList": [
-                "Editor"
-            ]
-        },
-        {
-            "Name": "StateTree",
-            "Enabled": true
-        },
-        {
-            "Name": "GameplayStateTree",
-            "Enabled": true
-        },
-        {
-            "Name": "EnhancedInput",
-            "Enabled": true
-        },
-        {
-            "Name": "PythonScriptPlugin",
-            "Enabled": true
-        },
-        {
-            "Name": "EditorScriptingUtilities",
-            "Enabled": true
-        },
-        {
-            "Name": "McpAutomationBridge",
-            "Enabled": true,
-            "PlatformAllowList": [
-                "Mac",
-                "Win64"
-            ],
-            "TargetAllowList": [
-                "Editor"
-            ]
-        },
-        {
-            "Name": "Inkpot",
-            "Enabled": true
-        },
-        {
-            "Name": "AudioSynesthesia",
-            "Enabled": true,
-            "TargetAllowList": [
-                "Editor"
-            ]
-        }
-    ]
+	"FileVersion": 3,
+	"EngineAssociation": "{98BAF671-4C2A-0440-A394-4CB4D818BC37}",
+	"Category": "",
+	"Description": "ECLIPSE — nightclub vertical slice (UE 5.8.2).",
+	"Modules": [
+		{
+			"Name": "eclipse",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"AIModule",
+				"UMG",
+				"EnhancedInput"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayStateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		},
+		{
+			"Name": "McpAutomationBridge",
+			"Enabled": true,
+			"PlatformAllowList": [
+				"Mac",
+				"Win64"
+			],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "Inkpot",
+			"Enabled": true
+		},
+		{
+			"Name": "AudioSynesthesia",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	]
 }
