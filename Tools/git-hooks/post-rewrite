@@ -1,0 +1,5 @@
+#!/bin/sh
+# git pull --rebase rewrites instead of merging, so post-merge never fires.
+[ "$1" = "rebase" ] || exit 0
+git rev-parse --quiet --verify ORIG_HEAD >/dev/null 2>&1 || exit 0
+exec "$(dirname "$0")/_rebuild.sh" "ORIG_HEAD HEAD"
