@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "{98BAF671-4C2A-0440-A394-4CB4D818BC37}",
+	"EngineAssociation": "5.8",
 	"Category": "",
 	"Description": "ECLIPSE — nightclub vertical slice (UE 5.8.2).",
 	"Modules": [
