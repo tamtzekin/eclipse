@@ -1,7 +1,7 @@
 #!/bin/bash
 # Package the ECLIPSE demo for Mac → Build/Demo/Mac/eclipse.app
 #
-# Cooks only L_MainMenu + L_CLUB_NEW1 (Outside-Blockout comes along as the
+# Cooks only L_MainMenu + L_CLUB_INSTANCES (Outside-Blockout comes along as the
 # club's streaming sublevel). Everything the game string-loads at runtime —
 # the Ink story, the WBPs, the DataTables — is covered by DirectoriesToAlwaysCook
 # in DefaultGame.ini, not by the cooker's dependency walk.
@@ -18,7 +18,7 @@ OUT="$(dirname "$PROJ")/Build/Demo"
   -project="$PROJ" -noP4 -platform=Mac -targetplatform=Mac \
   -clientconfig=Development -nodebuginfo -utf8output \
   ${1:+-build} -cook -stage -pak -archive -archivedirectory="$OUT" \
-  -map="/Game/Justin/Levels/L_MainMenu+/Game/Justin/Levels/L_CLUB_NEW1"
+  -map="/Game/Justin/Levels/L_MainMenu+/Game/Justin/Levels/L_CLUB_INSTANCES"
 
 # UAT's Mac archive step copies Binaries/Mac/eclipse.app — the bare executable,
 # with no Contents/UE and therefore no paks. The staged app is the real one.

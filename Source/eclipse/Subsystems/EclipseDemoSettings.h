@@ -64,7 +64,7 @@ public:
 
 	// Level a new demo run begins in.
 	UPROPERTY(config, EditAnywhere, Category = "Demo Flow")
-	FName FirstPlayableLevel = TEXT("L_CLUB_NEW1");
+	FName FirstPlayableLevel = TEXT("L_CLUB_INSTANCES");
 
 	static const UEclipseDemoSettings& Get()
 	{

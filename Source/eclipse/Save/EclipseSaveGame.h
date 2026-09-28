@@ -76,12 +76,13 @@ public:
 	UPROPERTY() int32 UnlockedDanceStyles = -1;   // -1 = saved before dance styles existed; keep the starting set
 	UPROPERTY() TArray<int32> DanceStyleLevels;   // empty on older saves: keep the defaults
 	UPROPERTY() TArray<int32> DanceStyleXP;
+	UPROPERTY() bool bDanceTutorialDone = false;
 	UPROPERTY() int32 Chapter = 0;
 	UPROPERTY() float ChapterElapsedSeconds = 0.f;
 
 	// World state
 	UPROPERTY() FName CurrentLevelKey;          // e.g. "Bathroom"
-	UPROPERTY() FString LevelName;              // map to reopen on RETRY, e.g. "L_CLUB_NEW1"
+	UPROPERTY() FString LevelName;              // map to reopen on RETRY, e.g. "L_CLUB_INSTANCES"
 	UPROPERTY() FVector PlayerWorldLocation = FVector::ZeroVector;
 	UPROPERTY() FRotator PlayerWorldRotation = FRotator::ZeroRotator;
 
