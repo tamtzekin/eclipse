@@ -1447,6 +1447,7 @@ namespace
 		Save->UnlockedDanceStyles      = GS.UnlockedDanceStyles;
 		Save->DanceStyleLevels         = GS.DanceStyleLevels;
 		Save->DanceStyleXP             = GS.DanceStyleXP;
+		Save->bDanceTutorialDone       = GS.bDanceTutorialDone;
 		Save->Chapter                  = GS.Chapter;
 		Save->ChapterElapsedSeconds    = GS.ChapterElapsedSeconds;
 		Save->SavedAt                  = FDateTime::Now();
@@ -1535,6 +1536,7 @@ namespace
 		if (Save->UnlockedDanceStyles >= 0) GS.UnlockedDanceStyles = Save->UnlockedDanceStyles;
 		if (Save->DanceStyleLevels.Num() == GS.DanceStyleLevels.Num()) GS.DanceStyleLevels = Save->DanceStyleLevels;
 		if (Save->DanceStyleXP.Num() == GS.DanceStyleXP.Num()) GS.DanceStyleXP = Save->DanceStyleXP;
+		GS.bDanceTutorialDone = Save->bDanceTutorialDone;
 		GS.Chapter                  = Save->Chapter;
 		GS.ChapterElapsedSeconds    = Save->ChapterElapsedSeconds;
 

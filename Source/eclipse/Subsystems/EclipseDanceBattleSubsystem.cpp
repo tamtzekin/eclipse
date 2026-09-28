@@ -19,6 +19,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "TimerManager.h"
 #include "Components/WidgetComponent.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -32,6 +33,9 @@ namespace
 	constexpr float MaxSpeedUp = 0.08f;     // top tempo boost for dancing well
 	constexpr int32 IntroBars = 4;
 	constexpr int32 HeatLostOnDefeat = 2;
+	constexpr float NoteWindow = 0.25f;        // seconds either side of his attack to answer it
+	constexpr float NoteDamage = 9.f;          // STANCE off a matched attack, before the style multiplier
+	constexpr float StyleMatchBonus = 2.f;     // dancing his exact style doubles what lands
 	constexpr float CamTiltDegrees = 6.f;
 	constexpr float CamOrbitDegrees = 14.f;
 	constexpr float CamBumpSeconds = 0.22f;
@@ -39,16 +43,23 @@ namespace
 	constexpr float SpinUpSeconds = 3.5f;   // vinyl start: pitch ramps from the floor to 1 over this long
 	constexpr float PitchFloor = 0.4f;      // the engine's default global minimum pitch
 	constexpr float StickDeadzone = 0.6f;
-	constexpr int32 DemoBarsPerStyle = 4;
-	constexpr int32 LeadBars = 2;             // the opponent calls the next style this many bars ahead
+	constexpr int32 Lookahead = 5;            // bars of schedule kept ahead of the song (leads + countdown need 3)
+	constexpr float HoldFacingToPass = 4.f;   // seconds facing him without a break to pass the strafe lesson
+	constexpr int32 StrafeMinBars = 8;        // he moves for at least this long, so the lesson is visible
+	constexpr int32 MovesetBars = 4;           // he runs his pattern once every four bars
+	constexpr int32 LessonPatterns = 2;        // moves he teaches before the scored battle
+	constexpr float TelegraphLessonBeats = 8.f, TelegraphBattleBeats = 4.f;   // two bars to tell you in the lesson, one in the battle
 	constexpr float BattleSeconds = 80.f;     // the scored part, after the intro and the demo
-	constexpr float StrafeDegPerSec = 18.f;   // a slow sidestep, not a run
-	constexpr float StrafeLimitDeg = 90.f;    // either side of where the battle started: a 180-degree arc
-	constexpr float FacingWindowDeg = 18.f;   // off by more than this when a switch lands and it's a MISS
-	constexpr float HeatModeBars = 8.f;       // how long HEAT mode lasts, in bars
+	constexpr float StrafeDegPerSec = 20.f;   // a slow sidestep, not a run
+	constexpr float StrafeLimitDeg = 50.f;    // either side of where the battle started: a 180-degree arc
+	constexpr float FacingWindowDeg = 30.f;   // off by more than this when a switch lands and it's a MISS
+	constexpr float PlayerStanceMax = 100.f;   // yours; full means staggered
+	constexpr float StaggerSeconds = 2.8f;     // how long you're caught flat-footed
+	constexpr float StanceMax = 260.f;         // the opponent's STANCE; break it and the battle's won early
+	constexpr int32 HeatStreak = 8;           // clean answers in a row that light HEAT mode
+	constexpr float HeatModeBars = 8.f;       // how long it lasts, in bars
 	constexpr float HeatModeSpeedUp = 0.12f;  // extra tempo while it's on
-	constexpr int32 HeatAfter = 5;            // HEAT drops back to this when it ends
-	constexpr float StanceMax = 150.f;        // the opponent's STANCE; break it and the battle's won early
+	constexpr float HeatDamage = 1.5f;        // everything you land hits this much harder
 	constexpr float StanceRecover = 10.f;     // he steadies this much when you MISS
 
 	const TCHAR* GradeNames[] = { TEXT("PERFECT"), TEXT("GOOD"), TEXT("TOO EARLY"), TEXT("TOO SLOW"), TEXT("MISS"), TEXT("HOT") };
@@ -56,43 +67,30 @@ namespace
 	const float GradeValue[] = { 1.f, 0.7f, 0.25f, 0.35f, 0.f, 1.f };   // feeds Performance
 	const float GradeZoom[] = { -14.f, -9.f, 10.f, 0.f, 16.f, -16.f };  // FOV change per grade: good dancing draws the camera right in
 	const int32 GradeXP[] = { 25, 10, 0, 0, 0, 30 };                    // style XP for landing a switch
-	const int32 GradeHeat[] = { 2, 1, 0, 0, 0, 0 };                     // PERFECT and GOOD build toward HEAT mode
 	const float GradeDamage[] = { 20.f, 12.f, 3.f, 5.f, 0.f, 30.f };    // STANCE damage before the style-level multiplier
 
-	// Medal per grade: PERFECT platinum, GOOD gold, TOO SLOW silver, TOO EARLY bronze, MISS red, HOT fire.
+	// Colour per grade: PERFECT white, GOOD gold, the rest cooler, MISS red.
 	FLinearColor GradeColor(int32 G)
 	{
-		using namespace EclipseDance;
-		const FLinearColor Colors[] = { Platinum, Gold, Bronze, Silver, EclipseUI::DialogueRed, FLinearColor(FColor(0xFF, 0x5A, 0x1F)) };
+		const FLinearColor Colors[] = { FLinearColor::White, EclipseDance::Gold, FLinearColor(FColor(0xCD, 0x7F, 0x32)),
+			FLinearColor(FColor(0xC8, 0xD0, 0xDA)), EclipseUI::DialogueRed, FLinearColor(FColor(0xFF, 0x5A, 0x1F)) };
 		return Colors[FMath::Clamp(G, 0, (int32)UE_ARRAY_COUNT(Colors) - 1)];
 	}
 
-	// Arrows / D-pad pick styles (held keys matching a combo win, else the key just pressed); the right stick points at the wheel.
+	// H or the left shoulder cycles your style; the right stick still points straight at a wheel slot.
 	EEclipseDanceStyle StyleFromInput(const APlayerController* PC, EEclipseDanceStyle Current, bool& bStickLatched, int32 Unlocked)
 	{
-		const auto Open = [Unlocked](int32 i) { return ((Unlocked >> i) & 1) != 0; };
 		using namespace EclipseDance;
-		static const TTuple<uint8, FKey, FKey> Dirs[] = {
-			{ Up, EKeys::Up, EKeys::Gamepad_DPad_Up }, { Left, EKeys::Left, EKeys::Gamepad_DPad_Left },
-			{ Down, EKeys::Down, EKeys::Gamepad_DPad_Down }, { Right, EKeys::Right, EKeys::Gamepad_DPad_Right } };
-		uint8 Held = 0, Pressed = 0;
-		for (const auto& D : Dirs)
+		const auto Open = [Unlocked](int32 i) { return ((Unlocked >> i) & 1) != 0; };
+		if (PC->WasInputKeyJustPressed(EKeys::H) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder))
 		{
-			if (PC->IsInputKeyDown(D.Get<1>()) || PC->IsInputKeyDown(D.Get<2>())) Held |= D.Get<0>();
-			if (PC->WasInputKeyJustPressed(D.Get<1>()) || PC->WasInputKeyJustPressed(D.Get<2>())) Pressed |= D.Get<0>();
-		}
-		if (Pressed)
-		{
-			for (uint8 Mask : { Held, Pressed })
+			for (int32 Step = 1; Step <= (int32)EEclipseDanceStyle::Count; ++Step)
 			{
-				for (int32 i = 0; i < (int32)EEclipseDanceStyle::Count; ++i)
-				{
-					if (Open(i) && Info((EEclipseDanceStyle)i).Keys == Mask) return (EEclipseDanceStyle)i;
-				}
+				const int32 Next = ((int32)Current + Step) % (int32)EEclipseDanceStyle::Count;
+				if (Open(Next)) return (EEclipseDanceStyle)Next;
 			}
 		}
 
-		// Right stick: flick toward a wheel slot; re-arms once the stick comes back to centre.
 		const FVector2D Stick(PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX), PC->GetInputAnalogKeyState(EKeys::Gamepad_RightY));
 		if (Stick.Size() < StickDeadzone * 0.5f) bStickLatched = false;
 		if (bStickLatched || Stick.Size() < StickDeadzone) return Current;
@@ -121,8 +119,12 @@ namespace
 		case EEclipseDanceStyle::Muzzing:  // slight tilt side to side
 			Rot.Roll = 7.f * FMath::Sin(Pi * B);
 			break;
-		case EEclipseDanceStyle::Gloving:  // jumping up and down on every beat
-			Loc.Z = 14.f * Bounce;
+		case EEclipseDanceStyle::Jumpstyle:  // big jumps off both feet
+			Loc.Z = 20.f * Bounce;
+			break;
+		case EEclipseDanceStyle::Shuffle:    // quick little steps, barely leaving the floor
+			Loc.Y = 7.f * FMath::Sin(2.f * Pi * B);
+			Loc.Z = 4.f * Bounce;
 			break;
 		case EEclipseDanceStyle::Hakken:   // stamping down into the floor on the beat
 			Loc.Z = -10.f * (1.f - Bounce);
@@ -150,16 +152,26 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 	Track = InTrack;
 	Opponent = InOpponent;
 	Unlocked = ~0;
-	if (UEclipseGameStateSubsystem* GS = World->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>()) Unlocked = GS->UnlockedDanceStyles;
+	bTutorial = true;
+	bBeatenBefore = false;
+	if (UEclipseDialogueSubsystem* Beaten = World->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
+	{
+		bBeatenBefore = InOpponent && Beaten->GetInkInt(InOpponent->DialogueId.ToString() + TEXT("_dance_won"), 0) == 1;
+	}
+	if (UEclipseGameStateSubsystem* GS = World->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
+	{
+		Unlocked = GS->UnlockedDanceStyles;
+		bTutorial = (InTrack->bTutorialTrack || !GS->bDanceTutorialDone) && !bBeatenBefore;
+	}
 	BuildSchedule();
 	LastBar = -1;
 	Score = OpponentScore = 0;
-	GradedSwitches = 0;
+	Streak = 0;
+	bHeatMode = false;
 	FMemory::Memzero(Counts);
 	Performance = 0.5f;
 	bFinished = false;
 	PlayerStyle = OpponentStyle = EEclipseDanceStyle::Count;
-	StyleChosenAt = 0.0;
 	HaloFlash = BeatFlash = 0.f;
 	BeatIndex = -1;
 	SongClock = InTrack->SegmentStartSeconds();
@@ -168,7 +180,6 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 	WinT = -1.f;
 	Wonk = CamTime = 0.f;
 	CamFOV = CamFOVTarget = BaseFOV;
-	bHeatMode = false;
 	CamTimeDrift = 0.f;
 	OpponentStance = StanceMax;
 	bStickLatched = false;
@@ -176,9 +187,8 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 
 	// Proficiency 1-3 per style and the intro barks both live in Ink, keyed by the opponent's knot.
 	IntroLines.Reset();
-	DemoLine.Reset();
-	for (TArray<FString>& L : LeadLines) L.Reset();
-	for (TArray<FString>& L : ShowLines) L.Reset();
+	StrafeLines.Reset();
+	BothLine.Reset();
 	for (int32& L : OpponentLevel) L = 1;
 	if (UEclipseDialogueSubsystem* DS = World->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>(); DS && Opponent)
 	{
@@ -188,15 +198,20 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 			const FString Var = FString::Printf(TEXT("%s_%s"), *Id, *FString(EclipseDance::Info((EEclipseDanceStyle)i).Name).ToLower());
 			OpponentLevel[i] = FMath::Clamp(DS->GetInkInt(Var, 1), 0, 3);
 		}
-		IntroLines = DS->ReadKnotLines(Id + TEXT("_battle_intro"));
-		const TArray<FString> Demo = DS->ReadKnotLines(Id + TEXT("_battle_demo"));
-		DemoLine = Demo.Num() ? Demo[0] : TEXT("Follow my style.");
-		for (int32 i = 0; i < (int32)EEclipseDanceStyle::Count; ++i)
-		{
-			const FString Style = FString(EclipseDance::Info((EEclipseDanceStyle)i).Name).ToLower();
-			LeadLines[i] = DS->ReadKnotLines(FString::Printf(TEXT("%s_lead_%s"), *Id, *Style));
-			ShowLines[i] = DS->ReadKnotLines(FString::Printf(TEXT("%s_show_%s"), *Id, *Style));
-		}
+		WrongHeavyLines = DS->ReadKnotLines(Id + TEXT("_wrong_heavy"));
+		WrongLightLines = DS->ReadKnotLines(Id + TEXT("_wrong_light"));
+		Movesets = DS->ReadKnotLines(Id + TEXT("_moveset"));
+		if (Movesets.Num() == 0) Movesets = { TEXT("L L L L L H L L") };   // the tutorial pattern, all on the beat
+		MovesetIndex = 0;
+		Notes.Reset();
+		NotesBar = -1;
+		PatternHits = PatternNotes = LearnPasses = 0;
+		MovesetStart = MAX_int32;
+		IntroLines = DS->ReadKnotLines(Id + (bBeatenBefore ? TEXT("_battle_intro_again") : TEXT("_battle_intro")));
+		if (IntroLines.Num() == 0) IntroLines = DS->ReadKnotLines(Id + TEXT("_battle_intro"));
+		StrafeLines = DS->ReadKnotLines(Id + TEXT("_battle_strafe"));
+		const TArray<FString> Both = DS->ReadKnotLines(Id + TEXT("_battle_both"));
+		BothLine = Both.Num() ? Both[0] : FString();
 	}
 
 	// Everything keys off where the song actually is, so the spin-up, speed-ups and pausing can't drift it off the grid.
@@ -219,10 +234,9 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		Widget->AddToViewport(/*ZOrder=*/300);
 		Widget->ShowStyle(EEclipseDanceStyle::Count);
 		Widget->SetRadialSelected(PlayerStyle);
-		Widget->SetUnlockedStyles(Unlocked);
-		Widget->OnContinue.BindUObject(this, &UEclipseDanceBattleSubsystem::Stop);
 	}
 	EnterBattleCamera();
+	if (Widget && InOpponent) Widget->ShowExpert(InOpponent->GetDisplayName().ToString(), InOpponent->ExpertStyle);
 	SpawnWaveWall();
 	SetGameUiHidden(true);
 
@@ -233,29 +247,91 @@ bool UEclipseDanceBattleSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 
 void UEclipseDanceBattleSubsystem::BuildSchedule()
 {
-	// Seeded by opponent so a retry dances the same routine.
-	FRandomStream Rng(Opponent ? GetTypeHash(Opponent->GetName()) : 7);
+	// Seeded by track so a retry dances the same routine.
+	Rng.Initialize(GetTypeHash(Track->GetName()));
 
-	TArray<EEclipseDanceStyle> Pool;
-	for (int32 i = 0; i < (int32)EEclipseDanceStyle::Count; ++i) if ((Unlocked >> i) & 1) Pool.Add((EEclipseDanceStyle)i);
+	// The battle draws on what the player knows plus whatever this track introduces.
+	Pool.Reset();
+	for (int32 i = 0; i < (int32)EEclipseDanceStyle::Count; ++i)
+	{
+		if ((Unlocked >> i) & 1) Pool.Add((EEclipseDanceStyle)i);
+	}
 	if (Pool.Num() < 2) Pool = { EEclipseDanceStyle::Muzzing, EEclipseDanceStyle::Tektonik };
 
+	// The track's own length caps the whole session.
+	const float TrackSeconds = Track->Envelope.Num() > 0 ? Track->Envelope.Num() / Track->EnvelopeRate : Track->Sound->Duration;
+	MaxBars = FMath::Max(IntroBars, FMath::FloorToInt((TrackSeconds - Track->SegmentStartSeconds()) / Track->BarSeconds()) - 1);
+
 	Schedule.Init(EEclipseDanceStyle::Count, IntroBars);
-	for (EEclipseDanceStyle S : Pool)
+	Phase = EPhase::Intro;
+	StrafeStart = -1;
+	DemoStart = DemoEnd = BattleStart = MAX_int32;
+	FacedSeconds = 0.f;
+	PatternHits = PatternNotes = LearnPasses = 0;
+	AppendSchedule();
+}
+
+void UEclipseDanceBattleSubsystem::AppendSchedule()
+{
+	const int32 Before = Schedule.Num();
+	const auto Add = [this](EEclipseDanceStyle S, int32 Bars) { for (int32 b = 0; b < Bars && Schedule.Num() < MaxBars; ++b) Schedule.Add(S); };
+	const auto PickOther = [this](EEclipseDanceStyle Not)
 	{
-		for (int32 b = 0; b < DemoBarsPerStyle; ++b) Schedule.Add(S);
+		EEclipseDanceStyle S = Not;
+		while (S == Not) S = Pool[Rng.RandRange(0, Pool.Num() - 1)];
+		return S;
+	};
+	const auto StartBattlePhase = [&]()
+	{
+		Phase = EPhase::Battle;
+		BattleStart = Schedule.Num();
+		MovesetStart = FMath::Min(MovesetStart, BattleStart);
+		if (UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>()) GS->bDanceTutorialDone = true;
+		const int32 End = FMath::Min(MaxBars, BattleStart + FMath::RoundToInt(BattleSeconds / Track->BarSeconds()));
+		// One style throughout: the battle is his moves and your footing.
+		const EEclipseDanceStyle Current = Pool.Contains(EEclipseDanceStyle::Muzzing) ? EEclipseDanceStyle::Muzzing : Pool[0];
+		for (int32 Bar = BattleStart; Bar < End; ++Bar) Schedule.Add(Current);
+	};
+	const auto StartLearnPhase = [&]()
+	{
+		// He loops a pattern and you copy it; the schedule just holds his style while that happens.
+		while (Schedule.Num() % MovesetBars != 0) Add(EEclipseDanceStyle::Count, 1);   // land the switch on a loop boundary
+		DemoStart = Schedule.Num();
+		if (!bTutorial) { DemoEnd = Schedule.Num(); StartBattlePhase(); return; }
+		Phase = EPhase::Learn;
+		MovesetStart = Schedule.Num();
+		Add(Pool.Contains(EEclipseDanceStyle::Muzzing) ? EEclipseDanceStyle::Muzzing : Pool[0], 2);
+		DemoEnd = Schedule.Num();
+	};
+
+	switch (Phase)
+	{
+	case EPhase::Intro:
+		if (bTutorial) { Phase = EPhase::Strafe; StrafeStart = Schedule.Num(); Add(EEclipseDanceStyle::Count, 1); }
+		else StartLearnPhase();
+		break;
+	case EPhase::Strafe:
+		// A bar at a time until they've held facing him for long enough, and never shorter than the lesson needs to read.
+		if (FacedSeconds >= HoldFacingToPass && Schedule.Num() - StrafeStart >= StrafeMinBars) StartLearnPhase();
+		else Add(EEclipseDanceStyle::Count, 1);
+		break;
+	case EPhase::Learn:
+		// Copy two of his patterns cleanly and the real thing starts.
+		if (LearnPasses >= LessonPatterns) StartBattlePhase();
+		else { Add(Schedule.Last(), 2); DemoEnd = Schedule.Num(); }
+		break;
+	default:
+		break;
 	}
-	FirstGraded = Schedule.Num();
-	const int32 NumBars = FirstGraded + FMath::RoundToInt(BattleSeconds / Track->BarSeconds());
-	EEclipseDanceStyle Current = Schedule.Last();
-	while (Current == Schedule.Last()) Current = Pool[Rng.RandRange(0, Pool.Num() - 1)];
-	while (Schedule.Num() < NumBars)
+
+	if (Schedule.Num() != Before && Wave)
 	{
-		const int32 Run = Rng.FRand() < 0.5f ? 4 : 8;
-		for (int32 b = 0; b < Run && Schedule.Num() < NumBars; ++b) Schedule.Add(Current);
-		EEclipseDanceStyle Next = Current;
-		while (Next == Current) Next = Pool[Rng.RandRange(0, Pool.Num() - 1)];
-		Current = Next;
+		TArray<TPair<float, EEclipseDanceStyle>> Switches;
+		for (int32 Bar = 1; Bar < Schedule.Num(); ++Bar)
+		{
+			if (Schedule[Bar] != Schedule[Bar - 1] && Schedule[Bar] != EEclipseDanceStyle::Count) Switches.Emplace(Track->SegmentStartSeconds() + Bar * Track->BarSeconds(), Schedule[Bar]);
+		}
+		Wave->SetTrack(Track, Switches);
 	}
 }
 
@@ -292,7 +368,7 @@ void UEclipseDanceBattleSubsystem::SpawnWaveWall()
 	TArray<TPair<float, EEclipseDanceStyle>> Switches;
 	for (int32 Bar = 1; Bar < Schedule.Num(); ++Bar)
 	{
-		if (Schedule[Bar] != Schedule[Bar - 1]) Switches.Emplace(Track->SegmentStartSeconds() + Bar * Track->BarSeconds(), Schedule[Bar]);
+		if (Schedule[Bar] != Schedule[Bar - 1] && Schedule[Bar] != EEclipseDanceStyle::Count) Switches.Emplace(Track->SegmentStartSeconds() + Bar * Track->BarSeconds(), Schedule[Bar]);
 	}
 	Wave->SetTrack(Track, Switches);
 	Wave->SetPlayhead(Track->SegmentStartSeconds());
@@ -306,17 +382,14 @@ void UEclipseDanceBattleSubsystem::SetGameUiHidden(bool bHidden)
 		HiddenUi.Reset();
 		return;
 	}
-	// HEAT, THIRST, the clock and the interact prompts all step aside for the battle.
-	for (UClass* Cls : { UEclipseHUDWidget::StaticClass(), UEclipseInteractWidget::StaticClass() })
+	// HEAT, THIRST, the clock, prompts — every bit of game UI steps aside, leaving only the battle's own.
+	TArray<UUserWidget*> Found;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, UUserWidget::StaticClass(), /*TopLevelOnly=*/true);
+	for (UUserWidget* W : Found)
 	{
-		TArray<UUserWidget*> Found;
-		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, Cls, /*TopLevelOnly=*/true);
-		for (UUserWidget* W : Found)
-		{
-			if (!W->IsVisible()) continue;
-			W->SetVisibility(ESlateVisibility::Collapsed);
-			HiddenUi.Add(W);
-		}
+		if (!W->IsVisible() || W == Widget) continue;
+		W->SetVisibility(ESlateVisibility::Collapsed);
+		HiddenUi.Add(W);
 	}
 }
 
@@ -372,7 +445,7 @@ void UEclipseDanceBattleSubsystem::EnterBattleCamera()
 	const FVector FromPivot = (From - StrafePivot).GetSafeNormal2D();
 	StrafeCentreDeg = FMath::RadiansToDegrees(FMath::Atan2(FromPivot.Y, FromPivot.X));
 	StrafeDeg = OpponentDrift = FacingError = 0.f;
-	StrafeRadius = FMath::Clamp(FVector::Dist2D(From, To) * 0.5f, 110.f, 180.f);
+	StrafeRadius = FMath::Clamp(FVector::Dist2D(From, To) * 0.5f, 70.f, 100.f);   // a tight circle: you shuffle round each other rather than orbit
 	if (AEclipsePlayerCharacter* EP = Cast<AEclipsePlayerCharacter>(Player)) EP->StartFaceTarget(StrafePivot);
 	Opponent->StartFacePlayer(Player);
 	PC->SetIgnoreMoveInput(true);   // free walking is off; A/D strafe round the circle (see TickStrafe)
@@ -415,6 +488,14 @@ void UEclipseDanceBattleSubsystem::LeaveBattleCamera()
 	BattleCamera = nullptr;
 	if (StageLight) StageLight->Destroy();
 	StageLight = nullptr;
+	if (Widget && Opponent)
+	{
+		// His bar rides above his head rather than sitting in a corner.
+		FVector2D Screen;
+		APlayerController* HeadPC = GetWorld()->GetFirstPlayerController();
+		const bool bOn = HeadPC && !bFinished && UGameplayStatics::ProjectWorldToScreen(HeadPC, Opponent->GetActorLocation() + FVector(0.f, 0.f, 130.f), Screen);
+		Widget->SetStanceScreenPos(Screen / FMath::Max(0.01f, UWidgetLayoutLibrary::GetViewportScale(GetWorld())), bOn);
+	}
 	if (PlayerHalo) PlayerHalo->DestroyComponent();
 	PlayerHalo = nullptr;
 	if (WaveWall) WaveWall->Destroy();
@@ -437,14 +518,28 @@ void UEclipseDanceBattleSubsystem::Stop()
 		Widget = nullptr;
 	}
 	LeaveBattleCamera();
+	// Beaten, he talks: <npc>_defeated picks up where the battle left off.
+	const FName DefeatKnot = bPendingDefeatTalk && Opponent ? FName(*(Opponent->DialogueId.ToString() + TEXT("_defeated"))) : NAME_None;
+	bPendingDefeatTalk = false;
 	Track = nullptr;
 	Opponent = nullptr;
+	if (!DefeatKnot.IsNone())
+	{
+		if (UEclipseDialogueSubsystem* DS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>()) DS->OpenKnot(DefeatKnot);
+	}
 }
 
 void UEclipseDanceBattleSubsystem::HandleBeat(int32 Bar, int32 Beat)
 {
 	if (!Track || bFinished) return;
 
+	// Lessons end when they're mastered, so the schedule is written a few bars ahead as the song goes.
+	const int32 Ahead = Phase == EPhase::Battle ? Lookahead : 3;   // open-ended lessons stay close so passing moves on quickly
+	for (int32 Was = -1; Beat == 1 && Phase != EPhase::Battle && Schedule.Num() - Bar < Ahead && Schedule.Num() != Was;)
+	{
+		Was = Schedule.Num();
+		AppendSchedule();
+	}
 	if (Bar >= Schedule.Num())
 	{
 		Finish();
@@ -457,9 +552,10 @@ void UEclipseDanceBattleSubsystem::HandleBeat(int32 Bar, int32 Beat)
 	// Real seconds, not song seconds: the tempo can be pushed up.
 	const float BeatSec = Track->BeatSeconds() / Pitch;
 	const float BarHold = Track->BarSeconds() / Pitch - 0.2f;
-	if (Beat == 1 && Bar < IntroBars - 1 && Opponent && IntroLines.Num() > 0)
+	if (Beat == 1 && Bar == IntroBars && Widget) Widget->ShowExpert(FString(), EEclipseDanceStyle::Count);   // shown once on engage, then gone
+	if (Beat == 1 && Bar < IntroBars && Opponent && IntroLines.Num() > 0)
 	{
-		const int32 Stride = FMath::Max(1, (IntroBars - 1) / IntroLines.Num());
+		const int32 Stride = FMath::Max(1, IntroBars / IntroLines.Num());
 		if (Bar % Stride == 0 && IntroLines.IsValidIndex(Bar / Stride))
 		{
 			Opponent->Yap(IntroLines[Bar / Stride], Stride * Track->BarSeconds() - 0.2f, FLinearColor::White, BeatSec);
@@ -467,130 +563,217 @@ void UEclipseDanceBattleSubsystem::HandleBeat(int32 Bar, int32 Beat)
 	}
 
 	const EEclipseDanceStyle Style = Schedule[Bar];
-	const bool bDemoBar = Bar >= IntroBars && Bar < FirstGraded;
-	const auto BlockStart = [&](int32 B) { return B >= IntroBars && B < FirstGraded && (B - IntroBars) % DemoBarsPerStyle == 0; };
-	const bool bSwitchBar = Bar >= FirstGraded && Style != Schedule[Bar - 1];
 
-	// Says a style's line with the style word lit in its colour, bumping on the beat.
-	const auto Say = [&](const TArray<FString>& Lines, EEclipseDanceStyle S, float Hold)
+	// Strafe lesson: he talks you through keeping up while he moves, a line every two bars.
+	if (Beat == 1 && Opponent && StrafeStart >= 0 && Bar >= StrafeStart && Bar < DemoStart && (Bar - StrafeStart) % 2 == 0)
 	{
-		if (!Opponent) return;
-		const FString Line = Lines.Num() ? Lines[FMath::RandRange(0, Lines.Num() - 1)]
-			: FString::Printf(TEXT("_%s_ - %s."), *FString(EclipseDance::Info(S).Name).ToLower(), EclipseDance::Info(S).KeyHint);
-		Opponent->Yap(Line, Hold, EclipseDance::StyleColor(S), BeatSec);
-	};
-
-	// Last intro bar: "Follow my style." Then he dances each unlocked style for four bars, naming it, before anything counts.
-	if (Beat == 1 && Bar == IntroBars - 1 && Opponent) Opponent->Yap(DemoLine, BarHold, FLinearColor::White, BeatSec);
-	if (bDemoBar && Beat == 1)
+		const FString Line = Bar == StrafeStart ? TEXT("Keep up with me.")
+			: StrafeLines.Num() ? StrafeLines[((Bar - StrafeStart) / 2) % StrafeLines.Num()] : FString();
+		if (!Line.IsEmpty()) Opponent->Yap(Line, BarHold * 2.f, FLinearColor::White, BeatSec);
+	}
+	if (Beat == 1 && Style != EEclipseDanceStyle::Count && Style != OpponentStyle)
 	{
 		OpponentStyle = Style;
 		if (Widget) Widget->ShowStyle(Style);
-		if (BlockStart(Bar)) Say(ShowLines[(int32)Style], Style, BarHold * 2.f);
 	}
-	// Four bars ahead of every graded switch. A demo block's first bar belongs to its own line, so a lead due then waits a bar.
-	for (const int32 Target : { BlockStart(Bar) ? -1 : Bar + LeadBars, BlockStart(Bar - 1) ? Bar + LeadBars - 1 : -1 })
+	// His next pattern, called out a bar before it lands. Only once the lessons are over.
+	// Queued well before he dances it: the tell needs two bars in the lesson, one in the battle.
+	if (Beat == 1)
 	{
-		if (Beat == 1 && Target >= FirstGraded && Schedule.IsValidIndex(Target) && Schedule[Target] != Schedule[Target - 1])
+		const int32 Ahead = Phase == EPhase::Learn ? 2 : 1;
+		const int32 His = Bar + Ahead;
+		if (His >= MovesetStart && His > NotesBar)
 		{
-			Say(LeadLines[(int32)Schedule[Target]], Schedule[Target], BarHold * 2.f);
+			if (Phase == EPhase::Learn) { if (His % MovesetBars == 0) StartMoveset(His); }
+			else if (His % 2 == 0) StartMoveset(His);
 		}
 	}
-
-	if (bSwitchBar && Beat == 1)
-	{
-		SwitchTime = Track->SegmentStartSeconds() + Bar * Track->BarSeconds();   // song time of the downbeat
-		RollOpponentSwitch(Bar);
-		if (Widget) Widget->ShowStyle(Style);
-		SwitchPump = 1.f;
-		CamRollTarget = CamRollTarget > 0.f ? -CamTiltDegrees : CamTiltDegrees;
-		CamOrbitTarget = CamOrbitTarget > 0.f ? -CamOrbitDegrees : CamOrbitDegrees;
-		CamBump = 0.f;
 	}
-	// Grade a beat after the switch so a slightly late press still counts as TOO SLOW rather than a miss.
-	if (bSwitchBar && Beat == 2) GradeSwitch(Bar);
 
-	if (!Widget) return;
-	// The bar before a switch counts it in on its own beats: 4, 3, 2, 1.
-	const bool bSwitchNext = Bar + 1 >= FirstGraded && Schedule.IsValidIndex(Bar + 1) && Schedule[Bar + 1] != Style;
-	Widget->ShowCountdown(bSwitchNext ? Track->BeatsPerBar + 1 - Beat : 0,
-		bSwitchNext ? Schedule[Bar + 1] : Style, BeatSec);
-}
-
-void UEclipseDanceBattleSubsystem::RollOpponentSwitch(int32 Bar)
+// The lesson is call and response: he dances the pattern on his bar, you answer it on the next.
+// In the battle he just keeps throwing them and you answer live.
+void UEclipseDanceBattleSubsystem::StartMoveset(int32 Bar)
 {
-	// Level 1 lands ~60% of switches, 2 ~75%, 3 ~90%; a miss keeps them dancing the old style.
-	const int32 Level = OpponentLevel[(int32)Schedule[Bar]];
-	bOpponentHit = FMath::FRand() < FMath::Clamp(0.45f + 0.15f * Level, 0.f, 0.95f);
-	if (bOpponentHit) OpponentStyle = Schedule[Bar];
-}
-
-void UEclipseDanceBattleSubsystem::GradeSwitch(int32 Bar)
-{
-	const double Dt = StyleChosenAt - SwitchTime;
-	const double Beat = Track->BeatSeconds();
-
-	// For Honor-style: any switch inside the colour blend (a bar ahead) is GOOD, right on the switch is PERFECT.
-	// Facing away from the opponent when it lands throws the whole thing: MISS.
-	const double D = Dt - EclipseDance::JudgeOffset;
-	// A levelled style is easier to land: its PERFECT window widens 10% per level.
-	UEclipseGameStateSubsystem* StyleGS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>();
-	const int32 StyleLevel = StyleGS && StyleGS->DanceStyleLevels.IsValidIndex((int32)Schedule[Bar]) ? StyleGS->DanceStyleLevels[(int32)Schedule[Bar]] : 1;
-	const double PerfectHalf = EclipseDance::PerfectHalf * (1.0 + 0.1 * (StyleLevel - 1));
-	EGrade G;
-	if (PlayerStyle != Schedule[Bar] || FacingError > FacingWindowDeg) G = EGrade::Miss;
-	else if (D < -EclipseDance::SwitchWindowBeats * Beat)                G = EGrade::TooEarly;
-	else if (FMath::Abs(D) <= PerfectHalf)                               G = EGrade::Perfect;
-	else if (D <= EclipseDance::GoodLate)                               G = EGrade::Good;
-	else                                                                G = EGrade::TooSlow;
-	// In HEAT mode every landed switch burns HOT.
-	if (bHeatMode && (G == EGrade::Perfect || G == EGrade::Good)) G = EGrade::Hot;
-
-	++Counts[(int32)G];
-	if (G == EGrade::Miss) Wonk = FMath::Min(Wonk + 1.f, 2.f);
-	Score += GradePoints[(int32)G];
-	CamFOVTarget = FMath::Clamp(CamFOVTarget + GradeZoom[(int32)G], 34.f, 100.f);
-	if (GradeXP[(int32)G] > 0)
+	if (!Track || Movesets.Num() == 0) return;
+	// Answered the last one in full? He moves on. Fluffed it? He runs it again.
+	if (PatternNotes > 0)
 	{
-		if (UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>()) GS->AddDanceStyleXP(Schedule[Bar], GradeXP[(int32)G]);
-	}
-	if (GradeHeat[(int32)G] > 0)
-	{
-		// Capped at the top rather than overflowing (which would overheat you); hitting the top lights HEAT mode.
-		if (UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>())
+		const bool bClean = PatternHits >= PatternNotes;
+		if (bClean && PatternPerfects >= PatternNotes)
 		{
-			GS->ChangeMeter(TEXT("heat"), FMath::Min(GradeHeat[(int32)G], UEclipseGameStateSubsystem::MeterMax - GS->Heat));
-			if (GS->Heat >= UEclipseGameStateSubsystem::MeterMax && !bHeatMode)
-			{
-				bHeatMode = true;
-				HeatModeEnds = Track->SegmentStartSeconds() + (Bar + HeatModeBars) * Track->BarSeconds();
-				CamBump = 0.f;
-				UE_LOG(LogEclipse, Log, TEXT("Dance: HEAT mode on until bar %d"), Bar + (int32)HeatModeBars);
-			}
+			// Move-for-move, every note perfect: the best you can do with one of his patterns.
+			Score += GradePoints[(int32)EGrade::Perfect] * PatternNotes;
+			if (Phase == EPhase::Battle) OpponentStance = FMath::Clamp(OpponentStance - NoteDamage * PatternNotes, 0.f, StanceMax);
+			if (Widget) Widget->FlashChain(TEXT("MOVE MATCHED"), EclipseDance::StyleColor(OpponentStyle));
+		}
+		const bool bLearned = bClean;
+		if (bLearned) { ++MovesetIndex; ++LearnPasses; }
+		if (Opponent && Phase == EPhase::Learn)
+		{
+			Opponent->Yap(bLearned ? TEXT("Got it. Next one.") : bClean ? TEXT("Yeah. Again.") : TEXT("No. Watch me."),
+				Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
 		}
 	}
-	Performance = FMath::Lerp(Performance, GradeValue[(int32)G], 0.4f);
+	// The lesson walks his moves in order; once it's over he mixes them.
+	const int32 Pick = Phase == EPhase::Learn ? MovesetIndex % Movesets.Num() : Rng.RandRange(0, Movesets.Num() - 1);
+	const TArray<EclipseDance::FNote> Parsed = EclipseDance::ParseMoveset(Movesets[Pick]);
+	if (Parsed.Num() == 0) return;
 
-	if (bOpponentHit)
+	const bool bLesson = Phase == EPhase::Learn;
+	const float BarSec = Track->BarSeconds(), BeatSec = Track->BeatSeconds();
+	const float His = Track->SegmentStartSeconds() + Bar * BarSec;
+	Notes.Reset();
+	NotesBar = Bar;
+	for (const EclipseDance::FNote& N : Parsed)
 	{
-		const int32 Level = OpponentLevel[(int32)Schedule[Bar]];
-		OpponentScore += FMath::FRand() < 0.12f * Level ? GradePoints[(int32)EGrade::Perfect] : GradePoints[(int32)EGrade::Good];
+		// Answer him move-for-move as he dances it — that's the perfect read.
+		FPendingNote H;
+		H.Time = His + N.Beat * BeatSec;
+		H.bHeavy = N.bHeavy;
+		H.bHis = true;
+		H.bAnswer = true;
+		H.bWithHim = true;
+		Notes.Add(H);
+		if (!bLesson) continue;
+		// Or answer it back on the next bar: the call and response, worth good rather than perfect.
+		FPendingNote Reply = H;
+		Reply.Time += BarSec;
+		Reply.bHis = false;
+		Reply.bWithHim = false;
+		Notes.Add(Reply);
 	}
+	PatternHits = 0;
+	PatternPerfects = 0;
+	PatternNotes = Parsed.Num();   // one pass through his move, whichever window you use
 
-	// Knock his STANCE down: harder with a levelled style, harder still in HEAT mode; a MISS lets him steady himself.
-	const float Damage = GradeDamage[(int32)G] * (1.f + 0.25f * (StyleLevel - 1)) * (bHeatMode ? 1.5f : 1.f);
-	OpponentStance = FMath::Clamp(OpponentStance - Damage + (G == EGrade::Miss ? StanceRecover : 0.f), 0.f, StanceMax);
-	if (Widget) Widget->SetStance(OpponentStance / StanceMax, Damage > 0.f);
+	TelegraphDir = Parsed[0].bHeavy ? -1.f : 1.f;   // rises for a light lead, sinks for a heavy one
+	TelegraphTo = His + Parsed[0].Beat * BeatSec;
+	TelegraphFrom = TelegraphTo - (bLesson ? TelegraphLessonBeats : TelegraphBattleBeats) * BeatSec;
+	const FString Text = EclipseDance::MovesetText(Parsed);
+	if (Opponent) Opponent->Yap(Text, BarSec / Pitch, EclipseDance::StyleColor(OpponentStyle), BeatSec / Pitch);
+}
 
-	++GradedSwitches;
-	if (Widget) Widget->ShowGrade(FText::FromString(GradeNames[(int32)G]), GradeColor((int32)G));
-	if (OpponentStance <= 0.f)
+// Wrong answers cost you footing; at the top you're staggered and can't act for a moment.
+void UEclipseDanceBattleSubsystem::AddPlayerStance(float Amount)
+{
+	if (StaggeredUntil > 0.f) return;
+	PlayerStance = FMath::Clamp(PlayerStance + Amount, 0.f, PlayerStanceMax);
+	CheckBalance();
+}
+
+// The bar only grows when you're being knocked off: drifting off him, or answering wrong.
+void UEclipseDanceBattleSubsystem::CheckBalance()
+{
+	const float Balance = FMath::Clamp(PlayerStance / PlayerStanceMax, 0.f, 1.f);
+	if (StaggeredUntil < 0.f && Balance >= 1.f)
 	{
-		UE_LOG(LogEclipse, Log, TEXT("Dance: STANCE BROKEN at bar %d"), Bar);
-		Finish();
+		StaggeredUntil = SongSeconds(FPlatformTime::Seconds()) + StaggerSeconds;
+		Wonk = FMath::Min(Wonk + 1.5f, 2.f);
+		if (Widget) Widget->ShowGrade(FText::FromString(TEXT("BALANCE BROKEN")), EclipseUI::DialogueRed, Track ? Track->BeatSeconds() / Pitch : 0.f);
+	}
+	if (Widget) Widget->SetPlayerStance(Balance, StaggeredUntil > 0.f);
+}
+
+// Notes you never answered: he lands them and keeps his footing.
+void UEclipseDanceBattleSubsystem::TickNotes(float Song)
+{
+	for (FPendingNote& N : Notes)
+	{
+		// The camera braces a moment early; his body moves exactly on the step.
+		if (N.bHis && !N.bCued && Song >= N.Time - 0.2f)
+		{
+			N.bCued = true;
+			if (N.bHeavy) { CamFOVTarget = FMath::Clamp(CamFOVTarget + 7.f, 34.f, 100.f); CamBump = 0.f; }
+			else BeatFlash = 1.f;
+		}
+		if (N.bHis && !N.bStruck && Song >= N.Time)
+		{
+			N.bStruck = true;
+			(N.bHeavy ? OpponentTilt.Y : OpponentTilt.X) = 1.f;
+		}
+		if (!N.bAnswer || N.bDone || Song <= N.Time + NoteWindow) continue;
+		N.bDone = true;
+		AddPlayerStance(9.f);   // letting one through costs you footing
+		Streak = 0;
+		if (Phase == EPhase::Battle) OpponentStance = FMath::Clamp(OpponentStance + StanceRecover * 0.5f, 0.f, StanceMax);
+		++Counts[(int32)EGrade::Miss];
+		if (Widget)
+		{
+			Widget->ShowGrade(FText::FromString(GradeNames[(int32)EGrade::Miss]), GradeColor((int32)EGrade::Miss));
+			Widget->SetStance(OpponentStance / StanceMax, false);
+		}
+	}
+}
+
+// Your answer to his attack: same weight, on time. His exact style doubles the damage.
+void UEclipseDanceBattleSubsystem::Attack(bool bHeavy)
+{
+	const float Song = SongSeconds(FPlatformTime::Seconds());
+	if (StaggeredUntil > 0.f) return;   // flat-footed: nothing lands
+	HaloFlash = 1.f;
+	(bHeavy ? PlayerTilt.Y : PlayerTilt.X) = 1.f;   // the camera stays out of your own attacks
+
+	FPendingNote* Best = nullptr;
+	float BestDt = NoteWindow;
+	for (FPendingNote& N : Notes)
+	{
+		const float Dt = FMath::Abs(Song - N.Time);
+		if (!N.bAnswer || N.bDone || Dt > BestDt) continue;
+		Best = &N;
+		BestDt = Dt;
+	}
+	if (!Best)
+	{
+		AddPlayerStance(6.f);
+		Streak = 0;
+		if (Widget) Widget->ShowGrade(FText::FromString(GradeNames[(int32)EGrade::Miss]), GradeColor((int32)EGrade::Miss), Track->BeatSeconds() / Pitch);
 		return;
 	}
-	UE_LOG(LogEclipse, Log, TEXT("Dance switch bar %d: %s (%+.0f ms, facing off %.0f deg) score %d vs %d"), Bar, GradeNames[(int32)G], Dt * 1000.0, FacingError, Score, OpponentScore);
+	Best->bDone = true;
+	Best->bHit = Best->bHeavy == bHeavy;
+	if (Best->bHeavy != bHeavy)
+	{
+		++Counts[(int32)EGrade::Miss];
+		AddPlayerStance(14.f);   // answering the wrong weight costs more than missing
+		Streak = 0;
+		Wonk = FMath::Min(Wonk + 0.6f, 2.f);
+		if (Widget) Widget->ShowGrade(FText::FromString(GradeNames[(int32)EGrade::Miss]), GradeColor((int32)EGrade::Miss), Track->BeatSeconds() / Pitch);
+		// He names the limb you should have used.
+		const TArray<FString>& Lines = bHeavy ? WrongHeavyLines : WrongLightLines;
+		if (Opponent && Lines.Num()) Opponent->Yap(Lines[FMath::RandRange(0, Lines.Num() - 1)], Track->BarSeconds() / Pitch, EclipseUI::DialogueRed, Track->BeatSeconds() / Pitch);
+		return;
+	}
+
+	++PatternHits;
+	++Streak;
+	if (!bHeatMode && Streak >= HeatStreak)
+	{
+		bHeatMode = true;
+		HeatModeEnds = Song + HeatModeBars * Track->BarSeconds();
+		if (Wave) Wave->SetHot(true);
+		if (Widget)
+		{
+			Widget->ShowGrade(FText::FromString(TEXT("HEAT")), EclipseDance::Gold, Track->BeatSeconds() / Pitch);
+			Widget->Pulse(EclipseDance::Gold, 0.4f, 2.f);
+		}
+	}
+	// With him is perfect; answering back on the next bar is good.
+	const EGrade G = Best->bWithHim ? EGrade::Perfect : EGrade::Good;
+	if (G == EGrade::Perfect) ++PatternPerfects;
+	const bool bStyleMatch = PlayerStyle != EEclipseDanceStyle::Count && PlayerStyle == OpponentStyle;
+	const float Damage = NoteDamage * (G == EGrade::Perfect ? 1.4f : 1.f) * (bStyleMatch ? StyleMatchBonus : 1.f) * (bHeatMode ? HeatDamage : 1.f);
+	OpponentStance = FMath::Clamp(OpponentStance - Damage, 0.f, StanceMax);
+	Score += GradePoints[(int32)G];
+	++Counts[(int32)G];
+	if (Widget)
+	{
+		const FLinearColor Tint = EclipseDance::StyleColor(bStyleMatch ? PlayerStyle : OpponentStyle);
+		Widget->ShowGrade(FText::FromString(GradeNames[(int32)G]), GradeColor((int32)G), Track->BeatSeconds() / Pitch);
+		Widget->SetStance(OpponentStance / StanceMax, true);
+		Widget->Pulse(Tint, 0.3f, bStyleMatch ? 1.8f : 1.f);
+		if (bStyleMatch) Widget->FlashChain(TEXT("SAME STYLE x2"), Tint);
+	}
+	if (OpponentStance <= 0.f) Finish();
 }
 
 void UEclipseDanceBattleSubsystem::Finish()
@@ -618,28 +801,17 @@ void UEclipseDanceBattleSubsystem::Finish()
 
 	if (Widget)
 	{
-		Widget->ShowCountdown(0, EEclipseDanceStyle::Count, 0.f);
-		// Scores are out of 1000, a perfect run; the rating and its medal colour come from the same fraction.
-		const float Best = FMath::Max(1, GradedSwitches * GradePoints[(int32)EGrade::Perfect]);
-		const auto Row = [Best](const FString& Label, int32 Points, FString* Rating = nullptr)
-		{
-			const float Ratio = FMath::Min(1.f, Points / Best);   // HOT hits can overshoot a perfect run; 1000 is the ceiling
-			FEclipseDanceResultRow R{ Label, FMath::RoundToInt(1000.f * Ratio) };
-			FString Name;
-			EclipseDance::Tier(Ratio, Name, R.Color, R.bGlow);
-			if (Rating) *Rating = Name;
-			return R;
-		};
-		TArray<FEclipseDanceResultRow> Rows;
-		for (int32 i = 0; i < (int32)EGrade::Count; ++i) Rows.Add({ GradeNames[i], Counts[i], FString(), GradeColor(i), i == (int32)EGrade::Perfect });
-		FString Rating;
-		const FEclipseDanceResultRow Mine = Row(TEXT("SCORE"), Score, &Rating);
-		Rows.Add(Mine);
-		Rows.Add({ TEXT("RATING"), 0, Rating, Mine.Color, Mine.bGlow });
-		Rows.Add(Row(Opponent ? Opponent->GetDisplayName().ToString().ToUpper() : TEXT("RIVAL"), OpponentScore));
-		const FString Verdict = bStanceBroken ? TEXT("STANCE BROKEN") : bWon ? TEXT("YOU WIN") : FString::Printf(TEXT("YOU LOSE   HEAT -%d"), HeatLostOnDefeat);
-		Widget->ShowResults(Rows, Verdict, bWon ? Mine.Color : EclipseUI::DialogueRed, bWon && Mine.bGlow);
+		Widget->ShowGrade(FText::FromString(bWon ? TEXT("BALANCE BROKEN") : TEXT("YOU LOSE")), bWon ? EclipseDance::Gold : EclipseUI::DialogueRed, Track ? Track->BeatSeconds() / Pitch : 0.f);
+		if (bWon) Widget->ShatterStance();
 	}
+	EndWait = 0.f;
+	// Ink owns Patience (it's a LIST), so just hand the story the result.
+	if (UEclipseDialogueSubsystem* DS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>())
+	{
+		DS->SetInkInt(TEXT("dance_won"), bWon ? 1 : 0);
+		if (Opponent) DS->SetInkInt(FString::Printf(TEXT("%s_dance_won"), *Opponent->DialogueId.ToString()), bWon ? 1 : 0);
+	}
+	bPendingDefeatTalk = bWon;
 	UE_LOG(LogEclipse, Log, TEXT("Dance battle over: %s, %d vs %d"), bWon ? TEXT("won") : TEXT("lost"), Score, OpponentScore);
 
 	// The board stays up until CONTINUE, which needs the cursor.
@@ -690,11 +862,18 @@ void UEclipseDanceBattleSubsystem::Tick(float DeltaTime)
 	if (PC && !bFinished) TickStrafe(PC, DeltaTime);
 	if (PC && !bFinished && LastBar >= 0)
 	{
+		for (const FKey& K : { EKeys::Up, EKeys::LeftMouseButton, EKeys::Gamepad_RightShoulder })
+		{
+			if (PC->WasInputKeyJustPressed(K)) { Attack(false); break; }
+		}
+		for (const FKey& K : { EKeys::Down, EKeys::RightMouseButton, EKeys::Gamepad_RightTrigger })
+		{
+			if (PC->WasInputKeyJustPressed(K)) { Attack(true); break; }
+		}
 		const EEclipseDanceStyle Picked = StyleFromInput(PC, PlayerStyle, bStickLatched, Unlocked);
 		if (Picked != PlayerStyle)
 		{
 			PlayerStyle = Picked;
-			StyleChosenAt = SongSeconds(Now);
 			HaloFlash = 1.f;
 			if (Widget)
 			{
@@ -719,23 +898,38 @@ void UEclipseDanceBattleSubsystem::Tick(float DeltaTime)
 		const EEclipseDanceStyle Playing = LastBar >= 0 ? Schedule[FMath::Clamp(LastBar, 0, Schedule.Num() - 1)] : EEclipseDanceStyle::Count;
 		Widget->SetBackbeat(Playing == EEclipseDanceStyle::Count ? FLinearColor(0.8f, 0.8f, 1.f) : EclipseDance::StyleColor(Playing), bFinished ? 0.f : Backbeat);
 	}
+	if (!bFinished)
+	{
+		if (StaggeredUntil > 0.f && Song >= StaggeredUntil)
+		{
+			StaggeredUntil = -1.f;
+			PlayerStance = 0.f;
+			if (Widget) Widget->SetPlayerStance(0.f, false);
+		}
+		else if (StaggeredUntil < 0.f && PlayerStance > 0.f)
+		{
+			PlayerStance = FMath::Max(0.f, PlayerStance - DeltaTime * 14.f);   // footing comes back if you stop fluffing it
+			if (Widget) Widget->SetPlayerStance(PlayerStance / PlayerStanceMax, false);
+		}
+	}
+	if (bHeatMode && (Song >= HeatModeEnds || bFinished))
+	{
+		bHeatMode = false;
+		Streak = 0;
+		if (Wave) Wave->SetHot(false);
+	}
+	if (bFinished && EndWait >= 0.f)
+	{
+		EndWait += DeltaTime;
+		if (EndWait > 4.5f) { Stop(); return; }
+	}
+	if (!bFinished) TickNotes(Song);
 	while (!bFinished && Track && BeatIndex < FMath::FloorToInt(Beats))
 	{
 		++BeatIndex;
 		HandleBeat(BeatIndex / Track->BeatsPerBar, BeatIndex % Track->BeatsPerBar + 1);
 	}
 	if (!Track) return;   // a beat can end the battle
-	if (bHeatMode && (Song >= HeatModeEnds || bFinished))
-	{
-		bHeatMode = false;
-		if (UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>()) GS->ChangeMeter(TEXT("heat"), HeatAfter - GS->Heat);
-	}
-	if (Widget)
-	{
-		const UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>();
-		Widget->SetHeat(GS ? GS->Heat : 0, bHeatMode);
-	}
-	if (Wave) Wave->SetHot(bHeatMode);
 	if (Wave)
 	{
 		const EEclipseDanceStyle S = LastBar >= 0 ? Schedule[FMath::Clamp(LastBar, 0, Schedule.Num() - 1)] : EEclipseDanceStyle::Count;
@@ -806,12 +1000,27 @@ void UEclipseDanceBattleSubsystem::TickStrafe(APlayerController* PC, float Delta
 		return FVector(StrafePivot.X + FMath::Cos(Rad) * StrafeRadius, StrafePivot.Y + FMath::Sin(Rad) * StrafeRadius, Z);
 	};
 
-	// The opponent drifts slowly round the circle, wandering rather than sweeping, once the scored battle's close.
-	if (LastBar >= FirstGraded - 1)
+	// He drifts slowly round the circle in the strafe lesson and the real battle; for the style lesson he settles back in front of you.
+	const bool bStrafing = StrafeStart >= 0 && LastBar >= StrafeStart && LastBar < DemoStart;
+	const bool bDrifting = bStrafing || LastBar >= BattleStart - 1;
+	if (bDrifting)
 	{
-		CamTimeDrift += DeltaTime;
-		OpponentDrift = 55.f * FMath::Sin(CamTimeDrift * 0.21f) + 22.f * (FMath::Sin(CamTimeDrift * 0.53f + 1.3f) - FMath::Sin(1.3f));   // starts from 0
+		// Fast tracks (over 160 BPM) move him further and quicker, up to 1.7x at 180.
+		const float Fast = bTutorial ? 1.f : 1.f + 0.7f * FMath::Clamp((Track->BPM - 160.f) / 20.f, 0.f, 1.f);
+		CamTimeDrift += DeltaTime * Fast * (bTutorial ? 0.5f : 1.f);
+		const float Reach = bTutorial ? 16.f : 38.f;   // the tutorial keeps him within easy following distance
+		OpponentDrift = FMath::Clamp(Fast * (Reach * FMath::Sin(CamTimeDrift * 0.22f) + 0.3f * Reach * (FMath::Sin(CamTimeDrift * 0.55f + 1.3f) - FMath::Sin(1.3f))), -StrafeLimitDeg + 5.f, StrafeLimitDeg - 5.f);   // starts from 0; stays where you can reach
 	}
+	else
+	{
+		OpponentDrift = FMath::FInterpTo(OpponentDrift, StrafeDeg, DeltaTime, 1.5f);
+	}
+	if (Widget)
+	{
+		Widget->SetFacingVisible(true);   // the balance bar stays up: it's how you read where he is
+	}
+	DriftSpeed = DeltaTime > 0.f ? (OpponentDrift - LastDrift) / DeltaTime : 0.f;
+	LastDrift = OpponentDrift;
 	Opponent->SetActorLocation(OnCircle(StrafeCentreDeg + 180.f + OpponentDrift, Opponent->GetActorLocation().Z));
 
 	// A/D or the left stick walk you round your side of the circle, never more than a quarter turn either way.
@@ -825,7 +1034,11 @@ void UEclipseDanceBattleSubsystem::TickStrafe(APlayerController* PC, float Delta
 	// Facing him means sitting directly opposite: your angle and his drift match.
 	const float Signed = FMath::FindDeltaAngleDegrees(StrafeDeg, OpponentDrift);
 	FacingError = FMath::Abs(Signed);
+	if (bStrafing && FacedSeconds < HoldFacingToPass) FacedSeconds = FacingError <= FacingWindowDeg ? FacedSeconds + DeltaTime : 0.f;   // unbroken, and it sticks once passed
+	// Drifting off him knocks your balance down, once the dancing has started.
+	if (StaggeredUntil < 0.f && FacingError > FacingWindowDeg && LastBar >= MovesetStart) AddPlayerStance(DeltaTime * 7.f);
 	if (Widget) Widget->SetFacing(Signed, FacingWindowDeg);
+	CheckBalance();
 }
 
 void UEclipseDanceBattleSubsystem::TickMusic(float DeltaTime)
@@ -883,12 +1096,20 @@ void UEclipseDanceBattleSubsystem::TickDancers(float Now, float DeltaTime)
 {
 	HaloFlash = FMath::Max(0.f, HaloFlash - DeltaTime * 1.5f);
 	SwitchPump = FMath::Max(0.f, SwitchPump - DeltaTime * 1.2f);
+	for (FVector2D* T : { &PlayerTilt, &OpponentTilt })
+	{
+		T->X = FMath::Max(0.f, T->X - DeltaTime * 5.5f);
+		T->Y = FMath::Max(0.f, T->Y - DeltaTime * 3.2f);
+	}
+	{
+	}
 	if (StageLight)
 	{
 		const EEclipseDanceStyle S = LastBar >= 0 ? Schedule[FMath::Clamp(LastBar, 0, Schedule.Num() - 1)] : EEclipseDanceStyle::Count;
 		UPointLightComponent* L = StageLight->PointLightComponent;
 		L->SetLightColor(S == EEclipseDanceStyle::Count ? FLinearColor(0.6f, 0.6f, 0.8f) : EclipseDance::StyleColor(S));
-		L->SetIntensity(bFinished ? 0.f : (4.f + 50.f * Backbeat) * (bHeatMode ? 2.f : 1.f));
+		const float Tell = (TelegraphFrom > 0.f && SongSeconds(Now) >= TelegraphFrom && SongSeconds(Now) <= TelegraphTo) ? 1.f : 0.f;
+		L->SetIntensity(bFinished ? 0.f : (4.f + 50.f * Backbeat + 90.f * Tell) * (bHeatMode ? 2.f : 1.f));
 	}
 	if (PlayerHalo)
 	{
@@ -898,7 +1119,11 @@ void UEclipseDanceBattleSubsystem::TickDancers(float Now, float DeltaTime)
 	}
 
 	if (LastBar < 0 || bFinished) return;
-	const float B = (SongSeconds(Now) - Track->SegmentStartSeconds()) / Track->BeatSeconds();
+	const float Song = SongSeconds(Now);
+	const float B = (Song - Track->SegmentStartSeconds()) / Track->BeatSeconds();
+	// 0 before the tell starts, 1 the moment he steps.
+	const float TelegraphAlpha = (TelegraphFrom > 0.f && Song >= TelegraphFrom && Song <= TelegraphTo)
+		? (Song - TelegraphFrom) / FMath::Max(0.01f, TelegraphTo - TelegraphFrom) : 0.f;
 
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	for (const TPair<TWeakObjectPtr<ACharacter>, FTransform>& It : MeshBase)
@@ -908,7 +1133,42 @@ void UEclipseDanceBattleSubsystem::TickDancers(float Now, float DeltaTime)
 		const bool bIsPlayer = PC && C == PC->GetPawn();
 		FVector Loc = FVector::ZeroVector;
 		FRotator Rot = FRotator::ZeroRotator;
-		StyleMotion(bIsPlayer ? PlayerStyle : OpponentStyle, B, Loc, Rot);
+		if (bIsPlayer && StaggeredUntil > 0.f)
+		{
+			// Balance broken: down you go, flat out, until you're back on your feet.
+			const float Down = FMath::Clamp((StaggerSeconds - (StaggeredUntil - SongSeconds(Now))) * 4.f, 0.f, 1.f);
+			C->GetMesh()->SetRelativeLocationAndRotation(It.Value.GetLocation() + FVector(26.f * Down, 0.f, 6.f * Down),
+				FQuat(FRotator(-82.f * Down, 0.f, 0.f)) * It.Value.GetRotation());
+			continue;
+		}
+		const FVector2D& Tilt = bIsPlayer ? PlayerTilt : OpponentTilt;
+		const float Strike = FMath::Max(Tilt.X, Tilt.Y);
+		StyleMotion(bIsPlayer ? PlayerStyle : EEclipseDanceStyle::Count, B, Loc, Rot);
+		// He leans and bobs into whichever way he's sliding, so you can see him go.
+		if (!bIsPlayer)
+		{
+			Rot.Roll += FMath::Clamp(DriftSpeed * 0.6f, -14.f, 14.f);
+			Loc.Y += FMath::Clamp(DriftSpeed * 0.5f, -10.f, 10.f);
+			Loc.Z += 6.f * FMath::Abs(FMath::Sin(PI * B)) * FMath::Min(1.f, FMath::Abs(DriftSpeed) * 0.1f);
+		}
+		Loc *= 1.f - Strike;   // the swaying idle gets out of the way of an attack
+		Rot.Roll *= 1.f - Strike;
+		Rot.Yaw *= 1.f - Strike;
+		// His tell over the two beats before he steps: a slow twist for a light lead, a lean back for a heavy one.
+		if (!bIsPlayer && TelegraphAlpha > 0.f)
+		{
+			const float Ease = FMath::InterpEaseInOut(0.f, 1.f, TelegraphAlpha, 2.f);
+			if (TelegraphDir > 0.f) Rot.Yaw += 38.f * Ease;
+			else { Rot.Pitch -= 28.f * Ease; Loc.X -= 10.f * Ease; }
+		}
+		// Light is arms and head: it lifts, leans back a little and twists the shoulders.
+		Rot.Pitch -= 12.f * Tilt.X;
+		Rot.Yaw += 26.f * Tilt.X;
+		Loc.Z += 28.f * Tilt.X;
+		// Heavy is the feet: a stamp straight down, pitching forward over the front foot.
+		Rot.Pitch += 32.f * Tilt.Y;
+		Loc.Z -= 34.f * Tilt.Y;
+		Loc.X += 14.f * Tilt.Y;
 		// Offsets are in actor space, so pre-multiply onto the mesh's own relative rotation.
 		C->GetMesh()->SetRelativeLocationAndRotation(It.Value.GetLocation() + Loc, FQuat(Rot) * It.Value.GetRotation());
 	}

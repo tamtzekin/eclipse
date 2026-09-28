@@ -258,6 +258,9 @@ public:
 	// An Ink int variable, or Default when it isn't declared.
 	int32 GetInkInt(const FString& Variable, int32 Default);
 
+	// Writes an Ink int; the story decides what it means (a battle result moving Patience, say).
+	void SetInkInt(const FString& Variable, int32 Value);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dialogue")
 	bool MakeChoice(int32 ChoiceIndex);
 

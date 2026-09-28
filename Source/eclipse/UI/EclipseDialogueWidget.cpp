@@ -2117,7 +2117,7 @@ TArray<FEclipseSpeechSegment> UEclipseDialogueWidget::ParseSpeechSegments(
 			bTagged = !Tag.IsEmpty() && Tag == Tag.ToUpper();
 			for (const TCHAR C : Tag)
 			{
-				if (!FChar::IsAlpha(C) && C != TEXT('_') && !FChar::IsDigit(C))
+				if (!FChar::IsAlpha(C) && C != TEXT('_') && !FChar::IsDigit(C) && C != TEXT(' '))   // spaces for numbered speakers ("LAD 2")
 				{
 					bTagged = false; break;
 				}
@@ -2126,7 +2126,7 @@ TArray<FEclipseSpeechSegment> UEclipseDialogueWidget::ParseSpeechSegments(
 			{
 				Push(Current, Buffer);
 				Buffer.Reset();
-				Current = FName(*Tag.ToLower());
+				Current = FName(*Tag.ToLower().Replace(TEXT(" "), TEXT("_")));   // the actor's DialogueId form
 				Buffer  = Line.Mid(Colon + 1).TrimStart();
 				continue;
 			}

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Data/EclipseDanceStyle.h"
 #include "EclipseNpcCharacter.generated.h"
 
 UENUM(BlueprintType)
@@ -129,6 +130,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC")
 	EEclipseBubbleType BubbleType = EEclipseBubbleType::Question;
+
+	// The style this dancer is expert in: announced before a battle, and doubles your chain damage while you match it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Dance")
+	EEclipseDanceStyle ExpertStyle = EEclipseDanceStyle::Muzzing;
 
 	// ── Quest / role flags ──
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|NPC|Roles")

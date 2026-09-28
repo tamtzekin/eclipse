@@ -372,6 +372,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleXP = { 0, 0, 0, 0, 0 };
 	void AddDanceStyleXP(EEclipseDanceStyle Style, int32 Amount);
 
+	// Set once the player has been through the strafe and style lessons; later battles skip them.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") bool bDanceTutorialDone = false;
+
 	// ── Time ──
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Time") int32 Chapter = 0;
 

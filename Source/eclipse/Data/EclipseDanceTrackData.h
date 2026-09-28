@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "EclipseDanceStyle.h"
 #include "EclipseDanceTrackData.generated.h"
 
 class USoundWave;
@@ -36,12 +37,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", meta = (ClampMin = "5"))
 	float SegmentSeconds = 60.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance")
+	FText Title;
+
+	// This track always runs as the tutorial: one style, the lessons, no switching.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance")
+	bool bTutorialTrack = false;
+
 	// Normalised loudness of the whole track, EnvelopeRate samples per second, for the scrolling waveform; editable so the analyser's Python can write it.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", AdvancedDisplay)
 	TArray<float> Envelope;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", AdvancedDisplay)
 	float EnvelopeRate = 50.f;
+
+	// The same track split into bass / mids / highs (0..1, EnvelopeRate per second): the waveform's layered shape.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", AdvancedDisplay) TArray<float> EnvelopeLow;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", AdvancedDisplay) TArray<float> EnvelopeMid;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dance", AdvancedDisplay) TArray<float> EnvelopeHigh;
 
 	float BeatSeconds() const { return 60.f / FMath::Max(1.f, BPM); }
 	float BarSeconds() const { return BeatsPerBar * BeatSeconds(); }

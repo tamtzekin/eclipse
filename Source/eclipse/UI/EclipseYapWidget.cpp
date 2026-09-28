@@ -117,7 +117,7 @@ void UEclipseYapWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	if (Beat > 0.f)
 	{
 		const float P = 1.f - FMath::Fmod(Elapsed, Beat) / Beat;
-		SetRenderScale(FVector2D(1.f + 0.12f * P * P));
+		SetRenderScale(FVector2D(1.f + 0.05f * P * P));   // a subtle breath on the beat, not a jump
 		if (YapWord) YapWord->SetShadowColorAndOpacity(HighlightColor.CopyWithNewOpacity(0.9f * P));
 	}
 

@@ -87,3 +87,6 @@ LIST CurrentPlayer = character_one, character_two, character_three
 
 // Patience of NPC you're talking to
 LIST Patience = annoyed, bored, (neutral), friendly, flirty
+
+// Result of the last dance battle, written by the game: -1 none yet, 1 won, 0 lost.
+VAR dance_won = -1

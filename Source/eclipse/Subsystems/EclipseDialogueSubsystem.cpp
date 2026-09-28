@@ -101,6 +101,13 @@ int32 UEclipseDialogueSubsystem::GetInkInt(const FString& Variable, int32 Defaul
 	return bOk ? Value : Default;
 }
 
+void UEclipseDialogueSubsystem::SetInkInt(const FString& Variable, int32 Value)
+{
+	if (!Story) return;
+	bool bOk = false;
+	Story->SetInt(Variable, Value, bOk);
+}
+
 const TArray<FString>& UEclipseDialogueSubsystem::GetYaps(FName NpcName) const
 {
 	static const TArray<FString> Empty;
@@ -1364,17 +1371,21 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 			if (Wanted.Equals(EclipseDance::Info((EEclipseDanceStyle)i).Name, ESearchCase::IgnoreCase)) GS->UnlockDanceStyle((EEclipseDanceStyle)i);
 		}
 	}
-	else if (ActionName == TEXT("danceBattle"))
+	else if (ActionName.ToString().StartsWith(TEXT("danceBattle")))
 	{
+		// "danceBattle:Adagio" plays DA_DanceTrack_Adagio; plain "danceBattle" is the club track.
+		FString Key = TEXT("ClubMusic");
+		ActionName.ToString().Split(TEXT(":"), nullptr, &Key);
+		Key.TrimStartAndEndInline();
 		// CloseDialogue nulls ActiveNpc, so take the opponent first.
 		AEclipseNpcCharacter* Opponent = ActiveNpc;
 		CloseDialogue();
 		UEclipseDanceTrackData* Track = LoadObject<UEclipseDanceTrackData>(nullptr,
-			TEXT("/Game/Justin/Audio/Dance/DA_DanceTrack_ClubMusic.DA_DanceTrack_ClubMusic"));
+			*FString::Printf(TEXT("/Game/Justin/Audio/Dance/DA_DanceTrack_%s.DA_DanceTrack_%s"), *Key, *Key));
 		UEclipseDanceBattleSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>() : nullptr;
 		if (!Track || !Dance || !Dance->StartBattle(Track, Opponent))
 		{
-			UE_LOG(LogEclipse, Warning, TEXT("danceBattle: no track asset yet — run Tools/analyse_dance_track.py first"));
+			UE_LOG(LogEclipse, Warning, TEXT("danceBattle: no track asset DA_DanceTrack_%s — run Tools/analyse_dance_track.py"), *Key);
 		}
 	}
 }
