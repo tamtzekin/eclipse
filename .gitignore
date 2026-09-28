@@ -94,3 +94,6 @@ Screen Shot*.png
 # committing it would add a gitlink that clones as an empty directory.
 ClubDungeon/
 dungeon-prototype/
+
+# Python bytecode from the Tools scripts
+__pycache__/

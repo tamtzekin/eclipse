@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dance Sequencer</title>
+<style>
+  :root { --bg:#0d0d12; --panel:#17171f; --line:#2a2a36; --text:#e8e8f0; --dim:#8a8a9a; --wave:#04a1fe; --start:#4ed14e; --rec:#ff2a2a; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 -apple-system, system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+  h1 { font-size:14px; letter-spacing:.2em; margin:0 6px 0 0; }
+  label { color:var(--dim); display:flex; gap:6px; align-items:center; }
+  select, input[type=number] { background:#0d0d12; color:var(--text); border:1px solid var(--line); padding:4px 6px; border-radius:4px; }
+  input[type=number] { width:78px; }
+  button { background:#24242f; color:var(--text); border:1px solid var(--line); padding:5px 10px; border-radius:4px; cursor:pointer; }
+  button:hover { background:#30303d; }
+  button.on { background:#3c3c4c; border-color:#55556a; }
+  #rec.on { background:var(--rec); border-color:var(--rec); color:#fff; }
+  #view { margin:12px 16px 0; }
+  canvas { display:block; width:100%; background:#08080c; border-radius:6px; cursor:crosshair; }
+  #scroll { width:100%; margin:8px 0; }
+  .help { color:var(--dim); margin:8px 16px 16px; }
+  .help b { color:var(--text); }
+  #status { color:var(--dim); margin-left:auto; text-align:right; }
+  .keys span { display:inline-block; margin-right:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DANCE SEQUENCER</h1>
+  <label>Track <select id="track"><option value="">— pick a track —</option></select></label>
+  <label>BPM <input id="bpm" type="number" step="0.001"></label>
+  <label>First downbeat (s) <input id="first" type="number" step="0.001"></label>
+  <button data-nudge="-0.01">−10ms</button><button data-nudge="0.01">+10ms</button>
+  <button data-beat="-1">−1 beat</button><button data-beat="1">+1 beat</button>
+  <button id="tap">Tap tempo (T)</button>
+  <label>Zoom <input id="zoom" type="range" min="4" max="64" value="16"></label>
+  <button id="play">▶ Play</button>
+  <button id="rec">● Record</button>
+  <label>Quantize <select id="quant"><option value="1">1 bar</option><option value="2">2 bars</option><option value="4">4 bars</option></select></label>
+  <button id="click" class="on">Click</button>
+  <button id="clear">Clear</button>
+  <span id="status"></span>
+</header>
+<div id="view" hidden>
+  <canvas id="cv" height="320"></canvas>
+  <input id="scroll" type="range" min="0" max="1000" value="0">
+</div>
+<p class="help">
+  Stances are arrow-key combos — press the keys together:
+  <span class="keys" id="legend"></span><br>
+  <b>Record</b> counts in 4-3-2-1 on the beat from the bar you're on (click the waveform to scrub there first), then plays. Dance it: every combo lands a switch-up snapped to the nearest bar (or 2/4-bar line, under Quantize).
+  <b>Click a bar</b> in the strip to select it, then press a combo to set its stance; <b>Backspace</b> removes it. <b>Shift-click</b> sets the battle start (green).<br>
+  <b>Tap tempo</b>: tap T on the beat 8+ times to fit BPM and the downbeat. With <b>Click</b> on, bar 1 clicks high, the other beats low, switches ring.
+  <b>[ ]</b> nudge the grid 10ms, <b>Shift+[ ]</b> a whole beat. <b>Space</b> plays/stops.
+  Everything saves automatically to <code>&lt;track&gt;.dance.json</code> next to the track — tell Claude to apply it.
+</p>
+<script>
+// Game values for tracks already in the game, so their first open starts from what's in there. Key = DA_DanceTrack_<Key>.
+const KNOWN = { 'dogheadsurigeri - Short Fuse': ['ClubMusic', 148.00, 1.668, 7] };
+// Must match EclipseDanceStyle.h: index is the game's enum order, keys the combo held together.
+const STYLES = [
+  { id: 'HAKKEN',   color: '#ff1a1a', keys: ['ArrowLeft', 'ArrowDown', 'ArrowRight'], glyph: '← ↓ →' },
+  { id: 'MUZZING',  color: '#04a1fe', keys: ['ArrowUp', 'ArrowRight'],                glyph: '↑ →' },
+  { id: 'LIQUID',   color: '#00a8ff', keys: ['ArrowLeft', 'ArrowRight'],              glyph: '← →' },
+  { id: 'TEKTONIK', color: '#f2b85c', keys: ['ArrowUp', 'ArrowDown'],                 glyph: '↑ ↓' },
+  { id: 'JUMPSTYLE',color: '#ff6a1a', keys: ['ArrowLeft', 'ArrowDown'],               glyph: '← ↓' },
+  { id: 'SHUFFLE',  color: '#4ed14e', keys: ['ArrowDown', 'ArrowRight'],              glyph: '↓ →' },
+];
+const COMBO_MS = 150;   // keys pressed within this of the first count as one combo
+const $ = id => document.getElementById(id);
+const cv = $('cv'), g = cv.getContext('2d');
+const S = { name: null, key: null, buf: null, peaks: null, bass: null, bpm: 140, first: 0, start: 0, sw: new Map(), view: 0, sel: null };
+let ctx, src = null, playFrom = 0, playAt = 0, playing = false, recording = false, nextBeat = 0, timer = null;
+let taps = [], combo = null, lastMsg = '', saveTimer = null;
+const PEAKS_PER_SEC = 200;
+$('legend').innerHTML = STYLES.map(s => `<span style="color:${s.color}">${s.glyph} ${s.id}</span>`).join('');
+
+const beatLen = () => 60 / S.bpm, barLen = () => 4 * beatLen();
+const barsVisible = () => +$('zoom').value;
+const now = () => playing ? playFrom + (ctx.currentTime - playAt) : playFrom;
+const latency = () => (ctx && (ctx.outputLatency || ctx.baseLatency)) || 0;
+const styleColor = i => STYLES[i] ? STYLES[i].color : '#ff3aa0';
+
+function dump() {
+  const bars = [...S.sw.keys()].sort((a, b) => a - b);
+  return { key: S.key, bpm: S.bpm, first: S.first, startBar: S.start, switchBars: bars, switchStyles: bars.map(b => S.sw.get(b)) };
+}
+function status() { $('status').textContent = `${S.sw.size} switches · start bar ${S.start}${lastMsg ? ' · ' + lastMsg : ''}`; }
+// Saved beside the track a moment after the last change.
+function save() {
+  status();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => fetch('/analysis/' + encodeURIComponent(S.name), { method: 'PUT', body: JSON.stringify(dump()) })
+    .then(r => { if (!r.ok) throw 0; lastMsg = 'saved'; status(); })
+    .catch(() => { lastMsg = 'SAVE FAILED — is dance_sequencer.py running?'; status(); }), 400);
+}
+function load(d) {
+  S.key = d.key || S.key; S.bpm = d.bpm; S.first = d.first; S.start = d.startBar ?? 0;
+  S.sw = new Map((d.switchBars || []).map((b, i) => [b, (d.switchStyles || [])[i] ?? -1]));
+  $('bpm').value = S.bpm; $('first').value = S.first.toFixed(3); draw(); status();
+}
+
+async function openTrack(name) {
+  if (!name) return;
+  stop();
+  ctx = ctx || new AudioContext();
+  lastMsg = 'loading…'; status();
+  S.name = name;
+  S.buf = await ctx.decodeAudioData(await (await fetch('/audio/' + encodeURIComponent(name))).arrayBuffer());
+  const stem = name.replace(/\.[^.]+$/, ''), known = KNOWN[stem];
+  S.key = known ? known[0] : stem.replace(/[^A-Za-z0-9]/g, '');
+  // Peaks and a one-pole bass split, so kicks read apart from the rest.
+  const ch = S.buf.getChannelData(0), sr = S.buf.sampleRate, step = Math.floor(sr / PEAKS_PER_SEC);
+  const n = Math.floor(ch.length / step), k = 1 - Math.exp(-2 * Math.PI * 150 / sr);
+  S.peaks = new Float32Array(n); S.bass = new Float32Array(n);
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    let p = 0, b = 0;
+    for (let j = i * step, e = j + step; j < e; j++) { const x = ch[j]; lp += k * (x - lp); p = Math.max(p, Math.abs(x)); b = Math.max(b, Math.abs(lp)); }
+    S.peaks[i] = p; S.bass[i] = b;
+  }
+  const pmax = S.peaks.reduce((a, v) => Math.max(a, v), 0) || 1, bmax = S.bass.reduce((a, v) => Math.max(a, v), 0) || 1;
+  for (let i = 0; i < n; i++) { S.peaks[i] /= pmax; S.bass[i] /= bmax; }
+  $('view').hidden = false;
+  // The analysis file beside the track, if there is one.
+  const r = await fetch('/analysis/' + encodeURIComponent(name));
+  lastMsg = r.ok ? 'loaded ' + stem + '.dance.json' : 'new — no analysis file yet';
+  load(r.ok ? await r.json() : { bpm: known ? known[1] : 140, first: known ? known[2] : 0, startBar: known ? known[3] : 0, switchBars: [] });
+  playFrom = 0; S.view = 0; S.sel = null; resize();
+}
+
+function resize() { cv.width = cv.clientWidth * devicePixelRatio; cv.height = 320 * devicePixelRatio; draw(); }
+function x2t(x) { return S.view + x / cv.clientWidth * barsVisible() * barLen(); }
+function t2x(t) { return (t - S.view) / (barsVisible() * barLen()) * cv.width; }
+function barAt(t) { return Math.floor((t - S.first) / barLen() + 1e-6); }
+
+function draw() {
+  if (!S.buf) return;
+  const W = cv.width, H = cv.height, dpr = devicePixelRatio, wave = H - 44 * dpr, mid = wave / 2, stripY = wave + 4 * dpr;
+  g.clearRect(0, 0, W, H);
+  const span = barsVisible() * barLen();
+  for (const [b, st] of S.sw) {
+    const x0 = t2x(S.first + b * barLen());
+    if (x0 < -W || x0 > W * 2) continue;
+    g.fillStyle = styleColor(st) + '22'; g.fillRect(x0, 0, t2x(S.first + (b + 1) * barLen()) - x0, wave);
+  }
+  // Waveform: full band in blue, bass underneath darker.
+  for (let x = 0; x < W; x++) {
+    const i = Math.floor((S.view + x / W * span) * PEAKS_PER_SEC);
+    if (i < 0 || i >= S.peaks.length) continue;
+    const p = S.peaks[i] * mid * 0.95, b = S.bass[i] * mid * 0.95;
+    g.fillStyle = '#04a1fe'; g.fillRect(x, mid - p, 1, p * 2);
+    g.fillStyle = '#0a2a8a'; g.fillRect(x, mid - b * 0.8, 1, b * 1.6);
+  }
+  // Grid: beats faint, bars, then every 4 and 8 brighter.
+  const firstBeat = Math.floor((S.view - S.first) / beatLen()) - 1;
+  for (let i = firstBeat, e = firstBeat + barsVisible() * 4 + 3; i <= e; i++) {
+    const x = Math.round(t2x(S.first + i * beatLen())), bar = Math.floor(i / 4), onBar = ((i % 4) + 4) % 4 === 0;
+    g.fillStyle = !onBar ? 'rgba(255,255,255,0.10)' : bar % 8 === 0 ? 'rgba(255,255,255,0.75)' : bar % 4 === 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)';
+    g.fillRect(x, 0, onBar ? dpr : 1, wave);
+  }
+  // Bar strip: numbered cells, coloured by stance; the selected one outlined.
+  g.font = `${11 * dpr}px -apple-system, sans-serif`; g.textBaseline = 'middle';
+  for (let b = barAt(S.view) - 1, e = barAt(S.view + span) + 1; b <= e; b++) {
+    const x0 = t2x(S.first + b * barLen()), x1 = t2x(S.first + (b + 1) * barLen()), has = S.sw.has(b);
+    g.fillStyle = has ? styleColor(S.sw.get(b)) : b % 8 === 0 ? '#2e2e3c' : b % 4 === 0 ? '#25252f' : '#1a1a22';
+    g.fillRect(x0 + dpr, stripY, x1 - x0 - 2 * dpr, 36 * dpr);
+    if (has) { g.fillStyle = styleColor(S.sw.get(b)); g.fillRect(Math.round(x0), 0, 2 * dpr, wave); }
+    if (b === S.start) { g.fillStyle = '#4ed14e'; g.fillRect(x0 + dpr, stripY, 4 * dpr, 36 * dpr); g.fillRect(Math.round(x0), 0, 2 * dpr, wave); }
+    if (b === S.sel) { g.strokeStyle = '#fff'; g.lineWidth = 2 * dpr; g.strokeRect(x0 + 2 * dpr, stripY + dpr, x1 - x0 - 4 * dpr, 34 * dpr); }
+    if (x1 - x0 > 18 * dpr) {
+      g.fillStyle = has ? '#000' : '#8a8a9a';
+      g.fillText(b, x0 + 6 * dpr, stripY + 12 * dpr);
+      if (has && x1 - x0 > 46 * dpr) g.fillText(STYLES[S.sw.get(b)] ? STYLES[S.sw.get(b)].id : '•', x0 + 6 * dpr, stripY + 26 * dpr);
+    }
+  }
+  g.fillStyle = '#fff'; g.fillRect(Math.round(t2x(now())), 0, 2 * dpr, H);
+  const countIn = playing ? Math.ceil((playAt - ctx.currentTime) / beatLen() - 1e-3) : 0;
+  if (countIn > 0 && countIn <= 4) {
+    g.font = `bold ${90 * dpr}px -apple-system, sans-serif`; g.textAlign = 'center';
+    g.fillStyle = '#ff2a2a'; g.fillText(countIn, W / 2, H / 2); g.textAlign = 'left';
+  }
+  $('scroll').value = S.view / Math.max(1, S.buf.duration - span) * 1000;
+}
+
+function blip(at, f, v, d) {
+  const o = ctx.createOscillator(), a = ctx.createGain();
+  o.frequency.value = f; o.connect(a); a.connect(ctx.destination);
+  a.gain.setValueAtTime(v, at); a.gain.exponentialRampToValueAtTime(0.001, at + d);
+  o.start(at); o.stop(at + d);
+}
+function schedule() {
+  const ahead = now() + 0.12;
+  while (S.first + nextBeat * beatLen() < ahead) {
+    const i = nextBeat++, at = playAt + (S.first + i * beatLen() - playFrom), bar = Math.floor(i / 4), one = ((i % 4) + 4) % 4 === 0;
+    if (at < ctx.currentTime) continue;
+    if (one && S.sw.has(bar)) blip(at, 2400, 0.5, 0.18);
+    if ($('click').classList.contains('on')) blip(at, one ? 1500 : 900, one ? 0.35 : 0.18, one ? 0.05 : 0.04);
+  }
+}
+function play(countIn) {
+  ctx.resume();   // opened without a click, the context starts suspended
+  let t0 = ctx.currentTime + 0.05;
+  if (countIn) {
+    // Back to the start of the bar we're in, then four beats of count-in so the music comes in on a 1.
+    playFrom = Math.max(0, S.first + barAt(playFrom) * barLen());
+    t0 += 4 * beatLen();
+    for (let i = 4; i > 0; i--) blip(t0 - i * beatLen(), i === 1 ? 1800 : 1100, 0.4, 0.09);
+  }
+  src = ctx.createBufferSource(); src.buffer = S.buf; src.connect(ctx.destination);
+  src.start(t0, playFrom); playAt = t0; playing = true;
+  nextBeat = Math.ceil((playFrom - S.first) / beatLen());
+  timer = setInterval(schedule, 25);
+  src.onended = () => { if (playing && now() >= S.buf.duration - 0.05) stop(); };
+  $('play').textContent = '■ Stop';
+  (function loop() {
+    if (!playing) return;
+    const t = Math.max(0, now()), span = barsVisible() * barLen();
+    if (t > S.view + span * 0.8 || t < S.view) S.view = Math.max(0, t - span * 0.2);
+    draw(); requestAnimationFrame(loop);
+  })();
+}
+function stop() {
+  if (src) { playFrom = Math.max(0, now()); src.onended = null; try { src.stop(); } catch (e) {} src = null; }
+  playing = false; recording = false; clearInterval(timer);
+  $('play').textContent = '▶ Play'; $('rec').classList.remove('on'); draw();
+}
+function seek(t) { const was = playing && !recording; if (playing) stop(); playFrom = Math.max(0, Math.min(t, S.buf.duration)); if (was) play(false); else draw(); }
+
+function setStance(bar, style) { S.sw.set(bar, style); lastMsg = `${STYLES[style].id} → bar ${bar}`; draw(); save(); }
+// A combo is every arrow pressed within COMBO_MS of the first; recording, it lands on the bar nearest that first press.
+function onArrow(key) {
+  if (!combo) {
+    const t = now() - latency();
+    combo = { keys: new Set(), t };
+    setTimeout(() => {
+      const c = combo; combo = null;
+      const i = STYLES.findIndex(s => s.keys.length === c.keys.size && s.keys.every(k => c.keys.has(k)));
+      if (i < 0) { lastMsg = 'no stance for ' + [...c.keys].map(k => k.slice(5)).join('+'); return status(); }
+      if (recording) {
+        const q = +$('quant').value;
+        setStance(Math.round((c.t - S.first) / barLen() / q) * q, i);
+        blip(ctx.currentTime, 2000, 0.3, 0.08);
+      } else if (S.sel !== null) setStance(S.sel, i);
+    }, COMBO_MS);
+  }
+  combo.keys.add(key);
+}
+function tap() {
+  const t = (playing ? now() : performance.now() / 1000) - latency();
+  if (taps.length && t - taps[taps.length - 1] > 2.5) taps = [];
+  taps.push(t);
+  $('tap').textContent = `Tap ${taps.length}`;
+  if (taps.length < 8) return;
+  // Least squares through the taps: slope = beat length, intercept = a downbeat.
+  const n = taps.length, mx = (n - 1) / 2, my = taps.reduce((a, b) => a + b) / n;
+  const beat = taps.reduce((a, y, i) => a + (i - mx) * (y - my), 0) / taps.reduce((a, _, i) => a + (i - mx) ** 2, 0);
+  S.bpm = +(60 / beat).toFixed(3);
+  const t0 = my - beat * mx;
+  S.first = +(t0 - Math.floor(t0 / (beat * 4)) * beat * 4).toFixed(3);   // keep it inside the first bar
+  regrid();
+}
+
+$('track').onchange = e => openTrack(e.target.value).catch(err => { lastMsg = 'could not open: ' + err.message; status(); });
+$('play').onclick = () => playing ? stop() : play(false);
+$('rec').onclick = () => { if (playing) return stop(); recording = true; $('rec').classList.add('on'); play(true); };
+$('click').onclick = e => e.target.classList.toggle('on');
+$('tap').onclick = tap;
+$('clear').onclick = () => { if (confirm('Clear all switches?')) { S.sw.clear(); draw(); save(); } };
+$('bpm').onchange = () => { S.bpm = +$('bpm').value || S.bpm; regrid(); };
+$('first').onchange = () => { S.first = +$('first').value; regrid(); };
+function regrid() { $('bpm').value = S.bpm; $('first').value = S.first.toFixed(3); if (playing) nextBeat = Math.ceil((now() - S.first) / beatLen()); draw(); save(); }
+function nudge(sec) { S.first = +(S.first + sec).toFixed(3); regrid(); }
+document.querySelectorAll('[data-nudge]').forEach(b => b.onclick = () => nudge(+b.dataset.nudge));
+document.querySelectorAll('[data-beat]').forEach(b => b.onclick = () => nudge(+b.dataset.beat * beatLen()));
+$('zoom').oninput = draw;
+$('scroll').oninput = () => { S.view = $('scroll').value / 1000 * Math.max(0, S.buf.duration - barsVisible() * barLen()); draw(); };
+cv.addEventListener('wheel', e => { e.preventDefault(); S.view = Math.max(0, S.view + (e.deltaX || e.deltaY) / cv.clientWidth * barsVisible() * barLen()); draw(); }, { passive: false });
+cv.onclick = e => {
+  const r = cv.getBoundingClientRect(), t = x2t(e.clientX - r.left);
+  if (e.clientY - r.top < r.height - 44) return seek(t);
+  const b = barAt(t);
+  if (e.shiftKey) S.start = b; else S.sel = S.sel === b ? null : b;
+  draw(); save();
+};
+addEventListener('keydown', e => {
+  if (!S.buf || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.repeat) return;
+  if (e.key.startsWith('Arrow')) { e.preventDefault(); return onArrow(e.key); }
+  if (e.key === 't' || e.key === 'T') return tap();
+  if (e.code === 'Space') { e.preventDefault(); return playing ? stop() : play(false); }
+  if ((e.key === 'Backspace' || e.key === 'Delete') && S.sel !== null && S.sw.delete(S.sel)) { lastMsg = `cleared bar ${S.sel}`; draw(); return save(); }
+  if (e.key === '[' || e.key === '{') return nudge(e.shiftKey ? -beatLen() : -0.01);
+  if (e.key === ']' || e.key === '}') return nudge(e.shiftKey ? beatLen() : 0.01);
+});
+addEventListener('resize', () => S.buf && resize());
+
+fetch('/tracks').then(r => r.json()).then(d => {
+  for (const t of d.tracks) $('track').add(new Option(t, t));
+  lastMsg = `${d.tracks.length} track(s) in ${d.folder}`; status();
+  if (d.tracks.length === 1) { $('track').value = d.tracks[0]; openTrack(d.tracks[0]); }
+}).catch(() => { $('status').textContent = 'Run: python3 Tools/dance_sequencer.py'; });
+</script>
+</body>
+</html>
