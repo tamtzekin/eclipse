@@ -38,6 +38,8 @@ enum class EEclipseUiCue : uint8
 	MeterUp      UMETA(DisplayName = "Heat/Thirst gained"),
 	MeterDown    UMETA(DisplayName = "Heat/Thirst lost"),
 	HourChime    UMETA(DisplayName = "In-game hour passed"),
+	ClickSingle  UMETA(DisplayName = "Dialogue choice picked"),
+	ClickDouble  UMETA(DisplayName = "Dialogue closed / skill-check choice"),
 };
 
 UCLASS()

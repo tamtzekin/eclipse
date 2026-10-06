@@ -6,6 +6,7 @@
 #include "Items/EclipseItemActor.h"
 #include "Player/EclipsePlayerCharacter.h"
 #include "EclipseGameStateSubsystem.h"
+#include "EclipseAudioSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -358,6 +359,10 @@ bool UEclipseDialogueSubsystem::MakeChoice(int32 ChoiceIndex)
 
 	const FEclipseDialogueChoice& Chosen = CurrentNode.Choices[ChoiceIndex];
 	UE_LOG(LogEclipse, Log, TEXT("Choice [%d]: %s"), ChoiceIndex, *Chosen.Text.ToString());
+	if (UEclipseAudioSubsystem* Click = GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>())
+	{
+		Click->PlayCue(Chosen.bIsSkillCheck ? EEclipseUiCue::ClickDouble : EEclipseUiCue::ClickSingle);
+	}
 
 	// Apply stage-directive effects from this choice. Effects fire on click
 	// for every choice (available OR gated — gated choices still consume
@@ -710,6 +715,7 @@ void UEclipseDialogueSubsystem::BuildChoicesFromStory()
 void UEclipseDialogueSubsystem::CloseDialogue()
 {
 	if (!bDialogueOpen) return;
+	if (UEclipseAudioSubsystem* Click = GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>()) Click->PlayCue(EEclipseUiCue::ClickDouble);
 	// Walking off before the dead end still costs — no dodging it with Esc.
 	ChargeConversationThirst();
 	bDialogueOpen = false;
