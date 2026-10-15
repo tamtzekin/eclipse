@@ -370,7 +370,10 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 void AEclipseNpcCharacter::Yap(const FString& Line, float HoldSeconds, const FLinearColor& Highlight, float BeatSeconds)
 {
 	if (ActiveYap.IsValid()) ActiveYap->RemoveFromParent();
-	ActiveYap = UEclipseYapWidget::Show(this, Line, HoldSeconds, Highlight, BeatSeconds);
+	// Mid-dance the camera is in close, so the line reads better off the mouth than above the head.
+	const UEclipseDanceSystemSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceSystemSubsystem>() : nullptr;
+	const float Lift = Dance && Dance->IsRunning() ? YapMouthLift : 60.f;
+	ActiveYap = UEclipseYapWidget::Show(this, Line, HoldSeconds, Highlight, BeatSeconds, Lift);
 	if (BubbleWidget) BubbleWidget->SetVisibility(false);   // one thing above a head at a time; RefreshBubble brings the ?/! back
 	YapShowing = HoldSeconds + 1.f;   // covers the fade in and out
 }

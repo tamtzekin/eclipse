@@ -19,8 +19,10 @@ class ECLIPSE_API UEclipseYapWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// LiftCm is measured from the top of the speaker's capsule: clear of the head by default,
+	// negative to sit it at mouth height.
 	static UEclipseYapWidget* Show(ACharacter* Speaker, const FString& Line, float HoldSeconds,
-		const FLinearColor& Highlight = FLinearColor::White, float BeatSeconds = 0.f);
+		const FLinearColor& Highlight = FLinearColor::White, float BeatSeconds = 0.f, float LiftCm = 60.f);
 
 	// Shared by the C++ fallback and UEclipseUiBuilder::PopulateYapWBP.
 	static void BuildTree(UWidgetTree* Tree);
@@ -49,5 +51,6 @@ private:
 	float Hold = 4.f;
 	float Elapsed = 0.f;
 	float Beat = 0.f;             // >0 makes the highlighted word pulse on this period
+	float Lift = 60.f;            // above the capsule's top, where the box is anchored
 	FLinearColor HighlightColor = FLinearColor::White;
 };

@@ -15,7 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
-UEclipseYapWidget* UEclipseYapWidget::Show(ACharacter* Speaker, const FString& Line, float HoldSeconds, const FLinearColor& Highlight, float BeatSeconds)
+UEclipseYapWidget* UEclipseYapWidget::Show(ACharacter* Speaker, const FString& Line, float HoldSeconds, const FLinearColor& Highlight, float BeatSeconds, float LiftCm)
 {
 	APlayerController* PC = Speaker ? UGameplayStatics::GetPlayerController(Speaker, 0) : nullptr;
 	if (!PC) return nullptr;
@@ -27,6 +27,7 @@ UEclipseYapWidget* UEclipseYapWidget::Show(ACharacter* Speaker, const FString& L
 	W->Speaker = Speaker;
 	W->Hold = HoldSeconds;
 	W->Beat = BeatSeconds;
+	W->Lift = LiftCm;
 	W->SetLine(Line, Highlight);
 	W->SetAlignmentInViewport(FVector2D(0.f, 1.f));
 	W->SetRenderTransformPivot(FVector2D(0.f, 1.f));   // bumps grow up and out from the head
@@ -135,7 +136,7 @@ void UEclipseYapWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	}
 
 	// Off his shoulder, clear of the stance bar sitting over his head.
-	const FVector Head = C->GetActorLocation() + FVector(0.f, 0.f, C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 60.f);
+	const FVector Head = C->GetActorLocation() + FVector(0.f, 0.f, C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + Lift);
 	FVector2D Screen;
 	const bool bOnScreen = PC->ProjectWorldLocationToScreen(Head, Screen, /*bPlayerViewportRelative=*/true);
 	const float In = FMath::Clamp(Elapsed / FadeInSeconds, 0.f, 1.f);
