@@ -1,6 +1,8 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseNpcCharacter.h"
+#include "EngineUtils.h"
+#include "Animation/SkeletalMeshActor.h"
 #include "eclipse.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -108,6 +110,18 @@ void AEclipseNpcCharacter::BeginPlay()
 			}
 		}), 0.1f, false);
 	}
+	// One body per NPC: Natalia's blockout keeps its own copies of some characters,
+	// so hide anything standing on the spot where ours is.
+	if (AActor* Mine = VisualProxyActor.Get())
+	{
+		for (TActorIterator<ASkeletalMeshActor> It(GetWorld()); It; ++It)
+		{
+			ASkeletalMeshActor* Other = *It;
+			if (Other == Mine || Other->IsHidden()) continue;
+			if (FVector::Dist2D(Other->GetActorLocation(), Mine->GetActorLocation()) < 120.f) Other->SetActorHiddenInGame(true);
+		}
+	}
+
 }
 
 void AEclipseNpcCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
