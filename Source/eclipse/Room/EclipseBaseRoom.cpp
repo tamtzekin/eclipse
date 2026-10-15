@@ -1,6 +1,8 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseBaseRoom.h"
+#include "Components/AudioComponent.h"
+#include "Sound/AmbientSound.h"
 #include "eclipse.h"
 #include "Sound/SoundBase.h"
 #include "Subsystems/EclipseAudioSubsystem.h"
@@ -51,6 +53,16 @@ void AEclipseBaseRoom::BeginPlay()
 	Audio->PlayMusic(Sound, MusicFadeInSeconds, MusicStartSeconds);
 	UE_LOG(LogEclipse, Log, TEXT("Room '%s': PlayMusic '%s' fade=%.1fs start=%.1fs"),
 		*RoomKey.ToString(), *Sound->GetName(), MusicFadeInSeconds, MusicStartSeconds);
+	// The club's music shouldn't open on its intro, so tagged ambients start part-way in.
+	if (AmbientStartSeconds > 0.f)
+	{
+		for (TActorIterator<AAmbientSound> It(GetWorld()); It; ++It)
+		{
+			if (!It->ActorHasTag(TEXT("SkipIntro"))) continue;
+			if (UAudioComponent* C = It->GetAudioComponent()) C->Play(AmbientStartSeconds);
+		}
+	}
+
 }
 
 void AEclipseBaseRoom::ApplyCollisionStrips()
