@@ -12,7 +12,7 @@
 #include "Subsystems/EclipseInteractSubsystem.h"
 #include "UI/EclipseSpeechBubbleWidget.h"
 #include "UI/EclipseYapWidget.h"
-#include "Subsystems/EclipseDanceBattleSubsystem.h"
+#include "Subsystems/EclipseDanceSystemSubsystem.h"
 #include "UI/EclipseUiStyle.h"
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -336,7 +336,7 @@ void AEclipseNpcCharacter::TickYaps(float DeltaTime)
 	}
 
 	// The room hushes for a dance battle; the opponent's own lines come through Yap() directly.
-	if (const UEclipseDanceBattleSubsystem* Dance = GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>(); Dance && Dance->IsRunning()) return;
+	if (const UEclipseDanceSystemSubsystem* Dance = GetWorld()->GetSubsystem<UEclipseDanceSystemSubsystem>(); Dance && Dance->IsRunning()) return;
 
 	YapTimer -= DeltaTime;
 	if (YapTimer > 0.f) return;

@@ -82,6 +82,7 @@ Do you... kid?
 
 // The strafe lesson, first time only: a line every two bars while he moves and you keep facing him.
 === lad_battle_strafe ===
+Move side to side. Stay in front of me.
 Keep up.
 Follow me.
 This track is fire.

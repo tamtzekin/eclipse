@@ -89,10 +89,10 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulatePhoneWBP(const FString& WBPAssetPath);
 
-	// Dance battle HUD; tree comes from UEclipseDanceBattleWidget::BuildTree so it matches the fallback.
+	// Dance battle HUD; tree comes from UEclipseDanceSystemWidget::BuildTree so it matches the fallback.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
 		meta = (DevelopmentOnly))
-	static bool PopulateDanceBattleWBP(const FString& WBPAssetPath);
+	static bool PopulateDanceSystemWBP(const FString& WBPAssetPath);
 
 	// Overhead yap line; tree comes from UEclipseYapWidget::BuildTree.
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",

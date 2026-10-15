@@ -393,12 +393,15 @@ void UEclipseHUDWidget::TickHeartbeat(float DeltaSeconds)
 		{
 			if (!Text) continue;
 			// Static: on each thump the letters jump, shear and ghost, then snap back clean between beats.
+			// Not a jump: the label and its number swim and double up, like your eyes won't focus.
 			const float J = B * B;
-			Text->SetRenderTranslation(FVector2D(FMath::FRandRange(-3.f, 3.f), FMath::FRandRange(-1.5f, 1.5f)) * J);
-			Text->SetRenderShear(FVector2D(FMath::FRandRange(-14.f, 14.f) * J, 0.f));
-			Text->SetRenderOpacity(1.f - 0.45f * J * FMath::FRand());
-			Text->SetShadowOffset(FVector2D(FMath::FRandRange(-4.f, 4.f), FMath::FRandRange(-2.f, 2.f)) * J);
-			Text->SetShadowColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.5f * J));
+			Text->SetRenderTranslation(FVector2D(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-0.6f, 0.6f)) * J);
+			Text->SetRenderShear(FVector2D(FMath::FRandRange(-3.f, 3.f) * J, 0.f));
+			Text->SetRenderScale(FVector2D(1.f + 0.04f * J));
+			Text->SetRenderOpacity(1.f - 0.3f * J);
+			// The shadow is the ghost image; offsetting it further is what reads as blur.
+			Text->SetShadowOffset(FVector2D(2.5f + 3.f * J, 1.2f + 1.5f * J));
+			Text->SetShadowColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.55f * J));
 		}
 	};
 	Apply(GS->Heat <= UEclipseGameStateSubsystem::MeterCriticalLow, bHeatBeating, HeatBar, HeatLabelText, HeatValueText);

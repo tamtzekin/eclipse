@@ -5,12 +5,13 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Data/EclipseDanceStyle.h"
-#include "EclipseDanceBattleWidget.generated.h"
+#include "EclipseDanceSystemWidget.generated.h"
 
 class UTextBlock;
 class UImage;
 class UVerticalBox;
 class UButton;
+class UBorder;
 class UProgressBar;
 class UWidget;
 class UWidgetTree;
@@ -75,12 +76,12 @@ private:
 
 // Dance battle screen: his call, your answer, both balance bars and the per-style tint.
 UCLASS()
-class ECLIPSE_API UEclipseDanceBattleWidget : public UUserWidget
+class ECLIPSE_API UEclipseDanceSystemWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
-	// Shared by the C++ fallback and UEclipseUiBuilder::PopulateDanceBattleWBP so the two trees can't drift.
+	// Shared by the C++ fallback and UEclipseUiBuilder::PopulateDanceSystemWBP so the two trees can't drift.
 	static void BuildTree(UWidgetTree* Tree);
 
 	// Retints the screen for the style now being danced (the opponent says its name).
@@ -90,6 +91,9 @@ public:
 
 	// His balance bar rides above his head; pass the screen point, or hide it.
 	void SetStanceScreenPos(const FVector2D& Pos, bool bVisible);
+
+	// The three lessons, ticked off as they're passed; -1 once they're done.
+	void SetTutorialStep(int32 Active);
 
 	// Your stance, 0..1, shown on the bottom bar: full means broken.
 	void SetPlayerStance(float Ratio, bool bStaggered) { if (FacingGauge) FacingGauge->SetStance(Ratio, bStaggered); }
@@ -126,6 +130,15 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ChainName;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> ExpertText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> TutorialStep1;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> TutorialStep2;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> TutorialStep3;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialDot1;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialDot2;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialDot3;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialStrike1;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialStrike2;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialStrike3;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StyleNameText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseFacingGaugeWidget> FacingGauge;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> OpponentStance;
@@ -136,6 +149,8 @@ private:
 	float GradeFade = 0.f;
 	float GradeBeat = 0.5f;
 	float ChainFade = 0.f;
+	float ExpertFade = 1.f;
+	bool bExpertFading = false;
 	float PulseA = 0.f;
 	float PulseStrength = 1.f;
 	float PulseBeatSeconds = 0.5f;

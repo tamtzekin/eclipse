@@ -27,7 +27,7 @@
 #include "Ink/Value.h"
 #include "Inkpot/InkpotList.h"
 #include "Inkpot/InkpotValue.h"
-#include "Subsystems/EclipseDanceBattleSubsystem.h"
+#include "Subsystems/EclipseDanceSystemSubsystem.h"
 #include "Data/EclipseDanceTrackData.h"
 
 namespace
@@ -151,6 +151,7 @@ void UEclipseDialogueSubsystem::Deinitialize()
 
 bool UEclipseDialogueSubsystem::OpenDialogue(AEclipseNpcCharacter* Npc, bool bCostsThirst)
 {
+	if (UEclipseAudioSubsystem* Click = GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>()) Click->PlayCue(EEclipseUiCue::ClickSingle);
 	if (!Npc || Npc->DialogueId == NAME_None || !Story)
 	{
 		UE_LOG(LogEclipse, Warning, TEXT("OpenDialogue: missing NPC, dialogueId, or Ink story"));
@@ -1388,7 +1389,7 @@ void UEclipseDialogueSubsystem::DispatchMenuAction(FName ActionName)
 		CloseDialogue();
 		UEclipseDanceTrackData* Track = LoadObject<UEclipseDanceTrackData>(nullptr,
 			*FString::Printf(TEXT("/Game/Justin/Audio/Dance/DA_DanceTrack_%s.DA_DanceTrack_%s"), *Key, *Key));
-		UEclipseDanceBattleSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceBattleSubsystem>() : nullptr;
+		UEclipseDanceSystemSubsystem* Dance = GetWorld() ? GetWorld()->GetSubsystem<UEclipseDanceSystemSubsystem>() : nullptr;
 		if (!Track || !Dance || !Dance->StartBattle(Track, Opponent))
 		{
 			UE_LOG(LogEclipse, Warning, TEXT("danceBattle: no track asset DA_DanceTrack_%s — run Tools/analyse_dance_track.py"), *Key);

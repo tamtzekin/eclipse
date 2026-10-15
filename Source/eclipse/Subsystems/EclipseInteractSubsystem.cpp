@@ -10,7 +10,7 @@
 #include "Subsystems/EclipseDialogueSubsystem.h"
 #include "Subsystems/EclipseGameStateSubsystem.h"
 #include "Player/EclipsePlayerCharacter.h"
-#include "Subsystems/EclipseDanceBattleSubsystem.h"
+#include "Subsystems/EclipseDanceSystemSubsystem.h"
 
 void UEclipseInteractSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -34,7 +34,7 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 	if (!Pawn) return;
 
 	// Nothing is interactable mid dance battle: clears the name label and keeps E from opening a conversation.
-	if (const UEclipseDanceBattleSubsystem* Dance = World->GetSubsystem<UEclipseDanceBattleSubsystem>(); Dance && Dance->IsRunning())
+	if (const UEclipseDanceSystemSubsystem* Dance = World->GetSubsystem<UEclipseDanceSystemSubsystem>(); Dance && Dance->IsRunning())
 	{
 		if (NearTalkable) { NearTalkable = nullptr; OnNearTalkableChanged.Broadcast(nullptr); }
 		if (NearItem)     { NearItem = nullptr;     OnNearItemChanged.Broadcast(nullptr); }

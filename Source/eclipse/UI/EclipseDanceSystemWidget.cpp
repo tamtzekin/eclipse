@@ -1,6 +1,6 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
-#include "UI/EclipseDanceBattleWidget.h"
+#include "UI/EclipseDanceSystemWidget.h"
 #include "EclipseUiStyle.h"
 #include "Data/EclipseDanceTrackData.h"
 #include "Blueprint/WidgetTree.h"
@@ -118,9 +118,9 @@ int32 UEclipseWaveformWidget::NativePaint(const FPaintArgs& Args, const FGeometr
 		const float BassH = FMath::Min(Lo * MidY * Swell, MidY);
 		const float MidH = FMath::Min(Mi * MidY * Swell * 0.8f, MidY);
 		const float HighH = FMath::Min(Hi * MidY * Swell * 0.95f, MidY);
-		DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - BassH * 0.45f), FVector2D(X, Y + BassH), FMath::Lerp(Deep, Style, Lo).CopyWithNewOpacity(0.6f * Past * (0.4f + 0.6f * Lo)), ColumnPx);
-		if (MidH > 1.f) DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - MidH * 0.8f), FVector2D(X, Y + MidH * 0.5f), Style.CopyWithNewOpacity(0.55f * Past), ColumnPx);
-		if (HighH > 1.f) DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - HighH), FVector2D(X, Y - HighH * 0.1f), FMath::Lerp(Hot, FLinearColor::White, Hi).CopyWithNewOpacity(0.7f * Past), ColumnPx);
+		DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - BassH * 0.45f), FVector2D(X, Y + BassH), FMath::Lerp(Deep, Style, Lo).CopyWithNewOpacity(0.35f * Past * (0.4f + 0.6f * Lo)), ColumnPx);
+		if (MidH > 1.f) DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - MidH * 0.8f), FVector2D(X, Y + MidH * 0.5f), Style.CopyWithNewOpacity(0.32f * Past), ColumnPx);
+		if (HighH > 1.f) DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(X, Y - HighH), FVector2D(X, Y - HighH * 0.1f), FMath::Lerp(Hot, FLinearColor::White, Hi).CopyWithNewOpacity(0.4f * Past), ColumnPx);
 		Top.Emplace(X, Y - FMath::Max3(BassH * 0.45f, MidH * 0.8f, HighH));
 		Bottom.Emplace(X, Y + FMath::Max(BassH, MidH * 0.5f));
 		EdgeColors.Add(Hot.CopyWithNewOpacity(0.5f));
@@ -163,7 +163,7 @@ int32 UEclipseWaveformWidget::NativePaint(const FPaintArgs& Args, const FGeometr
 
 // ── Battle screen ──
 
-bool UEclipseDanceBattleWidget::Initialize()
+bool UEclipseDanceSystemWidget::Initialize()
 {
 	if (!WidgetTree)
 	{
@@ -176,7 +176,7 @@ bool UEclipseDanceBattleWidget::Initialize()
 	return Super::Initialize();
 }
 
-void UEclipseDanceBattleWidget::BuildTree(UWidgetTree* Tree)
+void UEclipseDanceSystemWidget::BuildTree(UWidgetTree* Tree)
 {
 	using namespace EclipseUI;
 
@@ -246,13 +246,65 @@ void UEclipseDanceBattleWidget::BuildTree(UWidgetTree* Tree)
 	Place(Expert, 0.f, 46.f);
 
 	USizeBox* GaugeSize = Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("FacingGaugeSize"));
-	GaugeSize->SetWidthOverride(440.f);
-	GaugeSize->SetHeightOverride(30.f);
+	GaugeSize->SetWidthOverride(260.f);
+	GaugeSize->SetHeightOverride(26.f);
 	GaugeSize->SetContent(Tree->ConstructWidget<UEclipseFacingGaugeWidget>(UEclipseFacingGaugeWidget::StaticClass(), TEXT("FacingGauge")));
 	Place(GaugeSize, 1.f, -40.f);
-	UTextBlock* BalanceLabel = Text(TEXT("BalanceLabel"), 14, 4.f, TEXT("BALANCE"));
+	UTextBlock* BalanceLabel = Text(TEXT("BalanceLabel"), 14, 4.f, TEXT("STANCE"));
 	BalanceLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.45f)));
 	Place(BalanceLabel, 1.f, -14.f);
+
+	// The lesson list, drawn like the game's objective list: diamond bullet, struck through once passed.
+	UVerticalBox* Steps = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TutorialSteps"));
+	const TCHAR* StepNames[] = { TEXT("TutorialStep1"), TEXT("TutorialStep2"), TEXT("TutorialStep3") };
+	const TCHAR* DotNames[] = { TEXT("TutorialDot1"), TEXT("TutorialDot2"), TEXT("TutorialDot3") };
+	const TCHAR* StrikeNames[] = { TEXT("TutorialStrike1"), TEXT("TutorialStrike2"), TEXT("TutorialStrike3") };
+	for (int32 i = 0; i < 3; ++i)
+	{
+		UHorizontalBox* Row = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), NAME_None);
+		const float Side = 11.f * 0.72f;
+		USizeBox* DotBox = Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		DotBox->SetWidthOverride(Side);
+		DotBox->SetHeightOverride(Side);
+		UBorder* Dot = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), DotNames[i]);
+		Dot->SetBrush(DiamondBrush(FLinearColor::Transparent, Cream, 1.5f));
+		Dot->SetRenderTransformAngle(45.f);
+		Dot->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		DotBox->AddChild(Dot);
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(DotBox))
+		{
+			HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			HS->SetPadding(FMargin(2.f, BulletTopPadding(MakeFragmentMono(14), Side), 8.f, 0.f));
+			HS->SetVerticalAlignment(VAlign_Top);
+		}
+		UOverlay* Cell = Tree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), NAME_None);
+		UTextBlock* T = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), StepNames[i]);
+		FSlateFontInfo F = MakeFragmentMono(14);
+		F.OutlineSettings.OutlineSize = 2;
+		F.OutlineSettings.OutlineColor = FLinearColor(0.f, 0.f, 0.f, 0.9f);
+		T->SetFont(F);
+		T->SetColorAndOpacity(FSlateColor(Cream));
+		if (UOverlaySlot* OS = Cell->AddChildToOverlay(T)) { OS->SetHorizontalAlignment(HAlign_Left); OS->SetVerticalAlignment(VAlign_Top); }
+		UBorder* Strike = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), StrikeNames[i]);
+		Strike->SetBrush(SolidBrush(Cream));
+		Strike->SetVisibility(ESlateVisibility::Collapsed);
+		Strike->SetPadding(FMargin(0.f, 1.f));
+		if (UOverlaySlot* OS = Cell->AddChildToOverlay(Strike))
+		{
+			OS->SetHorizontalAlignment(HAlign_Fill);
+			OS->SetVerticalAlignment(VAlign_Top);
+			OS->SetPadding(FMargin(0.f, 7.f, 0.f, 0.f));
+		}
+		if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(Cell)) HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		if (UVerticalBoxSlot* VS = Steps->AddChildToVerticalBox(Row)) VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	}
+	Steps->SetVisibility(ESlateVisibility::Collapsed);
+	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Steps))
+	{
+		S->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		S->SetPosition(FVector2D(40.f, 40.f));
+		S->SetAutoSize(true);
+	}
 
 	// His BALANCE bar, parked above his head every frame.
 	UVerticalBox* StanceBox = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("OpponentStanceBox"));
@@ -296,22 +348,50 @@ void UEclipseDanceBattleWidget::BuildTree(UWidgetTree* Tree)
 
 	}
 
-void UEclipseDanceBattleWidget::ShowStyle(EEclipseDanceStyle Style)
+void UEclipseDanceSystemWidget::ShowStyle(EEclipseDanceStyle Style)
 {
 	TintTarget = Style == EEclipseDanceStyle::Count ? FLinearColor::Transparent : EclipseDance::StyleColor(Style).CopyWithNewOpacity(0.12f);
 }
 
-void UEclipseDanceBattleWidget::SetFacingVisible(bool bVisible)
+void UEclipseDanceSystemWidget::SetFacingVisible(bool bVisible)
 {
 	if (FacingGauge) FacingGauge->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 }
 
-void UEclipseDanceBattleWidget::ShatterStance()
+void UEclipseDanceSystemWidget::ShatterStance()
 {
 	ShatterT = 0.f;
 }
 
-void UEclipseDanceBattleWidget::SetStanceScreenPos(const FVector2D& Pos, bool bVisible)
+void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
+{
+	using namespace EclipseUI;
+	UTextBlock* Steps[] = { TutorialStep1, TutorialStep2, TutorialStep3 };
+	UBorder* Dots[] = { TutorialDot1, TutorialDot2, TutorialDot3 };
+	UBorder* Strikes[] = { TutorialStrike1, TutorialStrike2, TutorialStrike3 };
+	const TCHAR* Names[] = { TEXT("Hold your stance"), TEXT("Copy his moves"), TEXT("Lock onto him") };
+	if (UWidget* Box = TutorialStep1 ? TutorialStep1->GetParent() : nullptr)
+	{
+		if (UWidget* List = Box->GetParent() ? Box->GetParent()->GetParent() : nullptr)
+		{
+			List->SetVisibility(Active < 0 ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		}
+	}
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const bool bDone = Active > i, bNow = Active == i;
+		if (Steps[i])
+		{
+			Steps[i]->SetText(FText::FromString(Names[i]));
+			Steps[i]->SetColorAndOpacity(FSlateColor(bDone ? FLinearColor(1.f, 1.f, 1.f, 0.45f) : bNow ? Cream : FLinearColor(1.f, 1.f, 1.f, 0.5f)));
+		}
+		// Filled diamond and a line through it once it's passed, same as a finished objective.
+		if (Dots[i]) Dots[i]->SetBrush(DiamondBrush(bDone ? Cream : FLinearColor::Transparent, Cream, 1.5f));
+		if (Strikes[i]) Strikes[i]->SetVisibility(bDone ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void UEclipseDanceSystemWidget::SetStanceScreenPos(const FVector2D& Pos, bool bVisible)
 {
 	if (!OpponentStance || !OpponentStance->GetParent()) return;
 	UWidget* Box = OpponentStance->GetParent();
@@ -322,7 +402,7 @@ void UEclipseDanceBattleWidget::SetStanceScreenPos(const FVector2D& Pos, bool bV
 	}
 }
 
-void UEclipseDanceBattleWidget::SetStance(float Ratio, bool bHit)
+void UEclipseDanceSystemWidget::SetStance(float Ratio, bool bHit)
 {
 	if (!OpponentStance) return;
 	OpponentStance->SetPercent(Ratio);
@@ -338,41 +418,36 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	// A circle at the centre you sit inside; the marker sticks there while you're balanced, and the range
 	// only appears once you've lost it.
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
-	constexpr float Span = 50.f;   // matches StrafeLimitDeg
+	constexpr float Span = 30.f;   // matches StrafeLimitDeg
 	const float Mid = Size.X * 0.5f, Y = Size.Y * 0.5f, Half = Size.X * 0.5f - 6.f;
 	const auto X = [&](float Deg) { return Mid + FMath::Clamp(Deg / Span, -1.f, 1.f) * Half; };
 	const bool bFacing = FMath::Abs(ErrorDeg) <= WindowDeg;
 	const float Danger = FMath::Clamp((FMath::Abs(ErrorDeg) - WindowDeg) / (Span - WindowDeg), 0.f, 1.f);
-	// Stance, Sekiro fashion: it grows out of the centre both ways and turns white when it breaks.
-	if (Pressure > 0.f)
-	{
-		const FLinearColor P = bStaggered ? FLinearColor::White : FMath::Lerp(EclipseDance::Gold, EclipseUI::DialogueRed, Pressure);
-		const float W = Half * FMath::Min(1.f, Pressure);
-		DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(Mid - W, Y), FVector2D(Mid + W, Y), P.CopyWithNewOpacity(bStaggered ? 0.95f : 0.5f), 22.f);
-	}
-	const FLinearColor Fill = bFacing ? FLinearColor(0.5f, 1.f, 0.6f) : FMath::Lerp(EclipseDance::Gold, EclipseUI::DialogueRed, Danger);
+	// Yellow as soon as you leave the ring, red by the time you're out of his reach.
+	const FLinearColor Fill = bFacing ? FLinearColor(0.5f, 1.f, 0.6f) : FMath::Lerp(FLinearColor(1.f, 0.85f, 0.2f), EclipseUI::DialogueRed, Danger);
+	if (bStaggered) DrawLine(OutDrawElements, LayerId + 2, AllottedGeometry, FVector2D(Mid - Half, Y), FVector2D(Mid + Half, Y), FLinearColor(1.f, 1.f, 1.f, 0.8f), 14.f);
 	DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(Mid - Half - 3.f, Y), FVector2D(Mid + Half + 3.f, Y), FLinearColor(0.f, 0.f, 0.f, 0.6f), 16.f);
-	DrawLine(OutDrawElements, LayerId + 3, AllottedGeometry, FVector2D(Mid, Y), FVector2D(X(ErrorDeg), Y), Fill.CopyWithNewOpacity(0.35f), 18.f);   // glow
-	DrawLine(OutDrawElements, LayerId + 4, AllottedGeometry, FVector2D(Mid, Y), FVector2D(X(ErrorDeg), Y), Fill, 8.f);
-	// The ring is you: it drifts left and right with your position. Put it over the dot and you're matched.
-	constexpr int32 Segments = 24;
-	constexpr float Radius = 13.f;
-	const float RingX = bFacing ? Mid + (X(ErrorDeg) - Mid) * 0.3f : X(ErrorDeg);   // sticky once you're matched
-	TArray<FVector2D> Ring;
-	for (int32 i = 0; i <= Segments; ++i)
+	// He's the filled circle in the middle; you're the ring that drifts across it.
+	// Sit yours inside his and you're facing him; stray outside and nothing you throw lands.
+	constexpr int32 Segments = 28;
+	const float Him = 9.f, Me = 15.f;
+	const auto Circle = [&](float Cx, float Radius, const FLinearColor& Col, float Thick, int32 Layer)
 	{
-		const float A2 = 2.f * PI * i / Segments;
-		Ring.Add(FVector2D(RingX + FMath::Cos(A2) * Radius, Y + FMath::Sin(A2) * Radius));
-	}
-	FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 6, AllottedGeometry.ToPaintGeometry(), Ring, ESlateDrawEffect::None,
-		bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(1.f, 1.f, 1.f, 0.5f), true, 3.f);
-	// The dot is him: dead centre, lit when you have him.
-	const FLinearColor DotCol = bFacing ? FLinearColor(0.5f, 1.f, 0.6f) : FLinearColor(1.f, 1.f, 1.f, 0.7f);
-	DrawLine(OutDrawElements, LayerId + 7, AllottedGeometry, FVector2D(Mid, Y - 1.f), FVector2D(Mid, Y + 1.f), DotCol, 7.f);
-	return LayerId + 5;
+		TArray<FVector2D> Ring;
+		for (int32 i = 0; i <= Segments; ++i)
+		{
+			const float A2 = 2.f * PI * i / Segments;
+			Ring.Add(FVector2D(Cx + FMath::Cos(A2) * Radius, Y + FMath::Sin(A2) * Radius));
+		}
+		FSlateDrawElement::MakeLines(OutDrawElements, Layer, AllottedGeometry.ToPaintGeometry(), Ring, ESlateDrawEffect::None, Col, true, Thick);
+	};
+	// Filled by stacking rings; Slate has no disc primitive.
+	for (float R = 2.f; R <= Him; R += 2.5f) Circle(Mid, R, bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(0.85f, 0.85f, 0.9f, 0.85f), 3.f, LayerId + 6);
+	Circle(X(ErrorDeg), Me, Fill, 2.5f, LayerId + 7);
+	return LayerId + 7;
 }
 
-void UEclipseDanceBattleWidget::ShowGrade(const FText& Grade, const FLinearColor& Color, float BeatSeconds)
+void UEclipseDanceSystemWidget::ShowGrade(const FText& Grade, const FLinearColor& Color, float BeatSeconds)
 {
 	if (!GradeText) return;
 	GradeText->SetText(Grade);
@@ -381,7 +456,7 @@ void UEclipseDanceBattleWidget::ShowGrade(const FText& Grade, const FLinearColor
 	GradeFade = 1.f;
 }
 
-void UEclipseDanceBattleWidget::FlashChain(const FString& Name, const FLinearColor& Color)
+void UEclipseDanceSystemWidget::FlashChain(const FString& Name, const FLinearColor& Color)
 {
 	if (!ChainName) return;
 	ChainName->SetText(FText::FromString(Name));
@@ -389,18 +464,21 @@ void UEclipseDanceBattleWidget::FlashChain(const FString& Name, const FLinearCol
 	ChainFade = 1.f;
 }
 
-void UEclipseDanceBattleWidget::ShowExpert(const FString& Who, EEclipseDanceStyle Style)
+void UEclipseDanceSystemWidget::ShowExpert(const FString& Who, EEclipseDanceStyle Style)
 {
 	if (!ExpertText) return;
 	const bool bShow = !Who.IsEmpty();
-	ExpertText->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	bExpertFading = !bShow;   // clearing it starts a fade rather than cutting it
 	if (!bShow) return;
+	ExpertFade = 1.f;
+	ExpertText->SetRenderOpacity(1.f);
+	ExpertText->SetVisibility(ESlateVisibility::HitTestInvisible);
 	ExpertText->SetText(FText::FromString(FString::Printf(TEXT("%s - EXPERT: %s  %s"), *Who.ToUpper(),
 		EclipseDance::Info(Style).Name, EclipseDance::IsHeavy(Style) ? TEXT("HEAVY / LEGS") : TEXT("LIGHT / HANDS"))));
 	ExpertText->SetColorAndOpacity(FSlateColor(EclipseDance::StyleColor(Style)));
 }
 
-void UEclipseDanceBattleWidget::SetRadialSelected(EEclipseDanceStyle Style)
+void UEclipseDanceSystemWidget::SetRadialSelected(EEclipseDanceStyle Style)
 {
 	if (!StyleNameText) return;
 	const bool bPicked = Style != EEclipseDanceStyle::Count;
@@ -408,12 +486,12 @@ void UEclipseDanceBattleWidget::SetRadialSelected(EEclipseDanceStyle Style)
 	StyleNameText->SetColorAndOpacity(FSlateColor(bPicked ? EclipseDance::StyleColor(Style) : EclipseUI::Cream));
 }
 
-void UEclipseDanceBattleWidget::NativeConstruct()
+void UEclipseDanceSystemWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	}
 
-void UEclipseDanceBattleWidget::Pulse(const FLinearColor& Color, float BeatSeconds, float Strength)
+void UEclipseDanceSystemWidget::Pulse(const FLinearColor& Color, float BeatSeconds, float Strength)
 {
 	PulseColor = Color;
 	PulseA = 1.f;
@@ -421,7 +499,7 @@ void UEclipseDanceBattleWidget::Pulse(const FLinearColor& Color, float BeatSecon
 	PulseBeatSeconds = FMath::Max(0.1f, BeatSeconds);
 }
 
-void UEclipseDanceBattleWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UEclipseDanceSystemWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
@@ -464,6 +542,12 @@ void UEclipseDanceBattleWidget::NativeTick(const FGeometry& MyGeometry, float In
 		OpponentStance->SetRenderScale(FVector2D(1.f + 0.3f * FMath::Sin(PI * T), FMath::Max(0.05f, 1.f - T)));
 		OpponentStance->SetRenderOpacity(1.f - T);
 		if (UWidget* Box = OpponentStance->GetParent()) Box->SetRenderTranslation(FVector2D(0.f, 40.f * T * T));
+	}
+	if (ExpertText && bExpertFading)
+	{
+		ExpertFade = FMath::Max(0.f, ExpertFade - InDeltaTime * 0.8f);
+		ExpertText->SetRenderOpacity(ExpertFade);
+		if (ExpertFade <= 0.f) { ExpertText->SetVisibility(ESlateVisibility::Hidden); bExpertFading = false; }
 	}
 	if (ChainName)
 	{

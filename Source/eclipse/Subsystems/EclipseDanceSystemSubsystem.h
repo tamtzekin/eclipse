@@ -5,10 +5,10 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Data/EclipseDanceStyle.h"
-#include "EclipseDanceBattleSubsystem.generated.h"
+#include "EclipseDanceSystemSubsystem.generated.h"
 
 class UEclipseDanceTrackData;
-class UEclipseDanceBattleWidget;
+class UEclipseDanceSystemWidget;
 class UEclipseWaveformWidget;
 class APlayerController;
 class UUserWidget;
@@ -22,7 +22,7 @@ class AEclipseNpcCharacter;
 
 // Runs a dance battle off the song's own playback position, so styles and countdowns land where the beat is heard.
 UCLASS()
-class ECLIPSE_API UEclipseDanceBattleSubsystem : public UTickableWorldSubsystem
+class ECLIPSE_API UEclipseDanceSystemSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 
@@ -38,7 +38,7 @@ public:
 	bool IsRunning() const { return Track != nullptr; }
 
 	virtual void Tick(float DeltaTime) override;
-	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UEclipseDanceBattleSubsystem, STATGROUP_Tickables); }
+	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UEclipseDanceSystemSubsystem, STATGROUP_Tickables); }
 
 private:
 	enum class EGrade : uint8 { Perfect, Good, TooEarly, TooSlow, Miss, Hot, Count };
@@ -47,9 +47,9 @@ private:
 	void HandleBeat(int32 Bar, int32 Beat);
 	void HandlePlaybackPercent(const UAudioComponent* Comp, const USoundWave* PlayingWave, const float Percent);
 
-	// First-time lessons (strafe, then copying his moveset) run until mastered, then the scored battle; later
+	// Three lessons, each run until it's passed: hold your stance, copy his moves, then lock onto them as he throws them; later
 	// battles demo only what the track introduces. The schedule is written a few bars ahead as the song plays.
-	enum class EPhase : uint8 { Intro, Strafe, Learn, Battle };
+	enum class EPhase : uint8 { Intro, Stance, Moves, Lock, Battle };
 	void BuildSchedule();
 	void AppendSchedule();
 	void Attack(bool bHeavy);          // your answer: hands (light) or legs (heavy)
@@ -73,7 +73,7 @@ private:
 	UPROPERTY() TObjectPtr<AEclipseNpcCharacter> Opponent;
 	UPROPERTY() TObjectPtr<UAudioComponent> Music;
 	UPROPERTY() TObjectPtr<ACameraActor> BattleCamera;
-	UPROPERTY() TObjectPtr<UEclipseDanceBattleWidget> Widget;
+	UPROPERTY() TObjectPtr<UEclipseDanceSystemWidget> Widget;
 	UPROPERTY() TObjectPtr<APointLight> StageLight;
 	UPROPERTY() TObjectPtr<UPointLightComponent> PlayerHalo;
 	UPROPERTY() TObjectPtr<AActor> WaveWall;             // waveform on a translucent panel behind the opponent
@@ -179,7 +179,7 @@ private:
 	float CamBump = 1.f;                  // 0..1 through the bump; 1 = idle
 	float CamFOV = 70.f;
 	float CamFOVTarget = 70.f;            // steps in on GOOD/PERFECT, out on TOO EARLY/MISS
-	float Wonk = 0.f;                     // misses knock the camera about; decays back to steady
+	float Shake = 0.f;                    // a short sharp knock: 1 on a miss, a touch on a hit, gone in a quarter second
 	float CamTime = 0.f;
 
 	// Attack poses, 1 at the strike and easing off: X light (head dips), Y heavy (whole body from the feet).
