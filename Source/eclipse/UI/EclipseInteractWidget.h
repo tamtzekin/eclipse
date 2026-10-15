@@ -71,6 +71,7 @@ private:
 	// the subject's top the label floats.
 	static constexpr float LabelStandoffCm = 18.f;
 	static constexpr float LabelLiftCm     = 14.f;
+	static constexpr float LabelSideCm     = 55.f;   // off to one side, so the name never sits over the face
 
 	// Anchors/alignment only need setting once; the per-frame work is the
 	// position alone.

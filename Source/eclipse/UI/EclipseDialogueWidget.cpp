@@ -636,7 +636,7 @@ UEclipseDialogueWidget::FSentenceBox UEclipseDialogueWidget::BeginSentenceBox(UW
 
 UWrapBox* UEclipseDialogueWidget::AppendBubble(UScrollBox* Box,
 	const FText& SpeakerCaption, const FLinearColor& CaptionTint,
-	UTextBlock** EffectsOut, bool bAlignRight)
+	UTextBlock** EffectsOut, bool bAlignRight, UTextBlock** CaptionOut)
 {
 	using namespace EclipseUI;
 	if (!Box || !WidgetTree) return nullptr;
@@ -657,6 +657,7 @@ UWrapBox* UEclipseDialogueWidget::AppendBubble(UScrollBox* Box,
 	Caption->SetJustification(bAlignRight ? ETextJustify::Right : ETextJustify::Left);
 	if (UVerticalBoxSlot* S = Col->AddChildToVerticalBox(Caption))
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	if (CaptionOut) *CaptionOut = Caption;
 
 	// WrapBox of per-SENTENCE caption boxes (BeginSentenceBox). Explicit
 	// wrap so long lines stack rows within the transcript column. Zero gap
@@ -1805,6 +1806,12 @@ void UEclipseDialogueWidget::SkipToChoices()
 	bDialogueAnimating   = false;
 	bPlayerLineAnimating = false;
 	DialogueAnimTime     = BodyAnimTotalTime;
+	// Skipping shows everything, names included.
+	for (const TWeakObjectPtr<UTextBlock>& Name : SegmentNameLabels)
+	{
+		if (UTextBlock* N = Name.Get()) N->SetRenderOpacity(1.f);
+	}
+	NextSegmentClick = SegmentClickDelays.Num();
 
 	// Cut the mumble voice — the line it was narrating is already fully on
 	// screen, so letting it ring on would be a stray sound with no source.
@@ -2160,6 +2167,9 @@ void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegmen
 	SegmentStartDelays.Reset();
 	SegmentSpeakerLocations.Reset();
 	NextSegmentFocus = 0;
+	SegmentClickDelays.Reset();
+	SegmentNameLabels.Reset();
+	NextSegmentClick = 0;
 
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
@@ -2169,16 +2179,6 @@ void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegmen
 		if (UAudioComponent* Live = Weak.Get()) Live->FadeOut(0.06f, 0.f);
 	}
 	ActiveMumbleSlices.Reset();
-
-	// One tick per line, not per bubble — a node that changes speaker is
-	// still a single beat of conversation.
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UEclipseAudioSubsystem* A = GI->GetSubsystem<UEclipseAudioSubsystem>())
-		{
-			A->PlayCue(EEclipseUiCue::DialogueLine);
-		}
-	}
 
 	// Drop the oldest bubbles instead of letting them hang half-clipped off
 	// the top of the scroll box. A partially visible caption reads as a
@@ -2195,12 +2195,17 @@ void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegmen
 	for (const FEclipseSpeechSegment& Seg : Segments)
 	{
 		UTextBlock* BubbleEffects = nullptr;
+		UTextBlock* BubbleName = nullptr;
 		UWrapBox* Words = AppendBubble(
 			RightHistoryScroll,
 			FText::FromString(Seg.Speaker.ToString().Replace(TEXT("_"), TEXT(" ")).ToUpper()),
 			DialogueRed,
-			&BubbleEffects);
+			&BubbleEffects,
+			/*bAlignRight=*/false,
+			&BubbleName);
 		if (!Words) continue;
+		// Whoever speaks later shouldn't be named yet: the caption arrives with their words.
+		if (BubbleName) BubbleName->SetRenderOpacity(0.f);
 
 		// Note where this speaker's words begin so the camera can swing to
 		// them as they start printing rather than all at once up front —
@@ -2210,6 +2215,8 @@ void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegmen
 			SegmentStartDelays.Add(RunningDelay);
 			SegmentSpeakerLocations.Add(Who->GetActorLocation());
 		}
+		SegmentClickDelays.Add(RunningDelay);   // one tick per box, as it starts printing
+		SegmentNameLabels.Add(BubbleName);
 
 		BodyWords       = Words;
 		EffectsLineText = BubbleEffects;
@@ -2758,6 +2765,21 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 			}
 		}
 		++NextSegmentFocus;
+	}
+
+	// Each caption box ticks as it begins to print, so a five-box node reads as five beats.
+	while (NextSegmentClick < SegmentClickDelays.Num()
+		&& DialogueAnimTime >= SegmentClickDelays[NextSegmentClick])
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UEclipseAudioSubsystem* A = GI->GetSubsystem<UEclipseAudioSubsystem>()) A->PlayCue(EEclipseUiCue::DialogueLine);
+		}
+		if (UTextBlock* Name = SegmentNameLabels.IsValidIndex(NextSegmentClick) ? SegmentNameLabels[NextSegmentClick].Get() : nullptr)
+		{
+			Name->SetRenderOpacity(1.f);
+		}
+		++NextSegmentClick;
 	}
 
 	bool bAllDone = true;

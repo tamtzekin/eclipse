@@ -219,8 +219,11 @@ void UEclipseInteractWidget::TickPromptPosition()
 	Toward.Z = 0.f;
 	Toward = Toward.GetSafeNormal();
 	const float Radius = FMath::Max(Extent.Size2D(), 12.f);
+	// Screen-right of the subject: the camera looks along -Toward, so its right is -(Up x Toward).
+	const FVector Side = -FVector::CrossProduct(FVector::UpVector, Toward).GetSafeNormal();
 	const FVector Anchor = Origin
 		+ Toward * (Radius + LabelStandoffCm)
+		+ Side * (Radius + LabelSideCm)
 		+ FVector(0.f, 0.f, Extent.Z + LabelLiftCm);
 
 	FVector2D Screen;
@@ -235,7 +238,7 @@ void UEclipseInteractWidget::TickPromptPosition()
 	if (!bPromptSlotReady)
 	{
 		Slot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
-		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+		Slot->SetAlignment(FVector2D(0.f, 0.5f));   // text runs outward from the anchor, away from the face
 		Slot->SetAutoSize(true);
 		bPromptSlotReady = true;
 	}

@@ -257,7 +257,8 @@ void UEclipseAudioSubsystem::RampDeckSpeed(float Target, float Seconds, TFunctio
 	{
 		*T += Dt;
 		const float A = FMath::Clamp(*T / Duration, 0.f, 1.f);
-		DeckSpeed = FMath::Lerp(From, Target, A);
+		// Slowing drags out like a vinyl stop: most of the drop up front, then a long tail.
+		DeckSpeed = FMath::Lerp(From, Target, Target < From ? 1.f - FMath::Pow(1.f - A, 2.5f) : A);
 		ForEachMusic(GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr, [this](UAudioComponent* C)
 		{
 			if (!C->ComponentHasTag(DeckManagedTag)) C->SetPitchMultiplier(DeckSpeed);

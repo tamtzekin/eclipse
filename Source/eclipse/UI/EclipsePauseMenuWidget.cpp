@@ -105,7 +105,7 @@ UEclipsePauseMenuWidget* UEclipsePauseMenuWidget::OpenForPlayer(APlayerControlle
 	TWeakObjectPtr<UWorld> PauseWorld = W->GetWorld();
 	if (UEclipseAudioSubsystem* Audio = PC->GetGameInstance() ? PC->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
-		Audio->RampDeckSpeed(0.4f, 0.22f, [PauseWorld]() { if (PauseWorld.IsValid()) UGameplayStatics::SetGamePaused(PauseWorld.Get(), true); });
+		Audio->RampDeckSpeed(0.4f, 0.6f, [PauseWorld]() { if (PauseWorld.IsValid()) UGameplayStatics::SetGamePaused(PauseWorld.Get(), true); });
 	}
 	else
 	{

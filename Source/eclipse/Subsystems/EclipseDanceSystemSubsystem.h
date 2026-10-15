@@ -119,7 +119,6 @@ private:
 		bool bCued = false;     // the camera has braced for it
 		bool bStruck = false;   // his pose has played
 		bool bHit = false;      // you answered it
-		bool bWithHim = false;  // answered as he danced it (perfect), not on the reply bar (good)
 	};
 	TArray<FPendingNote> Notes;
 	TArray<FString> Movesets;          // patterns from his Ink <id>_moveset knot

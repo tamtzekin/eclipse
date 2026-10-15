@@ -114,11 +114,19 @@ void AEclipseNpcCharacter::BeginPlay()
 	// so hide anything standing on the spot where ours is.
 	if (AActor* Mine = VisualProxyActor.Get())
 	{
+		TSet<AActor*> Bodies;   // every NPC's own body, so no two NPCs standing close hide each other
+		for (TActorIterator<AEclipseNpcCharacter> N(GetWorld()); N; ++N)
+		{
+			if (AActor* Body = N->VisualProxyActor.Get()) Bodies.Add(Body);
+		}
 		for (TActorIterator<ASkeletalMeshActor> It(GetWorld()); It; ++It)
 		{
 			ASkeletalMeshActor* Other = *It;
-			if (Other == Mine || Other->IsHidden()) continue;
-			if (FVector::Dist2D(Other->GetActorLocation(), Mine->GetActorLocation()) < 120.f) Other->SetActorHiddenInGame(true);
+			if (Bodies.Contains(Other) || Other->IsHidden()) continue;
+			if (FVector::Dist2D(Other->GetActorLocation(), Mine->GetActorLocation()) >= 120.f) continue;
+			Other->SetActorHiddenInGame(true);
+			Other->SetActorEnableCollision(false);   // it was also blocking the talk line-of-sight trace
+			UE_LOG(LogEclipse, Log, TEXT("%s: hid duplicate body %s"), *NpcName.ToString(), *Other->GetName());
 		}
 	}
 

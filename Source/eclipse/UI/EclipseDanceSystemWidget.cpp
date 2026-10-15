@@ -247,7 +247,7 @@ void UEclipseDanceSystemWidget::BuildTree(UWidgetTree* Tree)
 
 	USizeBox* GaugeSize = Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("FacingGaugeSize"));
 	GaugeSize->SetWidthOverride(260.f);
-	GaugeSize->SetHeightOverride(26.f);
+	GaugeSize->SetHeightOverride(40.f);   // oval needs the room
 	GaugeSize->SetContent(Tree->ConstructWidget<UEclipseFacingGaugeWidget>(UEclipseFacingGaugeWidget::StaticClass(), TEXT("FacingGauge")));
 	Place(GaugeSize, 1.f, -40.f);
 	UTextBlock* BalanceLabel = Text(TEXT("BalanceLabel"), 14, 4.f, TEXT("STANCE"));
@@ -369,7 +369,7 @@ void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
 	UTextBlock* Steps[] = { TutorialStep1, TutorialStep2, TutorialStep3 };
 	UBorder* Dots[] = { TutorialDot1, TutorialDot2, TutorialDot3 };
 	UBorder* Strikes[] = { TutorialStrike1, TutorialStrike2, TutorialStrike3 };
-	const TCHAR* Names[] = { TEXT("Hold your stance"), TEXT("Copy his moves"), TEXT("Lock onto him") };
+	const TCHAR* Names[] = { TEXT("Keep your balance"), TEXT("Match him, move for move"), TEXT("Outdance him") };
 	if (UWidget* Box = TutorialStep1 ? TutorialStep1->GetParent() : nullptr)
 	{
 		if (UWidget* List = Box->GetParent() ? Box->GetParent()->GetParent() : nullptr)
@@ -418,7 +418,7 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	// A circle at the centre you sit inside; the marker sticks there while you're balanced, and the range
 	// only appears once you've lost it.
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
-	constexpr float Span = 30.f;   // matches StrafeLimitDeg
+	constexpr float Span = 45.f;   // wider than the 30 deg window, so losing him is visible before it bites
 	const float Mid = Size.X * 0.5f, Y = Size.Y * 0.5f, Half = Size.X * 0.5f - 6.f;
 	const auto X = [&](float Deg) { return Mid + FMath::Clamp(Deg / Span, -1.f, 1.f) * Half; };
 	const bool bFacing = FMath::Abs(ErrorDeg) <= WindowDeg;
@@ -429,31 +429,36 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(Mid - Half - 3.f, Y), FVector2D(Mid + Half + 3.f, Y), FLinearColor(0.f, 0.f, 0.f, 0.6f), 16.f);
 	// He's the filled circle in the middle; you're the ring that drifts across it.
 	// Sit yours inside his and you're facing him; stray outside and nothing you throw lands.
-	constexpr int32 Segments = 28;
-	const float Him = 9.f, Me = 15.f;
-	const auto Circle = [&](float Cx, float Radius, const FLinearColor& Col, float Thick, int32 Layer)
+	constexpr int32 Segments = 36;
+	// He's a dot at the centre; your oval is wide enough to sit over it while you're facing him.
+	const float HimDot = 5.f, MeX = 48.f, MeY = 15.f;
+	const auto Oval = [&](float Cx, float Rx, float Ry, const FLinearColor& Col, float Thick, int32 Layer)
 	{
 		TArray<FVector2D> Ring;
 		for (int32 i = 0; i <= Segments; ++i)
 		{
 			const float A2 = 2.f * PI * i / Segments;
-			Ring.Add(FVector2D(Cx + FMath::Cos(A2) * Radius, Y + FMath::Sin(A2) * Radius));
+			Ring.Add(FVector2D(Cx + FMath::Cos(A2) * Rx, Y + FMath::Sin(A2) * Ry));
 		}
 		FSlateDrawElement::MakeLines(OutDrawElements, Layer, AllottedGeometry.ToPaintGeometry(), Ring, ESlateDrawEffect::None, Col, true, Thick);
 	};
 	// Filled by stacking rings; Slate has no disc primitive.
-	for (float R = 2.f; R <= Him; R += 2.5f) Circle(Mid, R, bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(0.85f, 0.85f, 0.9f, 0.85f), 3.f, LayerId + 6);
-	Circle(X(ErrorDeg), Me, Fill, 2.5f, LayerId + 7);
+	for (float R = 1.5f; R <= HimDot; R += 1.5f) Oval(Mid, R, R, bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(0.85f, 0.85f, 0.9f, 0.85f), 3.f, LayerId + 6);
+	Oval(X(ErrorDeg), MeX, MeY, Fill, 2.5f, LayerId + 7);
 	return LayerId + 7;
 }
 
-void UEclipseDanceSystemWidget::ShowGrade(const FText& Grade, const FLinearColor& Color, float BeatSeconds)
+void UEclipseDanceSystemWidget::ShowGrade(const FText& Grade, const FLinearColor& Color)
 {
 	if (!GradeText) return;
 	GradeText->SetText(Grade);
 	GradeText->SetColorAndOpacity(FSlateColor(Color));
-	if (BeatSeconds > 0.f) GradeBeat = BeatSeconds;
 	GradeFade = 1.f;
+}
+
+void UEclipseDanceSystemWidget::SetStyleVisible(bool bVisible)
+{
+	if (StyleNameText) StyleNameText->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
 void UEclipseDanceSystemWidget::FlashChain(const FString& Name, const FLinearColor& Color)
@@ -528,7 +533,7 @@ void UEclipseDanceSystemWidget::NativeTick(const FGeometry& MyGeometry, float In
 		// Flashes in twice on landing, then breathes on the beat like his barks.
 		const float Age = 1.f - GradeFade;
 		const float Blink = Age < 0.24f ? (FMath::Fmod(Age, 0.12f) < 0.06f ? 0.f : 1.f) : 1.f;   // flashes in twice
-		const float Pump = FMath::Square(1.f - FMath::Frac(Age / FMath::Max(0.1f, GradeBeat)));
+		const float Pump = BeatPulse;
 		GradeText->SetRenderOpacity(FMath::Min(1.f, GradeFade * 2.f) * Blink * (0.55f + 0.45f * Pump));
 		GradeText->SetRenderScale(FVector2D(1.f + 0.3f * Pump));
 	}

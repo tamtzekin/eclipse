@@ -195,6 +195,14 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Eclipse|Movement")
 	float WastedSpeedSwing = 0.45f;
 
+	// Look tuning — both live, so they can be dialled in PIE on whatever's to hand.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Camera")
+	float LookSensitivity = 1.f;
+
+	// How long a look delta takes to spend: 0 is raw mouse, 0.1 smooths a trackpad's steps.
+	UPROPERTY(EditAnywhere, Category = "Eclipse|Camera")
+	float LookSmoothSeconds = 0.08f;
+
 	FVector RawMoveInput    = FVector::ZeroVector;   // this frame's input, consumed in Tick while WASTED
 	FVector LaggedMoveInput = FVector::ZeroVector;   // what actually drives movement while WASTED
 	bool IsWasted() const;
@@ -207,6 +215,11 @@ private:
 	// Seconds since the player last moved the mouse. TickFollowCamera stays
 	// hands-off until this passes FollowCamResumeDelay.
 	float LookIdleTime = 0.f;
+
+	// Look delta waiting to be spent, so a trackpad's bursts glide instead of jumping.
+	FVector2D PendingLook = FVector2D::ZeroVector;
+
+	void TickLook(float DeltaTime);
 
 	// Yaw that WASD is resolved against, latched for the duration of one
 	// movement burst. See OnMove for why it can't just read the live control

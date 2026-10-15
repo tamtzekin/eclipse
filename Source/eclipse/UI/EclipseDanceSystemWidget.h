@@ -87,7 +87,7 @@ public:
 	// Retints the screen for the style now being danced (the opponent says its name).
 	void ShowStyle(EEclipseDanceStyle Style);
 
-	void ShowGrade(const FText& Grade, const FLinearColor& Color, float BeatSeconds = 0.f);
+	void ShowGrade(const FText& Grade, const FLinearColor& Color);
 
 	// His balance bar rides above his head; pass the screen point, or hide it.
 	void SetStanceScreenPos(const FVector2D& Pos, bool bVisible);
@@ -120,6 +120,12 @@ public:
 	// The steady backbeat glow under any pick flash: 0..1, set every frame.
 	void SetBackbeat(const FLinearColor& Color, float Level) { BackbeatColor = Color; BackbeatLevel = Level; }
 
+	// Song beat phase, 1 on the beat and easing off, so the grade breathes in time rather than off its own clock.
+	void SetBeatPulse(float Pulse) { BeatPulse = Pulse; }
+
+	// Style switching is hidden where there's nothing to switch to.
+	void SetStyleVisible(bool bVisible);
+
 protected:
 	virtual bool Initialize() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -147,7 +153,7 @@ protected:
 
 private:
 	float GradeFade = 0.f;
-	float GradeBeat = 0.5f;
+	float BeatPulse = 0.f;
 	float ChainFade = 0.f;
 	float ExpertFade = 1.f;
 	bool bExpertFading = false;

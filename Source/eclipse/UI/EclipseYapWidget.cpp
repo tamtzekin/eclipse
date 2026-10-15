@@ -1,8 +1,10 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "UI/EclipseYapWidget.h"
+#include "Subsystems/EclipseAudioSubsystem.h"
 #include "EclipseUiStyle.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/HorizontalBox.h"
@@ -26,10 +28,15 @@ UEclipseYapWidget* UEclipseYapWidget::Show(ACharacter* Speaker, const FString& L
 	W->Hold = HoldSeconds;
 	W->Beat = BeatSeconds;
 	W->SetLine(Line, Highlight);
-	W->SetAlignmentInViewport(FVector2D(0.5f, 1.f));
-	W->SetRenderTransformPivot(FVector2D(0.5f, 1.f));   // bumps grow up and out from the head
+	W->SetAlignmentInViewport(FVector2D(0.f, 1.f));
+	W->SetRenderTransformPivot(FVector2D(0.f, 1.f));   // bumps grow up and out from the head
 	W->SetRenderOpacity(0.f);
 	W->AddToViewport(/*ZOrder=*/350);   // above the dance battle screen, which hosts the battle yaps
+	// Each box lands with the same click a dialogue line gets.
+	if (UGameInstance* GI = Speaker->GetGameInstance())
+	{
+		if (UEclipseAudioSubsystem* Audio = GI->GetSubsystem<UEclipseAudioSubsystem>()) Audio->PlayCue(EEclipseUiCue::ClickSingle);
+	}
 	return W;
 }
 
@@ -59,20 +66,26 @@ void UEclipseYapWidget::BuildTree(UWidgetTree* Tree)
 		T->SetColorAndOpacity(FSlateColor(Cream));
 		T->SetShadowOffset(FVector2D(0.f, 2.f));
 		T->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.6f));
-		T->SetJustification(ETextJustify::Center);
+		T->SetJustification(ETextJustify::Left);
 		T->SetVisibility(ESlateVisibility::HitTestInvisible);
 		return T;
 	};
 
+	// Subtitle-style plate so a bark reads against the floor lights.
+	UBorder* Plate = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("YapPlate"));
+	Plate->SetBrush(SolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.62f)));
+	Plate->SetPadding(FMargin(12.f, 5.f));
+	Plate->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Tree->RootWidget = Plate;
 	UOverlay* Root = Tree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("YapRoot"));
-	Tree->RootWidget = Root;
+	Plate->SetContent(Root);
 	UTextBlock* Plain = Text(TEXT("YapText"));
 	Plain->SetWrapTextAt(420.f);
-	if (UOverlaySlot* S = Root->AddChildToOverlay(Plain)) S->SetHorizontalAlignment(HAlign_Center);
+	if (UOverlaySlot* S = Root->AddChildToOverlay(Plain)) S->SetHorizontalAlignment(HAlign_Left);
 
 	UHorizontalBox* Row = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("YapRow"));
 	Row->SetVisibility(ESlateVisibility::Collapsed);
-	if (UOverlaySlot* S = Root->AddChildToOverlay(Row)) S->SetHorizontalAlignment(HAlign_Center);
+	if (UOverlaySlot* S = Root->AddChildToOverlay(Row)) S->SetHorizontalAlignment(HAlign_Left);
 	for (const TCHAR* Name : { TEXT("YapBefore"), TEXT("YapWord"), TEXT("YapAfter") })
 	{
 		UTextBlock* T = Text(Name);
@@ -121,12 +134,12 @@ void UEclipseYapWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		if (YapWord) YapWord->SetShadowColorAndOpacity(HighlightColor.CopyWithNewOpacity(0.9f * P));
 	}
 
-	// Just clear of the head, following the character and the camera every frame.
-	const FVector Head = C->GetActorLocation() + FVector(0.f, 0.f, C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 25.f);
+	// Off his shoulder, clear of the stance bar sitting over his head.
+	const FVector Head = C->GetActorLocation() + FVector(0.f, 0.f, C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 60.f);
 	FVector2D Screen;
 	const bool bOnScreen = PC->ProjectWorldLocationToScreen(Head, Screen, /*bPlayerViewportRelative=*/true);
 	const float In = FMath::Clamp(Elapsed / FadeInSeconds, 0.f, 1.f);
 	const float Out = FMath::Clamp((Total - Elapsed) / FadeOutSeconds, 0.f, 1.f);
 	SetRenderOpacity(bOnScreen ? FMath::Min(In, Out) : 0.f);
-	if (bOnScreen) SetPositionInViewport(Screen, /*bRemoveDPIScale=*/true);
+	if (bOnScreen) SetPositionInViewport(Screen + FVector2D(84.f, 0.f), /*bRemoveDPIScale=*/true);
 }

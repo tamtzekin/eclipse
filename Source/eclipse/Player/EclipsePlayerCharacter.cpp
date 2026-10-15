@@ -240,9 +240,8 @@ void AEclipsePlayerCharacter::OnLook(const FInputActionValue& Value)
 			LookIdleTime    = 0.f;
 			bMoveBasisValid = false;
 		}
-		AddControllerYawInput(Axis.X);
-		// Negate Y so mouse-up looks up (non-inverted Y).
-		AddControllerPitchInput(-Axis.Y);
+		// Banked, not applied: TickLook spends it over LookSmoothSeconds.
+		PendingLook += Axis * LookSensitivity;
 	}
 }
 
@@ -525,9 +524,27 @@ void AEclipsePlayerCharacter::TickSlopeSpeed(float DeltaTime)
 	}
 }
 
+// Spends the banked look delta a fraction per frame. A mouse reports a steady
+// stream and barely notices; a trackpad reports a few big steps per swipe, and
+// without this each one snaps the camera.
+void AEclipsePlayerCharacter::TickLook(float DeltaTime)
+{
+	if (PendingLook.IsNearlyZero())
+	{
+		PendingLook = FVector2D::ZeroVector;
+		return;
+	}
+	const float Spend = LookSmoothSeconds > 0.f ? FMath::Clamp(DeltaTime / LookSmoothSeconds, 0.f, 1.f) : 1.f;
+	const FVector2D Step = PendingLook * Spend;
+	PendingLook -= Step;
+	AddControllerYawInput(Step.X);
+	AddControllerPitchInput(-Step.Y);   // negated so a push up looks up
+}
+
 void AEclipsePlayerCharacter::Tick(float DeltaTime)
 {
 	TickSlopeSpeed(DeltaTime);
+	TickLook(DeltaTime);
 	Super::Tick(DeltaTime);
 
 	if (UEclipseGameStateSubsystem* FxGS = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>() : nullptr)

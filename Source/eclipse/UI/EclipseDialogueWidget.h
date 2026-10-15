@@ -347,7 +347,8 @@ private:
 	                             const FText& SpeakerCaption,
 	                             const FLinearColor& CaptionTint,
 	                             class UTextBlock** EffectsOut = nullptr,
-	                             bool bAlignRight = false);
+	                             bool bAlignRight = false,
+	                             class UTextBlock** CaptionOut = nullptr);
 
 	// Splits a body/choice string into "sentences" — runs of words up to
 	// and including one ending in . ! or ? (tolerating a trailing quote or
@@ -497,6 +498,11 @@ private:
 	TArray<float>   SegmentStartDelays;
 	TArray<FVector> SegmentSpeakerLocations;
 	int32           NextSegmentFocus = 0;
+
+	// When each caption box starts printing, so it can click and name its speaker as it lands.
+	TArray<float>   SegmentClickDelays;
+	TArray<TWeakObjectPtr<class UTextBlock>> SegmentNameLabels;
+	int32           NextSegmentClick = 0;
 
 	// Mirrors bDialogueAnimating onto the dialogue subsystem so non-dialogue
 	// UI (the HUD quest checklist) can hold off until the line has finished

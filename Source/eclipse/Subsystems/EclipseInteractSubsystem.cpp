@@ -83,7 +83,6 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 		// meant to be heard through walls.
 		if (!Npc->bIgnoreLineOfSight)
 		{
-			const FVector NpcChest = Npc->GetActorLocation() + FVector(0.f, 0.f, 60.f);
 			FCollisionQueryParams Params(SCENE_QUERY_STAT(EclipseInteractLOS), false, Pawn);
 			Params.AddIgnoredActor(Npc);   // don't self-block on the NPC's own collision
 			if (AActor* VisualProxy = Npc->VisualProxyActor.Get())
@@ -91,8 +90,12 @@ void UEclipseInteractSubsystem::Tick(float DeltaTime)
 				Params.AddIgnoredActor(VisualProxy);   // don't block on the NPC's own visual double
 			}
 			FHitResult Hit;
-			const bool bBlocked = World->LineTraceSingleByChannel(
-				Hit, PlayerEye, NpcChest, ECC_Visibility, Params);
+			// Chest first, then head: a wall stops both, a bar counter only the low one.
+			const auto Reaches = [&](float Z)
+			{
+				return !World->LineTraceSingleByChannel(Hit, PlayerEye, Npc->GetActorLocation() + FVector(0.f, 0.f, Z), ECC_Visibility, Params);
+			};
+			const bool bBlocked = !Reaches(60.f) && !Reaches(150.f);
 			if (bBlocked)
 			{
 				UE_LOG(LogEclipse, Verbose, TEXT("LOS blocked: '%s' by %s"),
