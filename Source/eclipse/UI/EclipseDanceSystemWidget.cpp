@@ -369,7 +369,7 @@ void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
 	UTextBlock* Steps[] = { TutorialStep1, TutorialStep2, TutorialStep3 };
 	UBorder* Dots[] = { TutorialDot1, TutorialDot2, TutorialDot3 };
 	UBorder* Strikes[] = { TutorialStrike1, TutorialStrike2, TutorialStrike3 };
-	const TCHAR* Names[] = { TEXT("Keep your balance"), TEXT("Match him, move for move"), TEXT("Outdance him") };
+	const TCHAR* Names[] = { TEXT("Keep your balance"), TEXT("Match him, move for move"), TEXT("Read him faster") };
 	if (UWidget* Box = TutorialStep1 ? TutorialStep1->GetParent() : nullptr)
 	{
 		if (UWidget* List = Box->GetParent() ? Box->GetParent()->GetParent() : nullptr)

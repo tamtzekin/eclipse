@@ -336,6 +336,7 @@ void UEclipseDanceSystemSubsystem::AppendSchedule()
 			LearnPasses = 0;
 			PatternNotes = 0;
 			if (Widget) Widget->SetTutorialStep(2);
+			if (Opponent) Opponent->Yap(TEXT("Now lock on. Less warning."), Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
 		}
 		Add(Schedule.Last(), 2);
 		DemoEnd = Schedule.Num();
@@ -628,7 +629,7 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 		if (bLearned) { ++MovesetIndex; ++LearnPasses; }
 		if (Opponent && Phase == EPhase::Moves)
 		{
-			Opponent->Yap(bLearned ? (Phase == EPhase::Lock ? TEXT("Now lock onto me.") : TEXT("Got it. Next one.")) : bClean ? TEXT("Yeah. Again.") : TEXT("No. Watch me."),
+			Opponent->Yap(bLearned ? TEXT("Got it. Next one.") : bClean ? TEXT("Yeah. Again.") : TEXT("No. Watch me."),
 				Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
 		}
 	}
@@ -637,7 +638,7 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 	const TArray<EclipseDance::FNote> Parsed = EclipseDance::ParseMoveset(Movesets[Pick]);
 	if (Parsed.Num() == 0) return;
 
-	const bool bLesson = Phase == EPhase::Moves || Phase == EPhase::Lock;
+	const bool bLesson = Phase == EPhase::Moves;   // locking already runs on the battle's shorter tell
 	const float BarSec = Track->BarSeconds(), BeatSec = Track->BeatSeconds();
 	const float His = Track->SegmentStartSeconds() + Bar * BarSec;
 	Notes.Reset();
