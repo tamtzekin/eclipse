@@ -48,6 +48,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room")
 	float MusicStartSeconds = 0.f;
 
+	// Ambient sounds in this level tagged "SkipIntro" restart this far into their track (the club's own music).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Eclipse|Room")
+	float AmbientStartSeconds = 0.f;
+
 	// Whether this room blocks NPC talk-while-frozen (heat=0). Default true.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eclipse|Room|Behavior")
 	bool bAllowTalkWhenFrozen = false;
