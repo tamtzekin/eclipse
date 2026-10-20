@@ -57,6 +57,8 @@ void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
 	case EEclipseUiCue::ClickSingle: Real = TEXT("UI/S_UI_ClickSingle"); break;
 	case EEclipseUiCue::DialogueLine: Real = TEXT("UI/S_UI_ClickSingle"); break;
 	case EEclipseUiCue::ClickDouble: Real = TEXT("UI/S_UI_ClickDouble"); break;
+	// Placeholder thud: rustle dropped an octave reads as a punch into cloth until there's real foley.
+	case EEclipseUiCue::DanceHit: Real = TEXT("Items/S_Item_Rustle"); Pitch = 0.5f; break;
 	default: break;
 	}
 	if (Real)

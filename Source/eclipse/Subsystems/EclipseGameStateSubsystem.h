@@ -360,17 +360,22 @@ public:
 	void SetHoldThirstDrain(bool bHold);
 
 	// ── Dance ──
-	// Bit per EEclipseDanceStyle the player can dance; Muzzing and Tektonik to start, the rest are learned later.
+	// Bit per EEclipseDanceStyle the player can dance; none to start, the rest are learned out in the city.
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance")
-	int32 UnlockedDanceStyles = (1 << (int32)EEclipseDanceStyle::Muzzing) | (1 << (int32)EEclipseDanceStyle::Tektonik);
+	int32 UnlockedDanceStyles = 0;   // you start with none; character creation and levelling hand them out
 
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dance")
 	void UnlockDanceStyle(EEclipseDanceStyle Style) { UnlockedDanceStyles |= 1 << (int32)Style; NotifyChanged(); }
 
 	// Per-style level and XP toward the next, indexed by EEclipseDanceStyle; levels up every StatXPToLevel like the other stats.
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleLevels = { 1, 1, 1, 1, 1 };
-	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleXP = { 0, 0, 0, 0, 0 };
+	// One entry per style, all untrained: a style you've never been taught is level 0 and locked.
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleLevels = { 0, 0, 0, 0, 0, 0 };
+	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") TArray<int32> DanceStyleXP = { 0, 0, 0, 0, 0, 0 };
 	void AddDanceStyleXP(EEclipseDanceStyle Style, int32 Amount);
+
+	// Character creation and any later teacher both come through here: a level above 0 is also the unlock.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|Dance")
+	void SetDanceStyleLevel(EEclipseDanceStyle Style, int32 Level);
 
 	// Set once the player has been through the strafe and style lessons; later battles skip them.
 	UPROPERTY(BlueprintReadOnly, Category = "Eclipse|Dance") bool bDanceTutorialDone = false;

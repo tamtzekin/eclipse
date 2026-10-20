@@ -316,11 +316,11 @@ void UEclipseDanceSystemWidget::BuildTree(UWidgetTree* Tree)
 	}
 	StanceBox->SetVisibility(ESlateVisibility::Collapsed);
 
-	UProgressBar* StanceBar = Tree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("OpponentStance"));
-	StanceBar->SetFillColorAndOpacity(Cream);
-	StanceBar->SetBarFillType(EProgressBarFillType::RightToLeft);
-	StanceBar->SetPercent(1.f);
-	if (UVerticalBoxSlot* S = StanceBox->AddChildToVerticalBox(StanceBar)) S->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+	USizeBox* StanceSize = Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("OpponentStanceSize"));
+	StanceSize->SetWidthOverride(150.f);
+	StanceSize->SetHeightOverride(14.f);
+	StanceSize->SetContent(Tree->ConstructWidget<UEclipseFacingGaugeWidget>(UEclipseFacingGaugeWidget::StaticClass(), TEXT("OpponentStance")));
+	if (UVerticalBoxSlot* S = StanceBox->AddChildToVerticalBox(StanceSize)) S->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
 
 	// Attacks are two keys, not a wheel: the legend sits bottom-right with whatever style you're holding.
 	UVerticalBox* Hints = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("AttackHintBox"));
@@ -393,8 +393,11 @@ void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
 
 void UEclipseDanceSystemWidget::SetStanceScreenPos(const FVector2D& Pos, bool bVisible)
 {
-	if (!OpponentStance || !OpponentStance->GetParent()) return;
-	UWidget* Box = OpponentStance->GetParent();
+	if (!OpponentStance) return;
+	// Walk up to whichever ancestor actually sits on the canvas — the bar is wrapped in a size box.
+	UWidget* Box = OpponentStance;
+	while (Box && !Cast<UCanvasPanelSlot>(Box->Slot)) Box = Box->GetParent();
+	if (!Box) return;
 	Box->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	if (bVisible)
 	{
@@ -405,10 +408,14 @@ void UEclipseDanceSystemWidget::SetStanceScreenPos(const FVector2D& Pos, bool bV
 void UEclipseDanceSystemWidget::SetStance(float Ratio, bool bHit)
 {
 	if (!OpponentStance) return;
-	OpponentStance->SetPercent(Ratio);
-	// Low stance reads as danger: the bar reddens as it empties.
-	OpponentStance->SetFillColorAndOpacity(FMath::Lerp(EclipseUI::DialogueRed, EclipseUI::Cream, Ratio));
-	if (bHit) StanceShake = 1.f;
+	OpponentStance->SetBarOnly(true);
+	OpponentStance->SetBarColors(FLinearColor(0.5f, 1.f, 0.6f), EclipseDance::BloodRed);
+	OpponentStance->SetStance(1.f - Ratio, /*bStaggered=*/false);   // his bar fills as you break him, same as yours
+	if (bHit)
+	{
+		StanceShake = 1.f;
+		OpponentStance->FlashHit();
+	}
 }
 
 int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
@@ -419,7 +426,25 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	// only appears once you've lost it.
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
 	constexpr float Span = 45.f;   // wider than the 30 deg window, so losing him is visible before it bites
-	const float Mid = Size.X * 0.5f, Y = Size.Y * 0.5f, Half = Size.X * 0.5f - 6.f;
+	const float Mid = Size.X * 0.5f, Half = Size.X * 0.5f - 6.f;
+	const float Y = bBarOnly ? Size.Y * 0.5f : Size.Y * 0.36f;
+
+	// Posture, Sekiro style: empty while you're steady, filling out from the centre as it goes.
+	// Breathes as it fills and flashes on every hit, so it's readable without looking straight at it.
+	{
+		const float BarY = bBarOnly ? Y : Size.Y - 6.f;
+		const float Fill = FMath::Clamp(Pressure, 0.f, 1.f);
+		DrawLine(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D(Mid - Half, BarY), FVector2D(Mid + Half, BarY), FLinearColor(0.f, 0.f, 0.f, 0.55f), 11.f);
+		if (Fill > 0.002f)
+		{
+			const float Pulse = 0.82f + 0.18f * FMath::Sin(PulseTime * (4.f + 6.f * Fill));
+			FLinearColor C = FMath::Lerp(BarColor * Pulse, FlashColor, HitFlash);
+			C.A = 1.f;
+			const float W = Half * Fill;
+			DrawLine(OutDrawElements, LayerId + 2, AllottedGeometry, FVector2D(Mid - W, BarY), FVector2D(Mid + W, BarY), C, 9.f + 3.f * HitFlash);
+		}
+	}
+	if (bBarOnly) return LayerId + 3;
 	const auto X = [&](float Deg) { return Mid + FMath::Clamp(Deg / Span, -1.f, 1.f) * Half; };
 	const bool bFacing = FMath::Abs(ErrorDeg) <= WindowDeg;
 	const float Danger = FMath::Clamp((FMath::Abs(ErrorDeg) - WindowDeg) / (Span - WindowDeg), 0.f, 1.f);
@@ -446,6 +471,13 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	for (float R = 1.5f; R <= HimDot; R += 1.5f) Oval(Mid, R, R, bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(0.85f, 0.85f, 0.9f, 0.85f), 3.f, LayerId + 6);
 	Oval(X(ErrorDeg), MeX, MeY, Fill, 2.5f, LayerId + 7);
 	return LayerId + 7;
+}
+
+void UEclipseFacingGaugeWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	PulseTime += InDeltaTime;
+	HitFlash = FMath::Max(0.f, HitFlash - InDeltaTime * 3.f);
 }
 
 void UEclipseDanceSystemWidget::ShowGrade(const FText& Grade, const FLinearColor& Color)
@@ -542,7 +574,6 @@ void UEclipseDanceSystemWidget::NativeTick(const FGeometry& MyGeometry, float In
 		// Flares white, tips over and falls away.
 		ShatterT += InDeltaTime;
 		const float T = FMath::Clamp(ShatterT / 1.4f, 0.f, 1.f);
-		OpponentStance->SetFillColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 1.f - T));
 		OpponentStance->SetRenderTransformAngle(18.f * T);
 		OpponentStance->SetRenderScale(FVector2D(1.f + 0.3f * FMath::Sin(PI * T), FMath::Max(0.05f, 1.f - T)));
 		OpponentStance->SetRenderOpacity(1.f - T);

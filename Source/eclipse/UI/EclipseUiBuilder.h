@@ -99,6 +99,11 @@ public:
 		meta = (DevelopmentOnly))
 	static bool PopulateYapWBP(const FString& WBPAssetPath);
 
+	// Pre-game point spend; tree comes from UEclipseCharacterCreationWidget::BuildTree.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UiBuilder",
+		meta = (DevelopmentOnly))
+	static bool PopulateCharacterCreationWBP(const FString& WBPAssetPath);
+
 	/**
 	 * Builds a UFont composite that wraps a UFontFace so Slate text widgets
 	 * (which expect UFont, not raw UFontFace) can resolve glyphs.

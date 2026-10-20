@@ -21,6 +21,9 @@ namespace EclipseDance
 {
 	// The colour a landed move flashes in.
 	inline const FLinearColor Gold = FLinearColor(FColor(0xFF, 0xC8, 0x3D));
+
+	// His bar's hit flash.
+	inline const FLinearColor BloodRed = FLinearColor(FColor(0xB4, 0x0D, 0x12));
 }
 
 // Rekordbox-style wave: the track's loudness scrolling right to left past a centre playhead, style switches glowing in colour.
@@ -63,15 +66,28 @@ public:
 	void SetFacing(float InErrorDeg, float InWindowDeg) { ErrorDeg = InErrorDeg; WindowDeg = InWindowDeg; }
 	void SetStance(float InPressure, bool bInStaggered) { Pressure = InPressure; bStaggered = bInStaggered; }
 
+	// A hit flashes the bar in FlashColor and fades back over a beat.
+	void FlashHit() { HitFlash = 1.f; }
+
+	// The opponent's copy is the bar alone, parked over his head.
+	void SetBarOnly(bool bInBarOnly) { bBarOnly = bInBarOnly; }
+	void SetBarColors(const FLinearColor& Fill, const FLinearColor& Flash) { BarColor = Fill; FlashColor = Flash; }
+
 protected:
 	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
 		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	float ErrorDeg = 0.f;    // signed, 0 = facing them dead on
 	float WindowDeg = 18.f;
 	float Pressure = 0.f;    // 0..1 of your stance gone; 1 = broken
 	bool bStaggered = false;
+	bool bBarOnly = false;
+	float HitFlash = 0.f;
+	float PulseTime = 0.f;
+	FLinearColor BarColor = FLinearColor(0.5f, 1.f, 0.6f);
+	FLinearColor FlashColor = FLinearColor::White;
 };
 
 // Dance battle screen: his call, your answer, both balance bars and the per-style tint.
@@ -97,6 +113,9 @@ public:
 
 	// Your stance, 0..1, shown on the bottom bar: full means broken.
 	void SetPlayerStance(float Ratio, bool bStaggered) { if (FacingGauge) FacingGauge->SetStance(Ratio, bStaggered); }
+
+	// White flash on your own bar when he knocks you about.
+	void FlashPlayerStance() { if (FacingGauge) FacingGauge->FlashHit(); }
 
 	// The name of a move you answered in full.
 	void FlashChain(const FString& Name, const FLinearColor& Color);
@@ -147,7 +166,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> TutorialStrike3;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StyleNameText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseFacingGaugeWidget> FacingGauge;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> OpponentStance;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEclipseFacingGaugeWidget> OpponentStance;
 
 	virtual void NativeConstruct() override;
 

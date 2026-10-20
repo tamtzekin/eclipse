@@ -13,12 +13,13 @@ FLORIN: Friend, you are not important. Tonight, on the list, there's no soul tha
     -> trying_to_get_in
 
 == shes_on_the_list
-    ** [Ask the girl what's wrong] Is he bothering you?
-    'This peasant is not letting me past. I am on the list. Do you understand what that means?' She screws her nose. 'I thought we killed off the rats.'
-    
-     She makes a sign at him. Some archaic finger-shape like a butterfly, but its meaning was violent.
-        *** What list?
-        I am one of DJ Crisis' group. He takes us everywhere with him. To the empire and every little shithole country on its flight path.
+    'It's people like you who are ruining this city. I am on the list. Let me in.'
+     She makes a sign at him. Some archaic finger-shape like a butterfly, but its meaning is violent.
+        *** {aethestics > 2} Hey, can you get me in?
+        Maybe.
+        
+        *** You're on the list too?
+        Yeah. I'm on DJ Crisis' list.
         ~ Connections += dj_crisis
         -> maja
         

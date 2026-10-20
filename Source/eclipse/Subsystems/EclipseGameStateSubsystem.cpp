@@ -1685,6 +1685,16 @@ void UEclipseGameStateSubsystem::ConsumePendingTeleport(APawn* Pawn)
 	PendingTeleportRotation = FRotator::ZeroRotator;
 }
 
+void UEclipseGameStateSubsystem::SetDanceStyleLevel(EEclipseDanceStyle Style, int32 Level)
+{
+	const int32 i = (int32)Style;
+	if (!DanceStyleLevels.IsValidIndex(i)) return;
+	DanceStyleLevels[i] = FMath::Max(0, Level);
+	if (DanceStyleLevels[i] > 0) UnlockedDanceStyles |= 1 << i;
+	else UnlockedDanceStyles &= ~(1 << i);
+	NotifyChanged();
+}
+
 void UEclipseGameStateSubsystem::AddDanceStyleXP(EEclipseDanceStyle Style, int32 Amount)
 {
 	const int32 i = (int32)Style;

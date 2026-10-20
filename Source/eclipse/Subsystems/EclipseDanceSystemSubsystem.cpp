@@ -301,7 +301,7 @@ void UEclipseDanceSystemSubsystem::AppendSchedule()
 		if (UEclipseGameStateSubsystem* GS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseGameStateSubsystem>()) GS->bDanceTutorialDone = true;
 		const int32 End = FMath::Min(MaxBars, BattleStart + FMath::RoundToInt(BattleSeconds / Track->BarSeconds()));
 		// One style throughout: the battle is his moves and your footing.
-		const EEclipseDanceStyle Current = Pool.Contains(EEclipseDanceStyle::Muzzing) ? EEclipseDanceStyle::Muzzing : Pool[0];
+		const EEclipseDanceStyle Current = Opponent ? Opponent->ExpertStyle : Pool[0];
 		for (int32 Bar = BattleStart; Bar < End; ++Bar) Schedule.Add(Current);
 	};
 	const auto StartLearnPhase = [&]()
@@ -313,7 +313,7 @@ void UEclipseDanceSystemSubsystem::AppendSchedule()
 		Phase = EPhase::Moves;
 		if (Widget) Widget->SetTutorialStep(1);
 		MovesetStart = Schedule.Num();
-		Add(Pool.Contains(EEclipseDanceStyle::Muzzing) ? EEclipseDanceStyle::Muzzing : Pool[0], 2);
+		Add(Opponent ? Opponent->ExpertStyle : Pool[0], 2);
 		DemoEnd = Schedule.Num();
 	};
 
@@ -668,6 +668,7 @@ void UEclipseDanceSystemSubsystem::AddPlayerStance(float Amount)
 {
 	if (StaggeredUntil > 0.f) return;
 	PlayerStance = FMath::Clamp(PlayerStance + Amount, 0.f, PlayerStanceMax);
+	if (Widget) Widget->FlashPlayerStance();
 	CheckBalance();
 }
 
@@ -805,6 +806,10 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	const bool bStyleMatch = PlayerStyle != EEclipseDanceStyle::Count && PlayerStyle == OpponentStyle;
 	const float Damage = NoteDamage * 1.4f * (bStyleMatch ? StyleMatchBonus : 1.f) * (bHeatMode ? HeatDamage : 1.f);
 	OpponentStance = FMath::Clamp(OpponentStance - Damage, 0.f, StanceMax);
+	if (UEclipseAudioSubsystem* Audio = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>())
+	{
+		Audio->PlayCue(EEclipseUiCue::DanceHit);
+	}
 	Score += GradePoints[(int32)G] * (bHeatMode ? 2 : 1);   // HEAT doubles what you score
 	++Counts[(int32)G];
 	if (Widget)
@@ -1004,11 +1009,16 @@ void UEclipseDanceSystemSubsystem::TickCamera(float DeltaTime)
 	{
 		const FVector From = Player->GetActorLocation();
 		const FVector To = Opponent->GetActorLocation();
-		const FVector Dir = (To - From).GetSafeNormal2D();
+		// Following the live axis between them rotates the shot exactly as fast as they circle, which
+		// leaves both looking planted. Hold most of the arena's starting axis so their strafing shows.
+		const float PairDeg = FMath::RadiansToDegrees(FMath::Atan2(To.Y - From.Y, To.X - From.X));
+		const float BaseDeg = StrafeCentreDeg + 180.f;
+		const float HeldDeg = BaseDeg + FMath::FindDeltaAngleDegrees(BaseDeg, PairDeg) * 0.3f;
+		const FVector Dir = FRotator(0.f, HeldDeg, 0.f).Vector();
 		const FVector Right = FVector::CrossProduct(FVector::UpVector, Dir);
-		const FVector Mid = (From + To) * 0.5f + FVector(0.f, 0.f, 30.f);
+		const FVector Mid = StrafePivot + FVector(0.f, 0.f, 30.f);
 		CamMid = FMath::VInterpTo(CamMid, Mid, DeltaTime, 3.f);
-		CamOffset = FMath::VInterpTo(CamOffset, (From - Dir * 280.f + Right * 220.f + FVector(0.f, 0.f, 70.f)) - Mid, DeltaTime, 3.f);
+		CamOffset = FMath::VInterpTo(CamOffset, -Dir * (StrafeRadius + 280.f) + Right * 220.f + FVector(0.f, 0.f, 70.f), DeltaTime, 3.f);
 
 	}
 	CamRoll = FMath::FInterpTo(CamRoll, CamRollTarget, DeltaTime, 8.f);

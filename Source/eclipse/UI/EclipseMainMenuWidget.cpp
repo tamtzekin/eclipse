@@ -1,6 +1,8 @@
 // Copyright (c) ECLIPSE. All Rights Reserved.
 
 #include "EclipseMainMenuWidget.h"
+#include "UI/EclipseCharacterCreationWidget.h"
+#include "HAL/IConsoleManager.h"
 #include "Subsystems/EclipseDemoSettings.h"
 #include "eclipse.h"
 #include "EclipseUiStyle.h"
@@ -177,6 +179,14 @@ FName UEclipseMainMenuWidget::ResolveStartLevel() const
 		: NewGameLevelName;
 }
 
+namespace
+{
+	// Testing hook: 1 drops you straight into the level, no point spend.
+	bool bSkipCreation = false;
+	FAutoConsoleVariableRef CVarSkipCreation(TEXT("eclipse.SkipCreation"), bSkipCreation,
+		TEXT("New Game skips the character creation screen and opens the first level."));
+}
+
 void UEclipseMainMenuWidget::OnNewGame()
 {
 	UE_LOG(LogEclipse, Log, TEXT("MainMenu: New Game — wiping autosave + opening %s"),
@@ -196,6 +206,11 @@ void UEclipseMainMenuWidget::OnNewGame()
 		PC->SetShowMouseCursor(false);
 	}
 
+	if (!bSkipCreation && UEclipseCharacterCreationWidget::OpenForPlayer(GetOwningPlayer(), ResolveStartLevel()))
+	{
+		RemoveFromParent();   // creation opens the level once the points are spent
+		return;
+	}
 	if (UWorld* W = GetWorld())
 	{
 		UGameplayStatics::OpenLevel(W, ResolveStartLevel());

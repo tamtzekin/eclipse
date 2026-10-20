@@ -40,6 +40,7 @@ enum class EEclipseUiCue : uint8
 	HourChime    UMETA(DisplayName = "In-game hour passed"),
 	ClickSingle  UMETA(DisplayName = "Dialogue choice picked"),
 	ClickDouble  UMETA(DisplayName = "Dialogue closed / skill-check choice"),
+	DanceHit     UMETA(DisplayName = "Dance move lands"),
 };
 
 UCLASS()

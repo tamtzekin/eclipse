@@ -23,6 +23,7 @@
 #include "Components/ScrollBox.h"
 #include "UI/EclipseInventoryWidget.h"   // UEclipseClothingSlotWidget
 #include "UI/EclipseDanceSystemWidget.h"
+#include "UI/EclipseCharacterCreationWidget.h"
 #include "UI/EclipseYapWidget.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
@@ -1755,6 +1756,11 @@ bool UEclipseUiBuilder::PopulateDanceSystemWBP(const FString& WBPAssetPath)
 #else
 	(void)WBPAssetPath; return false;
 #endif
+}
+
+bool UEclipseUiBuilder::PopulateCharacterCreationWBP(const FString& WBPAssetPath)
+{
+	return DoBuild(WBPAssetPath, [](UWidgetBlueprint* WBP, UWidgetTree* Tree) { UEclipseCharacterCreationWidget::BuildTree(Tree); });
 }
 
 bool UEclipseUiBuilder::PopulateYapWBP(const FString& WBPAssetPath)
