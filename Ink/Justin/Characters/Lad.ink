@@ -82,6 +82,7 @@ Do you... kid?
 
 // The strafe lesson, first time only: a line every two bars while he moves and you keep facing him.
 === lad_battle_strafe ===
+Want to dance? Look me in the eye.
 Move side to side. Stay in front of me.
 Keep up.
 Follow me.
@@ -97,6 +98,25 @@ You're looking past me.
 Eyes here. Then we dance.
 Square up. You want to dance or not?
 In front of me. Always in front of me.
+-> END
+
+// The three objectives listed in the HUD while he's teaching, in order.
+=== lad_battle_steps ===
+Keep your balance
+Match him, move for move
+Read him faster
+-> END
+
+// What he says after each of his patterns: copied it / kept up but sloppy / fluffed it, in that order.
+=== lad_battle_lesson ===
+Got it. Next one.
+Yeah. Again.
+No. Watch me.
+-> END
+
+// As the lesson moves on from copying his moves to reading them live.
+=== lad_battle_lock ===
+Now lock on. Less warning.
 -> END
 
 // Once you've got the moves and the footwork, the bar before it all counts.

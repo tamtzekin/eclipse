@@ -55,6 +55,9 @@ private:
 	void Attack(bool bHeavy);          // your answer: hands (light) or legs (heavy)
 	void StartMoveset(int32 Bar);      // his next pattern: he calls it, you answer (the lesson) or you answer live (the battle)
 	void TickNotes(float Song);        // retires notes you let pass
+	float PerfectSeconds() const;      // dead on his beat: the only way to a PERFECT
+	float ParrySeconds() const;        // how close to his beat counts as a parry
+	float ReplySeconds() const;        // how far behind his beat a reply still lands
 	void AddPlayerStance(float Amount);   // wrong answers cost you balance
 	void CheckBalance();                  // drift + those costs; full either way and you go down
 	void Finish();
@@ -94,6 +97,9 @@ private:
 	int32 MovesetStart = MAX_int32;            // first bar he throws a pattern on
 	TArray<FString> StrafeLines;
 	TArray<FString> FaceLines;            // what he says while you're not facing him
+	TArray<FString> StepLines;            // the three lesson objectives, in order
+	TArray<FString> LessonLines;          // learned / clean / fluffed, in that order
+	TArray<FString> LockLines;            // what he says as the lesson moves on to locking
 	float OffFacingFor = 0.f;             // unbroken seconds off him, for the nagging
 	float NextFaceBarkSong = -100.f;      // song time he'll say it again
 	TArray<FString> WrongHeavyLines, WrongLightLines;   // what he says when you answer with the wrong limb

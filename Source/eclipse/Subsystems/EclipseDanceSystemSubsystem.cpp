@@ -225,6 +225,9 @@ bool UEclipseDanceSystemSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		if (IntroLines.Num() == 0) IntroLines = DS->ReadKnotLines(Id + TEXT("_battle_intro"));
 		StrafeLines = DS->ReadKnotLines(Id + TEXT("_battle_strafe"));
 		FaceLines = DS->ReadKnotLines(Id + TEXT("_battle_face"));
+		StepLines = DS->ReadKnotLines(Id + TEXT("_battle_steps"));
+		LessonLines = DS->ReadKnotLines(Id + TEXT("_battle_lesson"));
+		LockLines = DS->ReadKnotLines(Id + TEXT("_battle_lock"));
 		const TArray<FString> Both = DS->ReadKnotLines(Id + TEXT("_battle_both"));
 		BothLine = Both.Num() ? Both[0] : FString();
 	}
@@ -250,6 +253,7 @@ bool UEclipseDanceSystemSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		Widget->ShowStyle(EEclipseDanceStyle::Count);
 		Widget->SetRadialSelected(PlayerStyle);
 		Widget->SetStyleVisible(!bTutorial);   // nothing to switch to while he's teaching the basics
+		Widget->SetTutorialLabels(StepLines);   // his own wording for the lessons, if his Ink gives any
 	}
 	EnterBattleCamera();
 	if (Widget && InOpponent) Widget->ShowExpert(InOpponent->GetDisplayName().ToString(), InOpponent->ExpertStyle);
@@ -343,7 +347,8 @@ void UEclipseDanceSystemSubsystem::AppendSchedule()
 			LearnPasses = 0;
 			PatternNotes = 0;
 			if (Widget) Widget->SetTutorialStep(2);
-			if (Opponent) Opponent->Yap(TEXT("Now lock on. Less warning."), Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
+			if (Opponent) Opponent->Yap(LockLines.Num() ? LockLines[0] : TEXT("Now lock on. Less warning."),
+				Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
 		}
 		Add(Schedule.Last(), 2);
 		DemoEnd = Schedule.Num();
@@ -593,8 +598,7 @@ void UEclipseDanceSystemSubsystem::HandleBeat(int32 Bar, int32 Beat)
 	// Strafe lesson: he talks you through keeping up while he moves, a line every two bars.
 	if (Beat == 1 && Opponent && StrafeStart >= 0 && Bar >= StrafeStart && Bar < DemoStart && (Bar - StrafeStart) % 2 == 0)
 	{
-		const FString Line = Bar == StrafeStart ? TEXT("Face me. You want to dance, you look at me.")
-			: StrafeLines.Num() ? StrafeLines[((Bar - StrafeStart) / 2) % StrafeLines.Num()] : FString();
+		const FString Line = StrafeLines.Num() ? StrafeLines[((Bar - StrafeStart) / 2) % StrafeLines.Num()] : FString();
 		if (!Line.IsEmpty()) Opponent->Yap(Line, BarHold * 2.f, FLinearColor::White, BeatSec);
 	}
 	if (Beat == 1 && Style != EEclipseDanceStyle::Count && Style != OpponentStyle)
@@ -636,7 +640,9 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 		if (bLearned) { ++MovesetIndex; ++LearnPasses; }
 		if (Opponent && Phase == EPhase::Moves)
 		{
-			Opponent->Yap(bLearned ? TEXT("Got it. Next one.") : bClean ? TEXT("Yeah. Again.") : TEXT("No. Watch me."),
+			const int32 Which = bLearned ? 0 : bClean ? 1 : 2;
+			const TCHAR* Fallback[] = { TEXT("Got it. Next one."), TEXT("Yeah. Again."), TEXT("No. Watch me.") };
+			Opponent->Yap(LessonLines.IsValidIndex(Which) ? LessonLines[Which] : FString(Fallback[Which]),
 				Track->BarSeconds() / Pitch, FLinearColor::White, Track->BeatSeconds() / Pitch);
 		}
 	}
@@ -694,10 +700,30 @@ void UEclipseDanceSystemSubsystem::CheckBalance()
 	if (Widget) Widget->SetPlayerStance(Balance, StaggeredUntil > 0.f);
 }
 
+// A parry window can never be wider than the gap between his beats, or one press sits inside two of them
+// at once and the nearest-note match starts answering his pattern backwards.
+// Dead on his beat. Half the parry window, so there's a core you have to actually hit and an edge
+// that still lands for less.
+float UEclipseDanceSystemSubsystem::PerfectSeconds() const
+{
+	return ParrySeconds() * 0.5f;
+}
+
+float UEclipseDanceSystemSubsystem::ParrySeconds() const
+{
+	return Track ? FMath::Min(NoteWindow, Track->BeatSeconds() * 0.45f) : NoteWindow;
+}
+
+// You reply a bar behind him, so the window is his bar plus the same slack a parry gets.
+float UEclipseDanceSystemSubsystem::ReplySeconds() const
+{
+	return Track ? Track->BarSeconds() + ParrySeconds() : NoteWindow;
+}
+
 // Notes you never answered: he lands them and keeps his footing.
 void UEclipseDanceSystemSubsystem::TickNotes(float Song)
 {
-	const float LateSecs = Track ? Track->BarSeconds() : NoteWindow;   // the bar after his step is still answerable
+	const float LateSecs = ReplySeconds();
 	for (FPendingNote& N : Notes)
 	{
 		// The camera braces a moment early; his body moves exactly on the step.
@@ -735,17 +761,32 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	(bHeavy ? PlayerTilt.Y : PlayerTilt.X) = 1.f;   // the camera stays out of your own attacks
 
 	const float Press = Song - PressOffset;   // credit the press for what you heard, not what the clock says
-	const float LateSecs = Track ? Track->BarSeconds() : NoteWindow;   // answer on his beat to parry, or a bar behind for GOOD
+	const float Perfect = PerfectSeconds();
+	const float Parry = ParrySeconds();
+	const float BarSec = Track ? Track->BarSeconds() : 0.f;
+	// Window 1, the parry: on his beat. Nearest note wins, because you're answering one particular move.
 	FPendingNote* Best = nullptr;
-	float BestDt = MAX_flt;
+	float BestDt = Parry;
 	for (FPendingNote& N : Notes)
 	{
-		const float Off = Press - N.Time;
-		if (!N.bAnswer || N.bDone || Off < -NoteWindow || Off > LateSecs) continue;
-		const float Dt = FMath::Abs(Off);
-		if (Dt >= BestDt) continue;
+		if (!N.bAnswer || N.bDone) continue;
+		const float Dt = FMath::Abs(Press - N.Time);
+		if (Dt > BestDt) continue;
 		Best = &N;
 		BestDt = Dt;
+	}
+	// Window 2, the reply: a bar behind, his pattern repeated in the order he threw it. The oldest note
+	// you haven't answered is the one this press is for, never the closest.
+	bool bReply = false;
+	if (!Best)
+	{
+		for (FPendingNote& N : Notes)
+		{
+			if (!N.bAnswer || N.bDone) continue;
+			if (FMath::Abs(Press - (N.Time + BarSec)) > Parry) continue;
+			if (!Best || N.Time < Best->Time) Best = &N;
+		}
+		bReply = Best != nullptr;
 	}
 	if (bLogPresses)
 	{
@@ -775,8 +816,14 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 		for (const FPendingNote& N : Notes)
 		{
 			if (!N.bAnswer || N.bDone) continue;
-			const float Off = Press - N.Time;
-			if (FMath::Abs(Off) < Closest) { Closest = FMath::Abs(Off); Verdict = Off > 0.f ? TEXT("TOO LATE") : TEXT("TOO EARLY"); }
+			// Whichever window it was aimed at: name which way you were out, or leave it a MISS.
+			for (const float Target : { N.Time, N.Time + BarSec })
+			{
+				const float Off = Press - Target;
+				if (FMath::Abs(Off) >= Closest) continue;
+				Closest = FMath::Abs(Off);
+				Verdict = Off > 0.f ? TEXT("TOO LATE") : TEXT("TOO EARLY");
+			}
 		}
 		AddPlayerStance(6.f);
 		Streak = 0;
@@ -800,7 +847,8 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 		return;
 	}
 
-	const bool bLate = Press - Best->Time > NoteWindow;   // a bar behind him: it still lands, it just isn't a parry
+	// A parry off its core, or any reply: it lands, it just isn't a PERFECT.
+	const bool bLate = bReply || FMath::Abs(Press - Best->Time) > Perfect;
 	// A note carried over from his last pattern doesn't count towards answering this one.
 	if (Track && Best->Time >= Track->SegmentStartSeconds() + NotesBar * Track->BarSeconds()) ++PatternHits;
 	Streak = bLate ? 0 : Streak + 1;

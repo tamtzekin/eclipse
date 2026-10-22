@@ -382,7 +382,8 @@ void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
 		const bool bDone = Active > i, bNow = Active == i;
 		if (Steps[i])
 		{
-			Steps[i]->SetText(FText::FromString(Names[i]));
+			Steps[i]->SetText(FText::FromString(TutorialLabels.IsValidIndex(i) && !TutorialLabels[i].IsEmpty()
+				? TutorialLabels[i] : FString(Names[i])));
 			Steps[i]->SetColorAndOpacity(FSlateColor(bDone ? FLinearColor(1.f, 1.f, 1.f, 0.45f) : bNow ? Cream : FLinearColor(1.f, 1.f, 1.f, 0.5f)));
 		}
 		// Filled diamond and a line through it once it's passed, same as a finished objective.

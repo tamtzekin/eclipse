@@ -110,6 +110,8 @@ public:
 
 	// The three lessons, ticked off as they're passed; -1 once they're done.
 	void SetTutorialStep(int32 Active);
+	// The three objectives, from the opponent's Ink. Missing lines keep the built-in wording.
+	void SetTutorialLabels(const TArray<FString>& Lines) { TutorialLabels = Lines; }
 
 	// Your stance, 0..1, shown on the bottom bar: full means broken.
 	void SetPlayerStance(float Ratio, bool bStaggered) { if (FacingGauge) FacingGauge->SetStance(Ratio, bStaggered); }
@@ -187,4 +189,5 @@ private:
 
 	float StanceShake = 0.f;
 	float StanceFadeT = -1.f;   // <0 idle, else seconds into the fade-out
+	TArray<FString> TutorialLabels;
 };
