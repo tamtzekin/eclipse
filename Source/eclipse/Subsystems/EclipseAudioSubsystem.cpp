@@ -64,8 +64,8 @@ void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
 	case EEclipseUiCue::HeatDown: Real = TEXT("UI/S_UI_HeatDown"); break;
 	case EEclipseUiCue::ThirstDown: Real = TEXT("UI/S_UI_ThirstDown"); break;
 	case EEclipseUiCue::ThirstUp: Real = TEXT("UI/S_UI_ThirstUp"); break;
-	// Glass stands in for the swallow; swap to Items/S_Item_Water once that foley is imported.
-	case EEclipseUiCue::Drink: Real = TEXT("Items/S_Item_Glass"); Pitch = 0.9f; break;
+	case EEclipseUiCue::DrinkWater: Real = TEXT("Items/S_Item_DrinkWater"); break;
+	case EEclipseUiCue::DrinkGlass: Real = TEXT("Items/S_Item_DrinkGlass"); break;
 	default: break;
 	}
 	if (Real)

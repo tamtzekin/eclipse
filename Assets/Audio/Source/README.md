@@ -10,6 +10,8 @@ imports, and these masters are what a re-chop starts from.
 | `382668__bbrocer__glass-cup-set-down.wav` | `Items/S_Item_Glass` |
 | `476804__sheyvan__clothing-rustling-2-phone-out-of-pocket.wav` | `Items/S_Item_Rustle` (also the menu open/close cue) |
 | `use_cigarette.ogg` | `Items/S_Item_Cigarette` |
+| `drink_waterbottle.ogg` | `Items/S_Item_DrinkWater` |
+| `drink_glassbottle.ogg` | `Items/S_Item_DrinkGlass` |
 | `heat_down.ogg` | `UI/S_UI_HeatDown` |
 | `down_thirst.ogg` | `UI/S_UI_ThirstDown` |
 | `637556__kyles__footsteps-shoes-walk-road-asphalt-hard.flac` | `Steps/S_Footstep_1..5` |

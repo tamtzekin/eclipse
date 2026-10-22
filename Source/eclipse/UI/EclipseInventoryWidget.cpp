@@ -1736,7 +1736,11 @@ void UEclipseInventoryWidget::OnUse()
 		const bool bCig = UEclipseGameStateSubsystem::GetBaseItemId(SelectedItemId)
 			== UEclipseGameStateSubsystem::CigaretteItemId;
 		const bool bDrink = UseRow.Effect.ThirstDelta > 0 || UseRow.Effect.RestoreThirst > 0.f;
-		A->PlayCue(bCig ? EEclipseUiCue::Cigarette : bDrink ? EEclipseUiCue::Drink : EEclipseUiCue::Use);
+		// Which container, off the mesh the row already names: plastic for water, glass for the spirits.
+		const FString Bottle = UseRow.Mesh.IsNull() ? FString() : UseRow.Mesh.GetAssetName();
+		const bool bPlastic = Bottle.Contains(TEXT("Water")) || SelectedItemId.ToString().Contains(TEXT("water"));
+		const EEclipseUiCue DrinkCue = bPlastic ? EEclipseUiCue::DrinkWater : EEclipseUiCue::DrinkGlass;
+		A->PlayCue(bCig ? EEclipseUiCue::Cigarette : bDrink ? DrinkCue : EEclipseUiCue::Use);
 	}
 
 	// Light up whichever carrier is holding it, then consume a beat later.
