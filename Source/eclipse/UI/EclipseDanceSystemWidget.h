@@ -86,7 +86,7 @@ private:
 	bool bBarOnly = false;
 	float HitFlash = 0.f;
 	float PulseTime = 0.f;
-	FLinearColor BarColor = FLinearColor(0.5f, 1.f, 0.6f);
+	FLinearColor BarColor = EclipseDance::Gold;
 	FLinearColor FlashColor = FLinearColor::White;
 };
 

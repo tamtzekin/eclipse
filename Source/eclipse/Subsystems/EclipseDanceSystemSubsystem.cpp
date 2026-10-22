@@ -60,8 +60,8 @@ namespace
 	constexpr int32 LessonPatterns = 2;        // moves he teaches before the scored battle
 	constexpr float TelegraphLessonBeats = 8.f, TelegraphBattleBeats = 4.f;   // two bars to tell you in the lesson, one in the battle
 	constexpr float BattleSeconds = 80.f;     // the scored part, after the intro and the demo
-	constexpr float StrafeDegPerSec = 5.f;    // a slow sidestep, not a run
-	constexpr float StrafeLimitDeg = 30.f;    // either side of where the battle started: a narrow arc, not an orbit
+	constexpr float StrafeDegPerSec = 16.f;   // a proper sidestep: the arc below in about three seconds
+	constexpr float StrafeLimitDeg = 55.f;    // either side of where the battle started: enough travel to read as movement
 	constexpr float FacingWindowDeg = 30.f;   // off by more than this when a switch lands and it's a MISS
 	constexpr float PlayerStanceMax = 100.f;   // yours; full means staggered
 	constexpr float StaggerSeconds = 2.8f;     // how long you're caught flat-footed
@@ -71,6 +71,8 @@ namespace
 	constexpr float HeatModeSpeedUp = 0.12f;  // extra tempo while it's on
 	constexpr float HeatDamage = 1.5f;        // everything you land hits this much harder
 	constexpr float StanceRecover = 10.f;     // he steadies this much when you MISS
+	constexpr float StanceRegenPerSec = 7.f;  // and this fast if you leave him alone
+	constexpr float StanceRegenDelay = 3.f;   // seconds untouched before it starts coming back
 
 	const TCHAR* GradeNames[] = { TEXT("PERFECT"), TEXT("GOOD"), TEXT("TOO EARLY"), TEXT("TOO SLOW"), TEXT("MISS"), TEXT("HOT") };
 	const int32 GradePoints[] = { 300, 100, 25, 50, 0, 500 };
@@ -641,7 +643,8 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 	const bool bLesson = Phase == EPhase::Moves;   // locking already runs on the battle's shorter tell
 	const float BarSec = Track->BarSeconds(), BeatSec = Track->BeatSeconds();
 	const float His = Track->SegmentStartSeconds() + Bar * BarSec;
-	Notes.Reset();
+	// Only the spent ones go: his last bar's notes stay answerable for the bar after it.
+	Notes.RemoveAll([](const FPendingNote& N) { return N.bDone; });
 	NotesBar = Bar;
 	for (const EclipseDance::FNote& N : Parsed)
 	{
@@ -688,6 +691,7 @@ void UEclipseDanceSystemSubsystem::CheckBalance()
 // Notes you never answered: he lands them and keeps his footing.
 void UEclipseDanceSystemSubsystem::TickNotes(float Song)
 {
+	const float LateSecs = Track ? Track->BarSeconds() : NoteWindow;   // the bar after his step is still answerable
 	for (FPendingNote& N : Notes)
 	{
 		// The camera braces a moment early; his body moves exactly on the step.
@@ -702,7 +706,7 @@ void UEclipseDanceSystemSubsystem::TickNotes(float Song)
 			N.bStruck = true;
 			(N.bHeavy ? OpponentTilt.Y : OpponentTilt.X) = 1.f;
 		}
-		if (!N.bAnswer || N.bDone || Song <= N.Time + NoteWindow) continue;
+		if (!N.bAnswer || N.bDone || Song <= N.Time + LateSecs) continue;
 		N.bDone = true;
 		AddPlayerStance(9.f);   // letting one through costs you footing
 		Streak = 0;
@@ -725,12 +729,15 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	(bHeavy ? PlayerTilt.Y : PlayerTilt.X) = 1.f;   // the camera stays out of your own attacks
 
 	const float Press = Song - PressOffset;   // credit the press for what you heard, not what the clock says
+	const float LateSecs = Track ? Track->BarSeconds() : NoteWindow;   // answer on his beat to parry, or a bar behind for GOOD
 	FPendingNote* Best = nullptr;
-	float BestDt = NoteWindow;
+	float BestDt = MAX_flt;
 	for (FPendingNote& N : Notes)
 	{
-		const float Dt = FMath::Abs(Press - N.Time);
-		if (!N.bAnswer || N.bDone || Dt > BestDt) continue;
+		const float Off = Press - N.Time;
+		if (!N.bAnswer || N.bDone || Off < -NoteWindow || Off > LateSecs) continue;
+		const float Dt = FMath::Abs(Off);
+		if (Dt >= BestDt) continue;
 		Best = &N;
 		BestDt = Dt;
 	}
@@ -787,8 +794,10 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 		return;
 	}
 
-	++PatternHits;
-	++Streak;
+	const bool bLate = Press - Best->Time > NoteWindow;   // a bar behind him: it still lands, it just isn't a parry
+	// A note carried over from his last pattern doesn't count towards answering this one.
+	if (Track && Best->Time >= Track->SegmentStartSeconds() + NotesBar * Track->BarSeconds()) ++PatternHits;
+	Streak = bLate ? 0 : Streak + 1;
 	if (!bHeatMode && Streak >= HeatStreak)
 	{
 		bHeatMode = true;
@@ -800,12 +809,13 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 			Widget->Pulse(EclipseDance::Gold, 0.4f, 2.f);
 		}
 	}
-	// On his beat is the only way to land one, so every hit is a perfect.
-	constexpr EGrade G = EGrade::Perfect;
-	++PatternPerfects;
+	// On his beat is a parry; catching up a bar later is a GOOD.
+	const EGrade G = bLate ? EGrade::Good : EGrade::Perfect;
+	if (!bLate) ++PatternPerfects;
 	const bool bStyleMatch = PlayerStyle != EEclipseDanceStyle::Count && PlayerStyle == OpponentStyle;
-	const float Damage = NoteDamage * 1.4f * (bStyleMatch ? StyleMatchBonus : 1.f) * (bHeatMode ? HeatDamage : 1.f);
+	const float Damage = NoteDamage * (bLate ? 0.6f : 1.4f) * (bStyleMatch ? StyleMatchBonus : 1.f) * (bHeatMode ? HeatDamage : 1.f);
 	OpponentStance = FMath::Clamp(OpponentStance - Damage, 0.f, StanceMax);
+	LastLandedSong = Song;   // his stance only comes back once you stop landing on him
 	if (UEclipseAudioSubsystem* Audio = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>())
 	{
 		Audio->PlayCue(EEclipseUiCue::DanceHit);
@@ -965,6 +975,12 @@ void UEclipseDanceSystemSubsystem::Tick(float DeltaTime)
 		{
 			PlayerStance = FMath::Max(0.f, PlayerStance - DeltaTime * 14.f);   // footing comes back if you stop fluffing it
 			if (Widget) Widget->SetPlayerStance(PlayerStance / PlayerStanceMax, false);
+		}
+		// His comes back the same way: stop hitting him and he gets it together.
+		if (Phase == EPhase::Battle && OpponentStance < StanceMax && Song > LastLandedSong + StanceRegenDelay)
+		{
+			OpponentStance = FMath::Min(StanceMax, OpponentStance + DeltaTime * StanceRegenPerSec);
+			if (Widget) Widget->SetStance(OpponentStance / StanceMax, false);
 		}
 	}
 	if (bHeatMode && (Song >= HeatModeEnds || bFinished))

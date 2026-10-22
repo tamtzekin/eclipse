@@ -69,9 +69,9 @@ private:
 
 	// Gap between the subject's silhouette and the label, and how far above
 	// the subject's top the label floats.
-	static constexpr float LabelStandoffCm = 18.f;
-	static constexpr float LabelLiftCm     = 14.f;
-	static constexpr float LabelSideCm     = 55.f;   // off to one side, so the name never sits over the face
+	static constexpr float LabelStandoffCm = 10.f;
+	static constexpr float LabelLiftCm     = 8.f;
+	static constexpr float LabelSideCm     = 22.f;   // just clear of the face, not out at arm's length
 
 	// Anchors/alignment only need setting once; the per-frame work is the
 	// position alone.

@@ -502,6 +502,7 @@ private:
 	// When each caption box starts printing, so it can click and name its speaker as it lands.
 	TArray<float>   SegmentClickDelays;
 	TArray<TWeakObjectPtr<class UTextBlock>> SegmentNameLabels;
+	TWeakObjectPtr<class UTextBlock> PendingSegmentName;   // the next caption box names this speaker
 	int32           NextSegmentClick = 0;
 
 	// Mirrors bDialogueAnimating onto the dialogue subsystem so non-dialogue

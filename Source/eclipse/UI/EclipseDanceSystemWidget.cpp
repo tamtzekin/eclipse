@@ -324,8 +324,8 @@ void UEclipseDanceSystemWidget::BuildTree(UWidgetTree* Tree)
 
 	// Attacks are two keys, not a wheel: the legend sits bottom-right with whatever style you're holding.
 	UVerticalBox* Hints = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("AttackHintBox"));
-	UTextBlock* Light = Text(TEXT("AttackHintLight"), 22, 2.f, TEXT("UP - LIGHT"));
-	UTextBlock* Heavy = Text(TEXT("AttackHintHeavy"), 22, 2.f, TEXT("DOWN - HEAVY"));
+	UTextBlock* Light = Text(TEXT("AttackHintLight"), 22, 2.f, TEXT("\u25B2 LIGHT"));
+	UTextBlock* Heavy = Text(TEXT("AttackHintHeavy"), 22, 2.f, TEXT("\u25BC HEAVY"));
 	Light->SetJustification(ETextJustify::Right);
 	Heavy->SetJustification(ETextJustify::Right);
 	UTextBlock* StyleName = Text(TEXT("StyleNameText"), 18, 3.f, TEXT("H  STYLE"));
@@ -409,7 +409,7 @@ void UEclipseDanceSystemWidget::SetStance(float Ratio, bool bHit)
 {
 	if (!OpponentStance) return;
 	OpponentStance->SetBarOnly(true);
-	OpponentStance->SetBarColors(FLinearColor(0.5f, 1.f, 0.6f), EclipseDance::BloodRed);
+	OpponentStance->SetBarColors(EclipseDance::Gold, EclipseDance::BloodRed);
 	OpponentStance->SetStance(1.f - Ratio, /*bStaggered=*/false);   // his bar fills as you break him, same as yours
 	if (bHit)
 	{

@@ -2215,8 +2215,7 @@ void UEclipseDialogueWidget::StartBodySegments(const TArray<FEclipseSpeechSegmen
 			SegmentStartDelays.Add(RunningDelay);
 			SegmentSpeakerLocations.Add(Who->GetActorLocation());
 		}
-		SegmentClickDelays.Add(RunningDelay);   // one tick per box, as it starts printing
-		SegmentNameLabels.Add(BubbleName);
+		PendingSegmentName = BubbleName;   // BuildBodyWords reveals it with this speaker's first caption box
 
 		BodyWords       = Words;
 		EffectsLineText = BubbleEffects;
@@ -2236,6 +2235,9 @@ void UEclipseDialogueWidget::StartBodyAnimation(const FString& BodyString)
 	AnimWordBlocks.Reset();
 	AnimWordDelays.Reset();
 	AnimWordMumbleFired.Reset();
+	SegmentClickDelays.Reset();
+	SegmentNameLabels.Reset();
+	NextSegmentClick = 0;
 
 	// Cut any in-flight mumble slices from the previous node (user may have
 	// clicked a choice mid-cascade, leaving slices ringing). Quick fade.
@@ -2325,6 +2327,10 @@ void UEclipseDialogueWidget::BuildBodyWords(const FString& BodyString, float& Ru
 				AnimWordBlocks.Add(SBox.Box);
 				AnimWordDelays.Add(RunningDelay);
 				AnimWordMumbleFired.Add(true);
+				// Every caption box ticks as it lands, so a three-sentence line reads as three beats.
+				SegmentClickDelays.Add(RunningDelay);
+				SegmentNameLabels.Add(PendingSegmentName);
+				PendingSegmentName = nullptr;
 				RunningDelay += SentenceBoxLayoutLead;
 				bFirstWordInSentence = false;
 			}

@@ -139,6 +139,7 @@ private:
 	float HeatModeEnds = 0.f;
 
 	float OpponentStance = 150.f;         // his STANCE bar; hits knock it down, zero ends the battle
+	float LastLandedSong = -100.f;        // song time you last landed one: he steadies again after a gap
 
 	// Deck feel: SpinT runs the vinyl spin-up and tempo; WinT the wind-down after a win; FailT the brake-and-stutter after a loss (<0 = idle).
 	float SpinT = -1.f;
