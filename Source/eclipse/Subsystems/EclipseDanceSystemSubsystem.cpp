@@ -65,6 +65,8 @@ namespace
 	constexpr float FacingWindowDeg = 30.f;   // off by more than this when a switch lands and it's a MISS
 	constexpr float PlayerStanceMax = 100.f;   // yours; full means staggered
 	constexpr float StaggerSeconds = 2.8f;     // how long you're caught flat-footed
+	constexpr float PlayerStanceRegenDelay = 4.5f;   // seconds unhit before your footing starts coming back
+	constexpr float PlayerStanceRegenPerSec = 5.f;   // and how fast, once it does: slow enough that hits stack up
 	constexpr float StanceMax = 260.f;         // the opponent's STANCE; break it and the battle's won early
 	constexpr int32 HeatStreak = 6;           // PERFECTs in a row that light HEAT mode
 	constexpr float HeatModeBars = 8.f;       // how long it lasts, in bars
@@ -670,6 +672,7 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 void UEclipseDanceSystemSubsystem::AddPlayerStance(float Amount)
 {
 	if (StaggeredUntil > 0.f) return;
+	LastStanceHitSong = SongSeconds(FPlatformTime::Seconds());   // the clock the recovery delay runs off
 	PlayerStance = FMath::Clamp(PlayerStance + Amount, 0.f, PlayerStanceMax);
 	if (Widget) Widget->FlashPlayerStance();
 	CheckBalance();
@@ -859,7 +862,7 @@ void UEclipseDanceSystemSubsystem::Finish()
 	if (Widget)
 	{
 		Widget->ShowGrade(FText::FromString(bWon ? TEXT("STANCE BROKEN!") : TEXT("YOU LOSE")), bWon ? EclipseDance::Gold : EclipseUI::DialogueRed);
-		if (bWon) Widget->ShatterStance();
+		if (bWon) Widget->FadeOutStance();
 	}
 	EndWait = 0.f;
 	// Ink owns Patience (it's a LIST), so just hand the story the result.
@@ -971,9 +974,10 @@ void UEclipseDanceSystemSubsystem::Tick(float DeltaTime)
 			PlayerStance = 0.f;
 			if (Widget) Widget->SetPlayerStance(0.f, false);
 		}
-		else if (StaggeredUntil < 0.f && PlayerStance > 0.f)
+		else if (StaggeredUntil < 0.f && PlayerStance > 0.f && Song > LastStanceHitSong + PlayerStanceRegenDelay)
 		{
-			PlayerStance = FMath::Max(0.f, PlayerStance - DeltaTime * 14.f);   // footing comes back if you stop fluffing it
+			// Only after a clean stretch, and slowly: inside a flurry his hits stack instead of each one wiping off.
+			PlayerStance = FMath::Max(0.f, PlayerStance - DeltaTime * PlayerStanceRegenPerSec);
 			if (Widget) Widget->SetPlayerStance(PlayerStance / PlayerStanceMax, false);
 		}
 		// His comes back the same way: stop hitting him and he gets it together.

@@ -445,20 +445,20 @@ void UEclipseHUDWidget::UpdateBars()
 	// alike.
 	UEclipseAudioSubsystem* Audio = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr;
-	auto DetectChange = [Audio](int32 NewV, int32& LastV, float& PulseOut)
+	auto DetectChange = [Audio](int32 NewV, int32& LastV, float& PulseOut, EEclipseUiCue UpCue, EEclipseUiCue DownCue)
 	{
 		if (LastV != -1 && NewV != LastV)
 		{
 			PulseOut = UEclipseHUDWidget::PulseDuration;
 			if (Audio)
 			{
-				Audio->PlayCue(NewV > LastV ? EEclipseUiCue::MeterUp : EEclipseUiCue::MeterDown);
+				Audio->PlayCue(NewV > LastV ? UpCue : DownCue);
 			}
 		}
 		LastV = NewV;
 	};
-	DetectChange(GS->Heat,        LastHeat,        HeatPulse);
-	DetectChange(GS->Thirst,      LastThirst,      ThirstPulse);
+	DetectChange(GS->Heat,   LastHeat,   HeatPulse,   EEclipseUiCue::MeterUp,  EEclipseUiCue::HeatDown);
+	DetectChange(GS->Thirst, LastThirst, ThirstPulse, EEclipseUiCue::ThirstUp, EEclipseUiCue::ThirstDown);
 
 	// Heat red, Thirst light blue — the colour says which meter it is —
 	// and both go white when critical, so the alarm reads the same on each.
@@ -580,6 +580,9 @@ void UEclipseHUDWidget::UpdateQuestList()
 	if (DS->IsBodyPrinting()) return;
 
 	const TArray<FString> Lines = DS->GetActiveSideQuests();
+	// Whatever the first read finds was already ours; only later arrivals announce themselves.
+	const bool bFirstPass = !bQuestListPrimed;
+	bQuestListPrimed = true;
 	if (Lines == LastQuestLines) return;   // nothing gained or completed
 	LastQuestLines = Lines;
 
@@ -611,7 +614,7 @@ void UEclipseHUDWidget::UpdateQuestList()
 		const bool bAlready = QuestRows.ContainsByPredicate(
 			[&Line](const FQuestRow& R){ return R.CompletedFor < 0.f && R.Line == Line; });
 		if (bAlready) continue;
-		BuildQuestRow(Line);
+		BuildQuestRow(Line, !bFirstPass);
 	}
 
 	QuestList->SetVisibility(QuestList->GetChildrenCount() > 0
@@ -619,7 +622,7 @@ void UEclipseHUDWidget::UpdateQuestList()
 		: ESlateVisibility::Collapsed);
 }
 
-void UEclipseHUDWidget::BuildQuestRow(const FString& Line)
+void UEclipseHUDWidget::BuildQuestRow(const FString& Line, bool bAnnounce)
 {
 	using namespace EclipseUI;
 
@@ -707,6 +710,17 @@ void UEclipseHUDWidget::BuildQuestRow(const FString& Line)
 
 	FQuestRow Rec;
 	Rec.Line = Line; Rec.Diamond = Dot; Rec.Text = T; Rec.Strike = Strike; Rec.Row = Row;
+	if (bAnnounce)
+	{
+		// A quest you just picked up slides up out of nothing with a chime; TickQuestCompletions runs it.
+		Rec.AddedFor = 0.f;
+		Row->SetRenderOpacity(0.f);
+		if (UEclipseAudioSubsystem* Audio = GetGameInstance()
+				? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+		{
+			Audio->PlayCue(EEclipseUiCue::HourChime);
+		}
+	}
 	QuestRows.Add(Rec);
 }
 
@@ -720,6 +734,23 @@ void UEclipseHUDWidget::TickQuestCompletions(float DeltaTime)
 	for (int32 i = QuestRows.Num() - 1; i >= 0; --i)
 	{
 		FQuestRow& R = QuestRows[i];
+		if (R.AddedFor >= 0.f)
+		{
+			R.AddedFor += DeltaTime;
+			const float K = FMath::Clamp(R.AddedFor / FMath::Max(0.01f, QuestAppearSeconds), 0.f, 1.f);
+			if (UWidget* Row = R.Row.Get())
+			{
+				Row->SetRenderOpacity(K);
+				Row->SetRenderTranslation(FVector2D(0.f, 14.f * (1.f - K) * (1.f - K)));   // rises into place
+			}
+			if (UTextBlock* T = R.Text.Get())
+			{
+				FLinearColor C = Cream * (1.f + 1.8f * (1.f - K));   // lands bright, settles to cream
+				C.A = 1.f;
+				T->SetColorAndOpacity(FSlateColor(C));
+			}
+			if (K >= 1.f) R.AddedFor = -1.f;
+		}
 		if (R.CompletedFor < 0.f) continue;
 
 		R.CompletedFor += DeltaTime;

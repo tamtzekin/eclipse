@@ -59,6 +59,13 @@ void UEclipseAudioSubsystem::PlayCue(EEclipseUiCue Cue, float VolumeMultiplier)
 	case EEclipseUiCue::ClickDouble: Real = TEXT("UI/S_UI_ClickDouble"); break;
 	// Placeholder thud: rustle dropped an octave reads as a punch into cloth until there's real foley.
 	case EEclipseUiCue::DanceHit: Real = TEXT("Items/S_Item_Rustle"); Pitch = 0.5f; break;
+	case EEclipseUiCue::Cigarette: Real = TEXT("Items/S_Item_Cigarette"); break;
+	// Each meter names its own falling sound; only the rise still shares the placeholder bleep.
+	case EEclipseUiCue::HeatDown: Real = TEXT("UI/S_UI_HeatDown"); break;
+	case EEclipseUiCue::ThirstDown: Real = TEXT("UI/S_UI_ThirstDown"); break;
+	case EEclipseUiCue::ThirstUp: Real = TEXT("UI/S_UI_ThirstUp"); break;
+	// Glass stands in for the swallow; swap to Items/S_Item_Water once that foley is imported.
+	case EEclipseUiCue::Drink: Real = TEXT("Items/S_Item_Glass"); Pitch = 0.9f; break;
 	default: break;
 	}
 	if (Real)

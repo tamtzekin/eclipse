@@ -131,7 +131,7 @@ public:
 	void SetStance(float Ratio, bool bHit);
 
 	// His balance gives out: the bar flares white, cracks apart and falls away.
-	void ShatterStance();
+	void FadeOutStance();
 
 	// Edge glow in the given colour, flashed and fading across a beat (confirms a style pick).
 	void Pulse(const FLinearColor& Color, float BeatSeconds, float Strength = 1.f);
@@ -186,5 +186,5 @@ private:
 	FLinearColor TintTarget = FLinearColor::Transparent;
 
 	float StanceShake = 0.f;
-	float ShatterT = -1.f;   // <0 idle, else seconds into the break
+	float StanceFadeT = -1.f;   // <0 idle, else seconds into the fade-out
 };

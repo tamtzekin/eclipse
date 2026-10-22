@@ -1732,7 +1732,11 @@ void UEclipseInventoryWidget::OnUse()
 	if (UEclipseAudioSubsystem* A = GetGameInstance()
 			? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
-		A->PlayCue(EEclipseUiCue::Use);
+		// What using it sounds like: a cigarette by id, anything that hydrates you as a drink.
+		const bool bCig = UEclipseGameStateSubsystem::GetBaseItemId(SelectedItemId)
+			== UEclipseGameStateSubsystem::CigaretteItemId;
+		const bool bDrink = UseRow.Effect.ThirstDelta > 0 || UseRow.Effect.RestoreThirst > 0.f;
+		A->PlayCue(bCig ? EEclipseUiCue::Cigarette : bDrink ? EEclipseUiCue::Drink : EEclipseUiCue::Use);
 	}
 
 	// Light up whichever carrier is holding it, then consume a beat later.

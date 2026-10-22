@@ -41,6 +41,11 @@ enum class EEclipseUiCue : uint8
 	ClickSingle  UMETA(DisplayName = "Dialogue choice picked"),
 	ClickDouble  UMETA(DisplayName = "Dialogue closed / skill-check choice"),
 	DanceHit     UMETA(DisplayName = "Dance move lands"),
+	Cigarette    UMETA(DisplayName = "Cigarette smoked"),
+	Drink        UMETA(DisplayName = "Drink swallowed"),
+	HeatDown     UMETA(DisplayName = "Heat dropped"),
+	ThirstDown   UMETA(DisplayName = "Thirst dropped"),
+	ThirstUp     UMETA(DisplayName = "Thirst restored"),
 };
 
 UCLASS()

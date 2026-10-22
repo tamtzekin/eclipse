@@ -1859,7 +1859,7 @@ void UEclipseDialogueWidget::MakeChoice(int32 Index)
 
 	if (UEclipseAudioSubsystem* Audio = GetGameInstance() ? GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
 	{
-		Audio->PlayUI(DialogueChoiceSound);
+		Audio->PlayUI(DialogueChoiceSound, DialogueClickVolume);
 	}
 
 	// [CONTINUE] isn't a real player turn — same speaker, just the next
@@ -2779,7 +2779,7 @@ void UEclipseDialogueWidget::NativeTick(const FGeometry& InGeometry, float Delta
 	{
 		if (UGameInstance* GI = GetGameInstance())
 		{
-			if (UEclipseAudioSubsystem* A = GI->GetSubsystem<UEclipseAudioSubsystem>()) A->PlayCue(EEclipseUiCue::DialogueLine);
+			if (UEclipseAudioSubsystem* A = GI->GetSubsystem<UEclipseAudioSubsystem>()) A->PlayCue(EEclipseUiCue::DialogueLine, DialogueClickVolume);
 		}
 		if (UTextBlock* Name = SegmentNameLabels.IsValidIndex(NextSegmentClick) ? SegmentNameLabels[NextSegmentClick].Get() : nullptr)
 		{

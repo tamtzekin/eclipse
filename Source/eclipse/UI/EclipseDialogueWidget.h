@@ -500,6 +500,8 @@ private:
 	int32           NextSegmentFocus = 0;
 
 	// When each caption box starts printing, so it can click and name its speaker as it lands.
+	// The caption tick and the option click, loud enough to carry over the music.
+	static constexpr float DialogueClickVolume = 2.2f;
 	TArray<float>   SegmentClickDelays;
 	TArray<TWeakObjectPtr<class UTextBlock>> SegmentNameLabels;
 	TWeakObjectPtr<class UTextBlock> PendingSegmentName;   // the next caption box names this speaker

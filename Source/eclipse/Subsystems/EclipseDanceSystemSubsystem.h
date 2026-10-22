@@ -128,6 +128,7 @@ private:
 	// Your own stance, Sekiro-style: wrong answers fill it, a full bar leaves you flat-footed for a moment.
 	float PlayerStance = 0.f;
 	float StaggeredUntil = -1.f;          // song time you can move again
+	float LastStanceHitSong = -100.f;     // song time he last cost you footing: recovery waits on this
 	// His tell: a slow rise (light lead) or sink (heavy lead) over the two beats before he steps.
 	float TelegraphFrom = -1.f, TelegraphTo = -1.f;   // song times
 	float TelegraphDir = 0.f;                          // +1 up, -1 down

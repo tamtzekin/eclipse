@@ -358,9 +358,9 @@ void UEclipseDanceSystemWidget::SetFacingVisible(bool bVisible)
 	if (FacingGauge) FacingGauge->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 }
 
-void UEclipseDanceSystemWidget::ShatterStance()
+void UEclipseDanceSystemWidget::FadeOutStance()
 {
-	ShatterT = 0.f;
+	StanceFadeT = 0.f;
 }
 
 void UEclipseDanceSystemWidget::SetTutorialStep(int32 Active)
@@ -569,15 +569,11 @@ void UEclipseDanceSystemWidget::NativeTick(const FGeometry& MyGeometry, float In
 		GradeText->SetRenderOpacity(FMath::Min(1.f, GradeFade * 2.f) * Blink * (0.55f + 0.45f * Pump));
 		GradeText->SetRenderScale(FVector2D(1.f + 0.3f * Pump));
 	}
-	if (ShatterT >= 0.f && OpponentStance)
+	if (StanceFadeT >= 0.f && OpponentStance)
 	{
-		// Flares white, tips over and falls away.
-		ShatterT += InDeltaTime;
-		const float T = FMath::Clamp(ShatterT / 1.4f, 0.f, 1.f);
-		OpponentStance->SetRenderTransformAngle(18.f * T);
-		OpponentStance->SetRenderScale(FVector2D(1.f + 0.3f * FMath::Sin(PI * T), FMath::Max(0.05f, 1.f - T)));
-		OpponentStance->SetRenderOpacity(1.f - T);
-		if (UWidget* Box = OpponentStance->GetParent()) Box->SetRenderTranslation(FVector2D(0.f, 40.f * T * T));
+		// Broken: it just goes out where it stands.
+		StanceFadeT += InDeltaTime;
+		OpponentStance->SetRenderOpacity(1.f - FMath::Clamp(StanceFadeT / 0.9f, 0.f, 1.f));
 	}
 	if (ExpertText && bExpertFading)
 	{

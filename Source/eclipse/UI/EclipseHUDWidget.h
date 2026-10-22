@@ -197,15 +197,19 @@ private:
 		TWeakObjectPtr<class UWidget>    Strike;     // collapsed until completed
 		TWeakObjectPtr<class UWidget>    Row;
 		float                      CompletedFor = -1.f;   // <0 = still active
+		float                      AddedFor = -1.f;       // >=0 = still fading in
 	};
 	TArray<FQuestRow> QuestRows;
 	void TickQuestCompletions(float DeltaTime);
-	void BuildQuestRow(const FString& Line);
+	void BuildQuestRow(const FString& Line, bool bAnnounce);
+	bool bQuestListPrimed = false;   // the first list we read is the save's, not a new quest
 
 	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
 	float QuestCompleteHoldSeconds = 1.1f;
 	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
 	float QuestCompleteFadeSeconds = 1.4f;
+	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
+	float QuestAppearSeconds = 0.55f;
 
 	void UpdateQuestList();
 
