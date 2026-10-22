@@ -90,6 +90,15 @@ Techno is a feeling, not like your house music.
 Techno is a journey.
 -> END
 
+// Said over and over while you're not squared up to him, during the stance lesson.
+=== lad_battle_face ===
+Face me.
+You're looking past me.
+Eyes here. Then we dance.
+Square up. You want to dance or not?
+In front of me. Always in front of me.
+-> END
+
 // Once you've got the moves and the footwork, the bar before it all counts.
 === lad_battle_both ===
 Now both. Stay on me and switch.

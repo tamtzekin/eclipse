@@ -93,6 +93,9 @@ private:
 	int32 LearnPasses = 0;                     // patterns copied cleanly during the lesson
 	int32 MovesetStart = MAX_int32;            // first bar he throws a pattern on
 	TArray<FString> StrafeLines;
+	TArray<FString> FaceLines;            // what he says while you're not facing him
+	float OffFacingFor = 0.f;             // unbroken seconds off him, for the nagging
+	float NextFaceBarkSong = -100.f;      // song time he'll say it again
 	TArray<FString> WrongHeavyLines, WrongLightLines;   // what he says when you answer with the wrong limb
 	bool bBeatenBefore = false;                         // he's lost to you before: no lesson, different mouth
 	bool bPendingDefeatTalk = false;                    // he has something to say once you've beaten him

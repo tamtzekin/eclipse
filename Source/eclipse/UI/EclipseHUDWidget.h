@@ -203,6 +203,7 @@ private:
 	void TickQuestCompletions(float DeltaTime);
 	void BuildQuestRow(const FString& Line, bool bAnnounce);
 	bool bQuestListPrimed = false;   // the first list we read is the save's, not a new quest
+	float QuestGlowTime = 0.f;       // drives the newest row's breathing highlight
 
 	UPROPERTY(EditAnywhere, Category = "Eclipse|HUD")
 	float QuestCompleteHoldSeconds = 1.1f;

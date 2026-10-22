@@ -731,9 +731,24 @@ void UEclipseHUDWidget::TickQuestCompletions(float DeltaTime)
 	if (QuestRows.Num() == 0) return;
 
 	const float Total = QuestCompleteHoldSeconds + QuestCompleteFadeSeconds;
+	// The newest quest still open is the one you're being pointed at, so it breathes.
+	QuestGlowTime += DeltaTime;
+	int32 Newest = INDEX_NONE;
+	for (int32 i = QuestRows.Num() - 1; i >= 0; --i)
+	{
+		if (QuestRows[i].CompletedFor < 0.f) { Newest = i; break; }
+	}
 	for (int32 i = QuestRows.Num() - 1; i >= 0; --i)
 	{
 		FQuestRow& R = QuestRows[i];
+		if (R.AddedFor < 0.f && R.CompletedFor < 0.f)
+		{
+			const float G = i == Newest ? 1.f + 0.45f * (0.5f + 0.5f * FMath::Sin(QuestGlowTime * 2.2f)) : 1.f;
+			FLinearColor C = Cream * G;
+			C.A = 1.f;
+			if (UTextBlock* T = R.Text.Get()) T->SetColorAndOpacity(FSlateColor(C));
+			if (UBorder* D = Cast<UBorder>(R.Diamond.Get())) D->SetBrush(DiamondBrush(i == Newest ? C : FLinearColor::Transparent, C, 1.5f));
+		}
 		if (R.AddedFor >= 0.f)
 		{
 			R.AddedFor += DeltaTime;

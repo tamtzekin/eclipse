@@ -224,6 +224,7 @@ bool UEclipseDanceSystemSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		IntroLines = DS->ReadKnotLines(Id + (bBeatenBefore ? TEXT("_battle_intro_again") : TEXT("_battle_intro")));
 		if (IntroLines.Num() == 0) IntroLines = DS->ReadKnotLines(Id + TEXT("_battle_intro"));
 		StrafeLines = DS->ReadKnotLines(Id + TEXT("_battle_strafe"));
+		FaceLines = DS->ReadKnotLines(Id + TEXT("_battle_face"));
 		const TArray<FString> Both = DS->ReadKnotLines(Id + TEXT("_battle_both"));
 		BothLine = Both.Num() ? Both[0] : FString();
 	}
@@ -282,6 +283,8 @@ void UEclipseDanceSystemSubsystem::BuildSchedule()
 	StrafeStart = -1;
 	DemoStart = DemoEnd = BattleStart = MAX_int32;
 	FacedSeconds = 0.f;
+	OffFacingFor = 0.f;
+	NextFaceBarkSong = -100.f;
 	PatternHits = PatternNotes = LearnPasses = 0;
 	AppendSchedule();
 }
@@ -590,7 +593,7 @@ void UEclipseDanceSystemSubsystem::HandleBeat(int32 Bar, int32 Beat)
 	// Strafe lesson: he talks you through keeping up while he moves, a line every two bars.
 	if (Beat == 1 && Opponent && StrafeStart >= 0 && Bar >= StrafeStart && Bar < DemoStart && (Bar - StrafeStart) % 2 == 0)
 	{
-		const FString Line = Bar == StrafeStart ? TEXT("Keep up with me.")
+		const FString Line = Bar == StrafeStart ? TEXT("Face me. You want to dance, you look at me.")
 			: StrafeLines.Num() ? StrafeLines[((Bar - StrafeStart) / 2) % StrafeLines.Num()] : FString();
 		if (!Line.IsEmpty()) Opponent->Yap(Line, BarHold * 2.f, FLinearColor::White, BeatSec);
 	}
@@ -1095,8 +1098,10 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 	{
 		// Fast tracks (over 160 BPM) move him further and quicker, up to 1.7x at 180.
 		const float Fast = bTutorial ? 1.f : 1.f + 0.7f * FMath::Clamp((Track->BPM - 160.f) / 20.f, 0.f, 1.f);
-		CamTimeDrift += DeltaTime * Fast * (bTutorial ? 0.5f : 1.f);
-		const float Reach = bTutorial ? 18.f : 24.f;   // inside your own range, so he's always reachable
+		// The stance lesson is where his movement has to read, so he ranges widest and quickest there.
+		const bool bTeaching = bTutorial && Phase == EPhase::Stance;
+		CamTimeDrift += DeltaTime * Fast * (bTeaching ? 1.1f : bTutorial ? 0.5f : 1.f);
+		const float Reach = bTeaching ? 34.f : bTutorial ? 18.f : 24.f;   // inside your own range, so he's always reachable
 		OpponentDrift = FMath::Clamp(Fast * (Reach * FMath::Sin(CamTimeDrift * 0.22f) + 0.3f * Reach * (FMath::Sin(CamTimeDrift * 0.55f + 1.3f) - FMath::Sin(1.3f))), -StrafeLimitDeg + 5.f, StrafeLimitDeg - 5.f);   // starts from 0; stays where you can reach
 	}
 	else
@@ -1125,6 +1130,21 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 	const float Signed = FMath::FindDeltaAngleDegrees(StrafeDeg, OpponentDrift);
 	FacingError = FMath::Abs(Signed);
 	if (bStrafing && FacedSeconds < HoldFacingToPass) FacedSeconds = FacingError <= FacingWindowDeg ? FacedSeconds + DeltaTime : 0.f;   // unbroken, and it sticks once passed
+	// Stance lesson: he keeps saying it for as long as you're not doing it.
+	if (bStrafing && Phase == EPhase::Stance && Opponent)
+	{
+		OffFacingFor = FacingError > FacingWindowDeg ? OffFacingFor + DeltaTime : 0.f;
+		if (OffFacingFor > 1.2f && NowSong > NextFaceBarkSong)
+		{
+			static const TCHAR* Fallback[] = { TEXT("Face me."), TEXT("You're looking past me."),
+				TEXT("Eyes here. Then we dance."), TEXT("Square up.") };
+			const FString Line = FaceLines.Num() ? FaceLines[Rng.RandRange(0, FaceLines.Num() - 1)]
+				: FString(Fallback[Rng.RandRange(0, UE_ARRAY_COUNT(Fallback) - 1)]);
+			Opponent->Yap(Line, Track->BarSeconds() / Pitch, EclipseUI::DialogueRed, Track->BeatSeconds() / Pitch);
+			NextFaceBarkSong = NowSong + 2.2f;
+			OffFacingFor = 0.f;
+		}
+	}
 	// Drifting off him knocks your balance down, once the dancing has started.
 	if (StaggeredUntil < 0.f && FacingError > FacingWindowDeg && LastBar >= MovesetStart) AddPlayerStance(DeltaTime * 7.f);
 	if (Widget) Widget->SetFacing(Signed, FacingWindowDeg);
