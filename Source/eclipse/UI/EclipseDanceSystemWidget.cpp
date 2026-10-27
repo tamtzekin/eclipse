@@ -447,8 +447,10 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	}
 	if (bBarOnly) return LayerId + 3;
 	const auto X = [&](float Deg) { return Mid + FMath::Clamp(Deg / Span, -1.f, 1.f) * Half; };
-	const bool bFacing = FMath::Abs(ErrorDeg) <= WindowDeg;
-	const float Danger = FMath::Clamp((FMath::Abs(ErrorDeg) - WindowDeg) / (Span - WindowDeg), 0.f, 1.f);
+	// Inside the oval means both: square to him across it, at his distance up and down it.
+	const bool bFacing = FMath::Abs(ErrorDeg) <= WindowDeg && FMath::Abs(Depth) <= 1.f;
+	const float Danger = FMath::Max(FMath::Clamp((FMath::Abs(ErrorDeg) - WindowDeg) / (Span - WindowDeg), 0.f, 1.f),
+		FMath::Clamp(FMath::Abs(Depth) - 1.f, 0.f, 1.f));
 	// Yellow as soon as you leave the ring, red by the time you're out of his reach.
 	const FLinearColor Fill = bFacing ? FLinearColor(0.5f, 1.f, 0.6f) : FMath::Lerp(FLinearColor(1.f, 0.85f, 0.2f), EclipseUI::DialogueRed, Danger);
 	if (bStaggered) DrawLine(OutDrawElements, LayerId + 2, AllottedGeometry, FVector2D(Mid - Half, Y), FVector2D(Mid + Half, Y), FLinearColor(1.f, 1.f, 1.f, 0.8f), 14.f);
@@ -458,18 +460,20 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	constexpr int32 Segments = 36;
 	// He's a dot at the centre; your oval is wide enough to sit over it while you're facing him.
 	const float HimDot = 5.f, MeX = 48.f, MeY = 15.f;
+	float DepthY = 0.f;   // set just before your own oval is drawn; his dot stays put
 	const auto Oval = [&](float Cx, float Rx, float Ry, const FLinearColor& Col, float Thick, int32 Layer)
 	{
 		TArray<FVector2D> Ring;
 		for (int32 i = 0; i <= Segments; ++i)
 		{
 			const float A2 = 2.f * PI * i / Segments;
-			Ring.Add(FVector2D(Cx + FMath::Cos(A2) * Rx, Y + FMath::Sin(A2) * Ry));
+			Ring.Add(FVector2D(Cx + FMath::Cos(A2) * Rx, Y + DepthY + FMath::Sin(A2) * Ry));
 		}
 		FSlateDrawElement::MakeLines(OutDrawElements, Layer, AllottedGeometry.ToPaintGeometry(), Ring, ESlateDrawEffect::None, Col, true, Thick);
 	};
 	// Filled by stacking rings; Slate has no disc primitive.
 	for (float R = 1.5f; R <= HimDot; R += 1.5f) Oval(Mid, R, R, bFacing ? FLinearColor(0.5f, 1.f, 0.6f, 0.95f) : FLinearColor(0.85f, 0.85f, 0.9f, 0.85f), 3.f, LayerId + 6);
+	DepthY = FMath::Clamp(Depth, -1.6f, 1.6f) * MeY;   // stepping in and out slides your oval off his dot
 	Oval(X(ErrorDeg), MeX, MeY, Fill, 2.5f, LayerId + 7);
 	return LayerId + 7;
 }

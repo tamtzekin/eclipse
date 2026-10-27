@@ -27,6 +27,7 @@
 #include "UI/EclipseYapWidget.h"
 #include "UI/EclipseHUDWidget.h"
 #include "UI/EclipseInteractWidget.h"
+#include "UI/EclipseDeathOverlayWidget.h"
 
 namespace
 {
@@ -65,8 +66,7 @@ namespace
 	constexpr float FacingWindowDeg = 30.f;   // off by more than this when a switch lands and it's a MISS
 	constexpr float PlayerStanceMax = 100.f;   // yours; full means staggered
 	constexpr float StaggerSeconds = 2.8f;     // how long you're caught flat-footed
-	constexpr float PlayerStanceRegenDelay = 4.5f;   // seconds unhit before your footing starts coming back
-	constexpr float PlayerStanceRegenPerSec = 5.f;   // and how fast, once it does: slow enough that hits stack up
+	constexpr float PlayerStanceRegenPerSec = 5.f;   // footing comes back only while you're matching his stance
 	constexpr float StanceMax = 260.f;         // the opponent's STANCE; break it and the battle's won early
 	constexpr int32 HeatStreak = 6;           // PERFECTs in a row that light HEAT mode
 	constexpr float HeatModeBars = 8.f;       // how long it lasts, in bars
@@ -75,6 +75,9 @@ namespace
 	constexpr float StanceRecover = 10.f;     // he steadies this much when you MISS
 	constexpr float StanceRegenPerSec = 7.f;  // and this fast if you leave him alone
 	constexpr float StanceRegenDelay = 3.f;   // seconds untouched before it starts coming back
+	constexpr float ReachCmPerSec = 70.f;     // how fast W/S walk you in and out
+	constexpr float ReachMinCm = 55.f, ReachMaxCm = 190.f;   // how far in and out you can get
+	constexpr float ReachToleranceCm = 45.f;  // further off his distance than this and nothing you throw lands
 
 	const TCHAR* GradeNames[] = { TEXT("PERFECT"), TEXT("GOOD"), TEXT("TOO EARLY"), TEXT("TOO SLOW"), TEXT("MISS"), TEXT("HOT") };
 	const int32 GradePoints[] = { 300, 100, 25, 50, 0, 500 };
@@ -220,6 +223,7 @@ bool UEclipseDanceSystemSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		Notes.Reset();
 		NotesBar = -1;
 		NextMovesetBar = -1;
+		bCollapsed = false;
 		PatternHits = PatternNotes = LearnPasses = 0;
 		MovesetStart = MAX_int32;
 		IntroLines = DS->ReadKnotLines(Id + (bBeatenBefore ? TEXT("_battle_intro_again") : TEXT("_battle_intro")));
@@ -402,6 +406,7 @@ void UEclipseDanceSystemSubsystem::SpawnWaveWall()
 	}
 	Panel->InitWidget();
 	Wave = Cast<UEclipseWaveformWidget>(Panel->GetUserWidgetObject());
+	if (Wave) Wave->SetRenderOpacity(0.45f);   // it's the backdrop: keep it behind the dancers, not over them
 	if (!Wave) return;
 
 	TArray<TPair<float, EEclipseDanceStyle>> Switches;
@@ -486,6 +491,7 @@ void UEclipseDanceSystemSubsystem::EnterBattleCamera()
 	StrafeCentreDeg = FMath::RadiansToDegrees(FMath::Atan2(FromPivot.Y, FromPivot.X));
 	StrafeDeg = OpponentDrift = FacingError = 0.f;
 	StrafeRadius = FMath::Clamp(FVector::Dist2D(From, To) * 0.5f, 70.f, 95.f);   // tight enough that neither of you backs into the room
+	PlayerRadius = StrafeRadius;
 	if (AEclipsePlayerCharacter* EP = Cast<AEclipsePlayerCharacter>(Player)) EP->StartFaceTarget(StrafePivot);
 	Opponent->StartFacePlayer(Player);
 	PC->SetIgnoreMoveInput(true);   // free walking is off; A/D strafe round the circle (see TickStrafe)
@@ -555,6 +561,12 @@ void UEclipseDanceSystemSubsystem::Stop()
 	bPendingDefeatTalk = false;
 	Track = nullptr;
 	Opponent = nullptr;
+	if (bCollapsed)
+	{
+		bCollapsed = false;
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) UEclipseDeathOverlayWidget::OpenWhiteOut(PC);
+		return;   // the white-out owns what happens next; he has nothing to say over it
+	}
 	if (!DefeatKnot.IsNone())
 	{
 		if (UEclipseDialogueSubsystem* DS = GetWorld()->GetGameInstance()->GetSubsystem<UEclipseDialogueSubsystem>()) DS->OpenKnot(DefeatKnot);
@@ -655,8 +667,7 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 	const bool bLesson = Phase == EPhase::Moves;   // locking already runs on the battle's shorter tell
 	const float BarSec = Track->BarSeconds(), BeatSec = Track->BeatSeconds();
 	const float His = Track->SegmentStartSeconds() + Bar * BarSec;
-	// Only the spent ones go: his last bar's notes stay answerable for the bar after it.
-	Notes.RemoveAll([](const FPendingNote& N) { return N.bDone; });
+	Notes.Reset();
 	NotesBar = Bar;
 	for (const EclipseDance::FNote& N : Parsed)
 	{
@@ -675,7 +686,7 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 	NextMovesetBar = Bar + PatternBars + Rng.RandRange(1, 2);
 
 	TelegraphDir = Parsed[0].bHeavy ? -1.f : 1.f;   // rises for a light lead, sinks for a heavy one
-	TelegraphShape = Pick % 3;   // ponytail: one procedural pose per move; swap for real anims when they exist
+	TelegraphShape = Parsed[0].bHeavy ? 1 : 0;   // ponytail: procedural poses; swap for real per-move anims when they exist
 	TelegraphTo = His + Parsed[0].Beat * BeatSec;
 	TelegraphFrom = TelegraphTo - (bLesson ? TelegraphLessonBeats : TelegraphBattleBeats) * BeatSec;
 	const FString Text = EclipseDance::MovesetText(Parsed);
@@ -686,7 +697,6 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 void UEclipseDanceSystemSubsystem::AddPlayerStance(float Amount)
 {
 	if (StaggeredUntil > 0.f) return;
-	LastStanceHitSong = SongSeconds(FPlatformTime::Seconds());   // the clock the recovery delay runs off
 	PlayerStance = FMath::Clamp(PlayerStance + Amount, 0.f, PlayerStanceMax);
 	if (Widget) Widget->FlashPlayerStance();
 	CheckBalance();
@@ -696,12 +706,7 @@ void UEclipseDanceSystemSubsystem::AddPlayerStance(float Amount)
 void UEclipseDanceSystemSubsystem::CheckBalance()
 {
 	const float Balance = FMath::Clamp(PlayerStance / PlayerStanceMax, 0.f, 1.f);
-	if (StaggeredUntil < 0.f && Balance >= 1.f)
-	{
-		StaggeredUntil = SongSeconds(FPlatformTime::Seconds()) + StaggerSeconds;
-		Shake = 1.f;
-		if (Widget) Widget->ShowGrade(FText::FromString(TEXT("STANCE BROKEN")), EclipseUI::DialogueRed);
-	}
+	if (!bFinished && Balance >= 1.f) Collapse();
 	if (Widget) Widget->SetPlayerStance(Balance, StaggeredUntil > 0.f);
 }
 
@@ -719,16 +724,16 @@ float UEclipseDanceSystemSubsystem::ParrySeconds() const
 	return Track ? FMath::Min(NoteWindow, Track->BeatSeconds() * 0.45f) : NoteWindow;
 }
 
-// You reply a bar behind him, so the window is his bar plus the same slack a parry gets.
-float UEclipseDanceSystemSubsystem::ReplySeconds() const
+// Inside the stance oval: square to him and at dancing distance. Out of either and nothing lands.
+bool UEclipseDanceSystemSubsystem::InRange() const
 {
-	return Track ? Track->BarSeconds() + ParrySeconds() : NoteWindow;
+	return FacingError <= FacingWindowDeg && FMath::Abs(PlayerRadius - StrafeRadius) <= ReachToleranceCm;
 }
 
 // Notes you never answered: he lands them and keeps his footing.
 void UEclipseDanceSystemSubsystem::TickNotes(float Song)
 {
-	const float LateSecs = ReplySeconds();
+	const float LateSecs = ParrySeconds();
 	for (FPendingNote& N : Notes)
 	{
 		// The camera braces a moment early; his body moves exactly on the step.
@@ -745,9 +750,10 @@ void UEclipseDanceSystemSubsystem::TickNotes(float Song)
 		}
 		if (!N.bAnswer || N.bDone || Song <= N.Time + LateSecs) continue;
 		N.bDone = true;
-		AddPlayerStance(9.f);   // letting one through costs you footing
+		AddPlayerStance(4.f);   // letting one through costs you footing
 		Streak = 0;
-		if (Phase == EPhase::Battle) OpponentStance = FMath::Clamp(OpponentStance + StanceRecover * 0.5f, 0.f, StanceMax);
+		// A move you never parried is a move that lands: he gets his balance back off it.
+		if (Phase == EPhase::Battle) OpponentStance = FMath::Clamp(OpponentStance + StanceRecover, 0.f, StanceMax);
 		++Counts[(int32)EGrade::Miss];
 		if (Widget)
 		{
@@ -768,8 +774,7 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	const float Press = Song - PressOffset;   // credit the press for what you heard, not what the clock says
 	const float Perfect = PerfectSeconds();
 	const float Parry = ParrySeconds();
-	const float BarSec = Track ? Track->BarSeconds() : 0.f;
-	// Window 1, the parry: on his beat. Nearest note wins, because you're answering one particular move.
+	// Parrying is the only way to answer him: nearest note on his beat, nothing after it.
 	FPendingNote* Best = nullptr;
 	float BestDt = Parry;
 	for (FPendingNote& N : Notes)
@@ -779,19 +784,6 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 		if (Dt > BestDt) continue;
 		Best = &N;
 		BestDt = Dt;
-	}
-	// Window 2, the reply: a bar behind, his pattern repeated in the order he threw it. The oldest note
-	// you haven't answered is the one this press is for, never the closest.
-	bool bReply = false;
-	if (!Best)
-	{
-		for (FPendingNote& N : Notes)
-		{
-			if (!N.bAnswer || N.bDone) continue;
-			if (FMath::Abs(Press - (N.Time + BarSec)) > Parry) continue;
-			if (!Best || N.Time < Best->Time) Best = &N;
-		}
-		bReply = Best != nullptr;
 	}
 	if (bLogPresses)
 	{
@@ -806,7 +798,7 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 			Best ? TEXT("") : TEXT(" (out of window)"), (int32)Phase, LastBar);
 	}
 	// Out of his reach: nothing you throw can land.
-	if (FacingError > FacingWindowDeg)
+	if (!InRange())
 	{
 		Shake = 0.8f;
 		Streak = 0;
@@ -824,22 +816,18 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 			if (N.bAnswer && !N.bDone) Pending = FMath::Max(Pending, N.Time);
 		}
 		const bool bHisMoveLive = TelegraphFrom > 0.f && Press >= TelegraphFrom
-			&& Pending > 0.f && Press <= Pending + ReplySeconds();
+			&& Pending > 0.f && Press <= Pending + ParrySeconds();
 		const TCHAR* Verdict = GradeNames[(int32)EGrade::Miss];
 		float Closest = NearWindow;
 		for (const FPendingNote& N : Notes)
 		{
 			if (!bHisMoveLive || !N.bAnswer || N.bDone) continue;
-			// Whichever window it was aimed at: name which way you were out, or leave it a MISS.
-			for (const float Target : { N.Time, N.Time + BarSec })
-			{
-				const float Off = Press - Target;
-				if (FMath::Abs(Off) >= Closest) continue;
-				Closest = FMath::Abs(Off);
-				Verdict = Off > 0.f ? TEXT("TOO LATE") : TEXT("TOO EARLY");
-			}
+			const float Off = Press - N.Time;
+			if (FMath::Abs(Off) >= Closest) continue;
+			Closest = FMath::Abs(Off);
+			Verdict = Off > 0.f ? TEXT("TOO LATE") : TEXT("TOO EARLY");
 		}
-		AddPlayerStance(6.f);
+		AddPlayerStance(3.f);
 		Streak = 0;
 		if (Widget) Widget->ShowGrade(FText::FromString(Verdict), GradeColor((int32)EGrade::Miss));
 		return;
@@ -849,7 +837,7 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	if (Best->bHeavy != bHeavy)
 	{
 		++Counts[(int32)EGrade::Miss];
-		AddPlayerStance(14.f);   // answering the wrong weight costs more than missing
+		AddPlayerStance(6.f);   // answering the wrong weight costs more than missing
 		Streak = 0;
 		Shake = 0.8f;
 		if (Widget) Widget->ShowGrade(FText::FromString(TEXT("WRONG MOVE")), GradeColor((int32)EGrade::Miss));
@@ -861,10 +849,9 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 		return;
 	}
 
-	// A parry off its core, or any reply: it lands, it just isn't a PERFECT.
-	const bool bLate = bReply || FMath::Abs(Press - Best->Time) > Perfect;
-	// A note carried over from his last pattern doesn't count towards answering this one.
-	if (Track && Best->Time >= Track->SegmentStartSeconds() + NotesBar * Track->BarSeconds()) ++PatternHits;
+	// Off the core of his beat: it lands, it just isn't a PERFECT.
+	const bool bLate = FMath::Abs(Press - Best->Time) > Perfect;
+	++PatternHits;
 	Streak = bLate ? 0 : Streak + 1;
 	if (!bHeatMode && Streak >= HeatStreak)
 	{
@@ -901,6 +888,14 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	if (OpponentStance <= 0.f) Finish();
 }
 
+// Your stance filled: you go down, and the night goes white.
+void UEclipseDanceSystemSubsystem::Collapse()
+{
+	bCollapsed = true;
+	Shake = 1.f;
+	Finish();
+}
+
 void UEclipseDanceSystemSubsystem::Finish()
 {
 	bFinished = true;
@@ -909,9 +904,10 @@ void UEclipseDanceSystemSubsystem::Finish()
 	const bool bWon = bStanceBroken;   // his balance has to go; running the track out is a loss
 	// Win: the track rides out. Loss: the deck brakes, stutters on a scrap of sound and dies.
 	if (bWon) WinT = 0.f;
-	if (!bWon)
+	if (!bWon && !bCollapsed)
 	{
 		// Where the braking deck will have got to, so the stutter repeats what was last heard.
+		// Going down skips it: the white-out does its own long drag instead.
 		FailLoopAt = SongSeconds(FPlatformTime::Seconds()) + 1.4f * (1.f + PitchFloor) * 0.5f;
 		FailStep = -1;
 		FailT = 0.f;
@@ -926,7 +922,8 @@ void UEclipseDanceSystemSubsystem::Finish()
 
 	if (Widget)
 	{
-		Widget->ShowGrade(FText::FromString(bWon ? TEXT("STANCE BROKEN!") : TEXT("YOU LOSE")), bWon ? EclipseDance::Gold : EclipseUI::DialogueRed);
+		Widget->ShowGrade(FText::FromString(bWon ? TEXT("STANCE BROKEN!") : bCollapsed ? TEXT("YOU COLLAPSE") : TEXT("YOU LOSE")),
+			bWon ? EclipseDance::Gold : EclipseUI::DialogueRed);
 		if (bWon) Widget->FadeOutStance();
 	}
 	EndWait = 0.f;
@@ -1039,9 +1036,9 @@ void UEclipseDanceSystemSubsystem::Tick(float DeltaTime)
 			PlayerStance = 0.f;
 			if (Widget) Widget->SetPlayerStance(0.f, false);
 		}
-		else if (StaggeredUntil < 0.f && PlayerStance > 0.f && Song > LastStanceHitSong + PlayerStanceRegenDelay)
+		else if (StaggeredUntil < 0.f && PlayerStance > 0.f && InRange())
 		{
-			// Only after a clean stretch, and slowly: inside a flurry his hits stack instead of each one wiping off.
+			// Matching his stance is what gets your footing back; drift off him and it stays where it is.
 			PlayerStance = FMath::Max(0.f, PlayerStance - DeltaTime * PlayerStanceRegenPerSec);
 			if (Widget) Widget->SetPlayerStance(PlayerStance / PlayerStanceMax, false);
 		}
@@ -1139,10 +1136,10 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 {
 	APawn* Player = PC->GetPawn();
 	if (!Player || !Opponent) return;
-	const auto OnCircle = [this](float Deg, float Z)
+	const auto OnCircle = [this](float Deg, float Radius, float Z)
 	{
 		const float Rad = FMath::DegreesToRadians(Deg);
-		return FVector(StrafePivot.X + FMath::Cos(Rad) * StrafeRadius, StrafePivot.Y + FMath::Sin(Rad) * StrafeRadius, Z);
+		return FVector(StrafePivot.X + FMath::Cos(Rad) * Radius, StrafePivot.Y + FMath::Sin(Rad) * Radius, Z);
 	};
 
 	// He drifts slowly round the circle in the strafe lesson and the real battle; for the style lesson he settles back in front of you.
@@ -1176,7 +1173,7 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 	}
 	DriftSpeed = DeltaTime > 0.f ? (OpponentDrift - LastDrift) / DeltaTime : 0.f;
 	LastDrift = OpponentDrift;
-	Opponent->SetActorLocation(OnCircle(StrafeCentreDeg + 180.f + OpponentDrift, Opponent->GetActorLocation().Z));
+	Opponent->SetActorLocation(OnCircle(StrafeCentreDeg + 180.f + OpponentDrift, StrafeRadius, Opponent->GetActorLocation().Z));
 
 	// A/D or the left stick walk you round your side of the circle, never more than a quarter turn either way.
 	float Axis = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX);
@@ -1186,7 +1183,12 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 	// You're planted while your own move is still playing.
 	const bool bMidMove = FMath::Max(PlayerTilt.X, PlayerTilt.Y) > 0.35f || StaggeredUntil > 0.f;   // mid-move or on the floor: planted
 	if (!bMidMove && FMath::Abs(Axis) >= 0.15f) StrafeDeg = FMath::Clamp(StrafeDeg - Axis * StrafeDegPerSec * DeltaTime, -StrafeLimitDeg, StrafeLimitDeg);
-	Player->SetActorLocation(OnCircle(StrafeCentreDeg + StrafeDeg, Player->GetActorLocation().Z), /*bSweep=*/true);
+	// W closes on him, S backs off. Step too far either way and you're outside the oval, where nothing lands.
+	float Fwd = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftY);
+	if (PC->IsInputKeyDown(EKeys::W)) Fwd += 1.f;
+	if (PC->IsInputKeyDown(EKeys::S)) Fwd -= 1.f;
+	if (!bMidMove) PlayerRadius = FMath::Clamp(PlayerRadius - FMath::Clamp(Fwd, -1.f, 1.f) * ReachCmPerSec * DeltaTime, ReachMinCm, ReachMaxCm);
+	Player->SetActorLocation(OnCircle(StrafeCentreDeg + StrafeDeg, PlayerRadius, Player->GetActorLocation().Z), /*bSweep=*/true);
 
 	// Facing him means sitting directly opposite: your angle and his drift match.
 	const float Signed = FMath::FindDeltaAngleDegrees(StrafeDeg, OpponentDrift);
@@ -1208,8 +1210,9 @@ void UEclipseDanceSystemSubsystem::TickStrafe(APlayerController* PC, float Delta
 		}
 	}
 	// Drifting off him knocks your balance down, once the dancing has started.
-	if (StaggeredUntil < 0.f && FacingError > FacingWindowDeg && LastBar >= MovesetStart) AddPlayerStance(DeltaTime * 7.f);
-	if (Widget) Widget->SetFacing(Signed, FacingWindowDeg);
+	if (StaggeredUntil < 0.f && !InRange() && LastBar >= MovesetStart) AddPlayerStance(DeltaTime * 2.5f);
+	// The oval shows both: how square you are across it, how close you are up and down it.
+	if (Widget) Widget->SetFacing(Signed, FacingWindowDeg, (PlayerRadius - StrafeRadius) / ReachToleranceCm);
 	CheckBalance();
 }
 
@@ -1326,22 +1329,33 @@ void UEclipseDanceSystemSubsystem::TickDancers(float Now, float DeltaTime)
 		if (!bIsPlayer && TelegraphAlpha > 0.f)
 		{
 			const float Ease = FMath::InterpEaseInOut(0.f, 1.f, TelegraphAlpha, 2.f);
-			// One tell per move, so the move is readable before its first beat lands; the sign is his lead limb.
-			switch (TelegraphShape)
+			// One tell per move, so you know which is coming before its first beat lands.
+			if (TelegraphShape == 0)
 			{
-			case 0:  Rot.Yaw += 38.f * Ease * TelegraphDir; break;                           // winds up and round
-			case 1:  Rot.Pitch -= 28.f * Ease * TelegraphDir; Loc.X -= 12.f * Ease; break;   // coils back over his feet
-			default: Rot.Roll += 24.f * Ease * TelegraphDir; Loc.Z += 12.f * Ease; break;    // rises onto one side
+				// Hands coming: a quick shimmy left and right, growing as the beat approaches.
+				const float Wobble = FMath::Sin(TelegraphAlpha * PI * 8.f) * Ease;
+				Rot.Yaw += 16.f * Wobble;
+				Rot.Roll += 10.f * Wobble;
+				Loc.Y += 9.f * Wobble;
+			}
+			else
+			{
+				// Legs coming: he bends over and swings the whole body round, slowly.
+				Rot.Pitch -= 30.f * Ease;
+				Rot.Yaw += 26.f * FMath::Sin(Ease * PI);
+				Loc.X -= 14.f * Ease;
 			}
 		}
 		// Light is arms and head: it lifts, leans back a little and twists the shoulders.
 		Rot.Pitch -= 12.f * Tilt.X;
 		Rot.Yaw += 26.f * Tilt.X;
 		Loc.Z += 28.f * Tilt.X;
-		// Heavy is the feet: a stamp straight down, pitching forward over the front foot.
-		Rot.Pitch += 32.f * Tilt.Y;
-		Loc.Z -= 34.f * Tilt.Y;
-		Loc.X += 14.f * Tilt.Y;
+		// Heavy is a full leg swing: the whole body whips round over the planted foot.
+		Rot.Yaw += 58.f * Tilt.Y;
+		Rot.Roll += 28.f * Tilt.Y;
+		Rot.Pitch += 14.f * Tilt.Y;
+		Loc.X += 26.f * Tilt.Y;
+		Loc.Z -= 12.f * Tilt.Y;
 		// Offsets are in actor space, so pre-multiply onto the mesh's own relative rotation.
 		C->GetMesh()->SetRelativeLocationAndRotation(It.Value.GetLocation() + Loc, FQuat(Rot) * It.Value.GetRotation());
 	}

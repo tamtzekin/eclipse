@@ -62,6 +62,41 @@ UEclipseDeathOverlayWidget* UEclipseDeathOverlayWidget::OpenForPlayer(APlayerCon
 	return W;
 }
 
+UEclipseDeathOverlayWidget* UEclipseDeathOverlayWidget::OpenWhiteOut(APlayerController* PC)
+{
+	using namespace EclipseUI;
+	UEclipseDeathOverlayWidget* W = OpenForPlayer(PC);
+	if (!W || !W->WidgetTree) return W;
+
+	// White, not black: the vignette is what makes it read as blacking out, so it goes.
+	if (UBorder* Dim = Cast<UBorder>(W->WidgetTree->FindWidget(TEXT("Dim"))))
+	{
+		Dim->SetBrush(SolidBrush(FLinearColor(1.f, 1.f, 1.f, 0.97f)));
+	}
+	for (const TCHAR* Name : { TEXT("PassOutVignette"), TEXT("PassOutVignetteDeep") })
+	{
+		if (UWidget* V = W->WidgetTree->FindWidget(Name)) V->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (W->Title) W->Title->SetText(FText::FromString(TEXT("YOU COLLAPSED")));
+	const TCHAR* Labels[] = { TEXT("REPLAY"), TEXT("END") };
+	UButton* Btns[] = { W->TryAgainBtn, W->QuitBtn };
+	for (int32 i = 0; i < 2; ++i)
+	{
+		if (UTextBlock* T = Btns[i] ? Cast<UTextBlock>(Btns[i]->GetChildAt(0)) : nullptr)
+		{
+			T->SetText(FText::FromString(Labels[i]));
+		}
+	}
+
+	// A long drag rather than the usual stop: the deck runs down with you.
+	if (UEclipseAudioSubsystem* Audio = PC && PC->GetGameInstance()
+			? PC->GetGameInstance()->GetSubsystem<UEclipseAudioSubsystem>() : nullptr)
+	{
+		Audio->VinylStopAllMusic(7.f);
+	}
+	return W;
+}
+
 void UEclipseDeathOverlayWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);

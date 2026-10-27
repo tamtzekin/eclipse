@@ -129,17 +129,16 @@ each of his notes with the same weight he threw.
 
 | | Window | Best case | Also possible |
 |---|---|---|---|
-| **1. Parry** | his beat ±`ParrySeconds` (0.21s) | **PERFECT** inside the core, ±`PerfectSeconds` (0.105s) | GOOD on the edge, WRONG MOVE, TOO LATE |
-| **2. Reply** | one bar later, ±`ParrySeconds` | **GOOD** — a reply can never be a PERFECT | WRONG MOVE, TOO EARLY, TOO LATE |
-| **3. Miss** | everything else | — | MISS, named TOO EARLY / TOO LATE only when a move is in flight |
+| **1. Parry** | his beat ±`ParrySeconds` (0.21s) | **PERFECT** inside the core, ±`PerfectSeconds` (0.105s) | GOOD on the edge, WRONG MOVE, TOO EARLY, TOO LATE |
+| **2. Miss** | everything else | — | MISS, named TOO EARLY / TOO LATE only when a move is in flight |
+
+**Parrying is the only way to answer him.** There is no call-and-response a
+bar later: once his beat has gone past, that move has landed.
 
 - `ParrySeconds` = `min(0.42, beat × 0.45)` and `PerfectSeconds` is half of it.
   **The parry window is deliberately capped below the gap between his beats.**
   A wider window puts one press inside two notes at once, and the
   nearest-note match then starts answering his pattern backwards.
-- The parry window takes the **nearest** note — you are answering one
-  specific move. The reply window takes the **oldest unanswered** note,
-  because replying means repeating his pattern in the order he threw it.
 - Your press is credited `PressOffset` (0.12s, live via
   `eclipse.Dance.PressOffset`) earlier than the clock, since what you hear
   and see lags it. Calibrate with `eclipse.Dance.LogPresses 1` and read the
@@ -176,15 +175,17 @@ drawn as the same gold bar.
 
 | | Max | Fills on | Recovers |
 |---|---|---|---|
-| **Yours** | 100 | letting a note through +9, near miss +6, wrong weight +14, drifting off him +7/sec | after **4.5s** unhit, at **5/sec** |
-| **His** | 260 | — | after **3s** untouched, at **7/sec**, plus +5 each time you let a note pass |
+| **Yours** | 100 | letting a note through +4, near miss +3, wrong weight +6, outside the oval +2.5/sec | at **5/sec**, but **only while you're inside the oval** |
+| **His** | 260 | — | after **3s** untouched, at **7/sec**, plus a full **+10** each time you let a move land unparried |
 
-**The recovery delay is the point.** A short gap between his hits means your
-stance accumulates toward the stagger; only a clean stretch gets it back.
+**Matching his stance is what gets your footing back** — not time passing.
+Drift out of the oval and yours stays where it is while his keeps climbing.
 
-Filling yours **staggers** you for **2.8s** — flat-footed, nothing lands,
-nothing can be added. Emptying his **breaks his stance** and wins the battle
-there and then; the bar fades out where it stands.
+Filling yours is **the end of the run**: you collapse, the screen **whites
+out**, the deck drags to a halt over 7 seconds, and the overlay offers
+**REPLAY** (the autosave) or **END** (the main menu). Emptying his **breaks
+his stance** and wins the battle there and then; the bar fades out where it
+stands.
 
 ### 4.4 HEAT mode
 
@@ -201,8 +202,15 @@ is the whole of the footwork.
 |---|---|
 | Your strafe speed | 16°/sec (A/D or left stick) |
 | Arc limit | ±55° from where the battle started |
-| Facing window | 30° off directly-opposite before you're out of reach |
+| In and out | 70 cm/sec (W/S), between 55 and 190 cm from the pivot |
+| Facing window | 30° off directly-opposite, **and** within 45 cm of his distance |
 | His reach | ±34° in the stance lesson, ±18° in later lessons, ±24° in battle |
+
+**Both halves of the oval have to be matched for anything to land**: square
+to him across it, at his distance up and down it. Either one off and your
+moves read OUT OF RANGE and your stance climbs. The gauge shows both — the
+marker slides sideways as you lose his angle and up or down as you step in
+or out.
 
 Faster tracks move him further and quicker, up to 1.7× at 180 BPM. **He only
 drifts between moves** — once his telegraph starts he plants himself through
@@ -279,11 +287,11 @@ plus **1–2 bars**, and goes back to strafing for them — the gap is where you
 reply, and where his movement is readable. In the lesson he stays on a
 predictable 4-bar loop instead.
 
-Each moveset wears **its own telegraph pose** (`TelegraphShape`, the moveset
-index mod 3): winding up and round, coiling back over his feet, or rising
-onto one side — signed by his lead limb, so the move is readable before its
-first beat. These are procedural poses, not animations; they are the
-placeholder until there are real per-move anims.
+Each move wears **its own telegraph**, picked by its lead limb: a light lead
+is a quick shimmy left and right that grows into the beat, a heavy lead is a
+slow bend over the feet with the whole body swinging round. These are
+procedural poses, not animations; they are the placeholder until there are
+real per-move anims.
 
 ### 4.9 Winning and losing
 
@@ -430,7 +438,7 @@ dialogue `startGame` action. Never while passed out.
 
 | Key | Action |
 |---|---|
-| W/A/S/D | move — **A/D strafe the circle during a dance battle** |
+| W/A/S/D | move — in a dance battle **A/D circle him and W/S close or back off** |
 | Mouse / trackpad | look (smoothed over `LookSmoothSeconds`, 0.08s) |
 | E | talk / pick up / advance dialogue |
 | ▲ / ▼ | light / heavy attack in a dance battle |

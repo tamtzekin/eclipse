@@ -29,6 +29,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	static UEclipseDeathOverlayWidget* OpenForPlayer(class APlayerController* PC);
 
+	// The same screen inverted: going down on the floor whites out rather than blacking out.
+	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
+	static UEclipseDeathOverlayWidget* OpenWhiteOut(class APlayerController* PC);
+
 	UFUNCTION(BlueprintCallable, Category = "Eclipse|UI")
 	void Close();
 

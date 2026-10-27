@@ -57,7 +57,8 @@ private:
 	void TickNotes(float Song);        // retires notes you let pass
 	float PerfectSeconds() const;      // dead on his beat: the only way to a PERFECT
 	float ParrySeconds() const;        // how close to his beat counts as a parry
-	float ReplySeconds() const;        // how far behind his beat a reply still lands
+	bool InRange() const;              // inside the stance oval: facing him and at dancing distance
+	void Collapse();                   // stance full: you go down and the night whites out
 	void AddPlayerStance(float Amount);   // wrong answers cost you balance
 	void CheckBalance();                  // drift + those costs; full either way and you go down
 	void Finish();
@@ -112,7 +113,8 @@ private:
 	float StrafeCentreDeg = 0.f;
 	float StrafeDeg = 0.f;                // your offset round the circle
 	float OpponentDrift = 0.f;            // his, wandering slowly
-	float StrafeRadius = 85.f;
+	float StrafeRadius = 85.f;         // his distance from the pivot, and the distance yours is judged against
+	float PlayerRadius = 85.f;         // yours: W/S walk you in and out of his reach
 	float FacingError = 0.f;              // degrees off directly-opposite
 	float CamTimeDrift = 0.f;
 	float DriftSpeed = 0.f, LastDrift = 0.f;               // how fast he's sliding round the circle, for the lean
@@ -139,7 +141,6 @@ private:
 	// Your own stance, Sekiro-style: wrong answers fill it, a full bar leaves you flat-footed for a moment.
 	float PlayerStance = 0.f;
 	float StaggeredUntil = -1.f;          // song time you can move again
-	float LastStanceHitSong = -100.f;     // song time he last cost you footing: recovery waits on this
 	// His tell: a slow rise (light lead) or sink (heavy lead) over the two beats before he steps.
 	float TelegraphFrom = -1.f, TelegraphTo = -1.f;   // song times
 	float TelegraphDir = 0.f;                          // +1 up, -1 down
@@ -179,6 +180,7 @@ private:
 	bool bOpponentHit = false;
 	float Performance = 0.5f;             // running 0..1 grade average; drives how hard the camera punches in
 	bool bFinished = false;
+	bool bCollapsed = false;              // lost by going down rather than running the track out
 	float EndWait = -1.f;                 // counts the wind-down after the last move, then closes the battle
 
 	// Camera: a two-shot that orbits a little and tilts to alternating sides on every switch, with a quick punch.

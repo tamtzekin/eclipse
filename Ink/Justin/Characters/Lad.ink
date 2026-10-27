@@ -44,8 +44,8 @@ Nice.
 // Space = crotchet, - = quaver, = semiquaver, * = 1st and 3rd of a triplet.
 // Two moves only: A then B in the lesson, mixed for the rest of the song.
 === lad_moveset ===
-L L H
-L H L L
+L L L L
+H H L L
 -> END
 
 // Called when you answer with the wrong limb: _heavy means you stamped when it was a hand move.

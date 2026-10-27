@@ -63,7 +63,8 @@ class ECLIPSE_API UEclipseFacingGaugeWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void SetFacing(float InErrorDeg, float InWindowDeg) { ErrorDeg = InErrorDeg; WindowDeg = InWindowDeg; }
+	// Depth is how far off his distance you are, in units of the reach tolerance: 0 matched, ±1 at the edge.
+	void SetFacing(float InErrorDeg, float InWindowDeg, float InDepth) { ErrorDeg = InErrorDeg; WindowDeg = InWindowDeg; Depth = InDepth; }
 	void SetStance(float InPressure, bool bInStaggered) { Pressure = InPressure; bStaggered = bInStaggered; }
 
 	// A hit flashes the bar in FlashColor and fades back over a beat.
@@ -80,6 +81,7 @@ protected:
 
 private:
 	float ErrorDeg = 0.f;    // signed, 0 = facing them dead on
+	float Depth = 0.f;       // signed, 0 = at his distance, ±1 at the edge of your reach
 	float WindowDeg = 18.f;
 	float Pressure = 0.f;    // 0..1 of your stance gone; 1 = broken
 	bool bStaggered = false;
@@ -126,7 +128,7 @@ public:
 	void ShowExpert(const FString& Who, EEclipseDanceStyle Style);
 
 	void SetRadialSelected(EEclipseDanceStyle Style);
-	void SetFacing(float ErrorDeg, float WindowDeg) { if (FacingGauge) FacingGauge->SetFacing(ErrorDeg, WindowDeg); }
+	void SetFacing(float ErrorDeg, float WindowDeg, float Depth) { if (FacingGauge) FacingGauge->SetFacing(ErrorDeg, WindowDeg, Depth); }
 	void SetFacingVisible(bool bVisible);
 
 	// Opponent STANCE bar, 0..1; bHit shakes it.
