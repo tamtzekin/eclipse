@@ -219,6 +219,7 @@ bool UEclipseDanceSystemSubsystem::StartBattle(UEclipseDanceTrackData* InTrack, 
 		MovesetIndex = 0;
 		Notes.Reset();
 		NotesBar = -1;
+		NextMovesetBar = -1;
 		PatternHits = PatternNotes = LearnPasses = 0;
 		MovesetStart = MAX_int32;
 		IntroLines = DS->ReadKnotLines(Id + (bBeatenBefore ? TEXT("_battle_intro_again") : TEXT("_battle_intro")));
@@ -616,7 +617,7 @@ void UEclipseDanceSystemSubsystem::HandleBeat(int32 Bar, int32 Beat)
 		if (His >= MovesetStart && His > NotesBar)
 		{
 			if (Phase == EPhase::Moves) { if (His % MovesetBars == 0) StartMoveset(His); }
-			else if (His % 2 == 0) StartMoveset(His);
+			else if (His >= NextMovesetBar) StartMoveset(His);
 		}
 	}
 	}
@@ -669,8 +670,12 @@ void UEclipseDanceSystemSubsystem::StartMoveset(int32 Bar)
 	PatternHits = 0;
 	PatternPerfects = 0;
 	PatternNotes = Parsed.Num();   // one pass through his move, whichever window you use
+	// He doesn't come at you every bar: his pattern, then a bar or two of nothing but footwork.
+	const int32 PatternBars = FMath::Max(1, FMath::CeilToInt((Parsed.Last().Beat + 1.f) / Track->BeatsPerBar));
+	NextMovesetBar = Bar + PatternBars + Rng.RandRange(1, 2);
 
 	TelegraphDir = Parsed[0].bHeavy ? -1.f : 1.f;   // rises for a light lead, sinks for a heavy one
+	TelegraphShape = Pick % 3;   // ponytail: one procedural pose per move; swap for real anims when they exist
 	TelegraphTo = His + Parsed[0].Beat * BeatSec;
 	TelegraphFrom = TelegraphTo - (bLesson ? TelegraphLessonBeats : TelegraphBattleBeats) * BeatSec;
 	const FString Text = EclipseDance::MovesetText(Parsed);
@@ -811,11 +816,20 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	if (!Best)
 	{
 		// Too far off to count, but close enough to tell you which way you were out.
+		// Only a move that's actually in flight can be answered early or late: his tell has started and
+		// something of it is still unanswered. Throwing while he's just strafing is a MISS, nothing else.
+		float Pending = -1.f;
+		for (const FPendingNote& N : Notes)
+		{
+			if (N.bAnswer && !N.bDone) Pending = FMath::Max(Pending, N.Time);
+		}
+		const bool bHisMoveLive = TelegraphFrom > 0.f && Press >= TelegraphFrom
+			&& Pending > 0.f && Press <= Pending + ReplySeconds();
 		const TCHAR* Verdict = GradeNames[(int32)EGrade::Miss];
 		float Closest = NearWindow;
 		for (const FPendingNote& N : Notes)
 		{
-			if (!N.bAnswer || N.bDone) continue;
+			if (!bHisMoveLive || !N.bAnswer || N.bDone) continue;
 			// Whichever window it was aimed at: name which way you were out, or leave it a MISS.
 			for (const float Target : { N.Time, N.Time + BarSec })
 			{
@@ -1312,8 +1326,13 @@ void UEclipseDanceSystemSubsystem::TickDancers(float Now, float DeltaTime)
 		if (!bIsPlayer && TelegraphAlpha > 0.f)
 		{
 			const float Ease = FMath::InterpEaseInOut(0.f, 1.f, TelegraphAlpha, 2.f);
-			if (TelegraphDir > 0.f) Rot.Yaw += 38.f * Ease;
-			else { Rot.Pitch -= 28.f * Ease; Loc.X -= 10.f * Ease; }
+			// One tell per move, so the move is readable before its first beat lands; the sign is his lead limb.
+			switch (TelegraphShape)
+			{
+			case 0:  Rot.Yaw += 38.f * Ease * TelegraphDir; break;                           // winds up and round
+			case 1:  Rot.Pitch -= 28.f * Ease * TelegraphDir; Loc.X -= 12.f * Ease; break;   // coils back over his feet
+			default: Rot.Roll += 24.f * Ease * TelegraphDir; Loc.Z += 12.f * Ease; break;    // rises onto one side
+			}
 		}
 		// Light is arms and head: it lifts, leans back a little and twists the shoulders.
 		Rot.Pitch -= 12.f * Tilt.X;

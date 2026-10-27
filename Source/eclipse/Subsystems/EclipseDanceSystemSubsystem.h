@@ -133,6 +133,8 @@ private:
 	TArray<FString> Movesets;          // patterns from his Ink <id>_moveset knot
 	int32 MovesetIndex = 0;
 	int32 NotesBar = -1;               // bar his current pattern started on
+	int32 NextMovesetBar = -1;         // earliest bar he'll throw the next one: he rests in between
+	int32 TelegraphShape = 0;          // which tell this move wears
 
 	// Your own stance, Sekiro-style: wrong answers fill it, a full bar leaves you flat-footed for a moment.
 	float PlayerStance = 0.f;

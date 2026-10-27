@@ -131,7 +131,7 @@ each of his notes with the same weight he threw.
 |---|---|---|---|
 | **1. Parry** | his beat ±`ParrySeconds` (0.21s) | **PERFECT** inside the core, ±`PerfectSeconds` (0.105s) | GOOD on the edge, WRONG MOVE, TOO LATE |
 | **2. Reply** | one bar later, ±`ParrySeconds` | **GOOD** — a reply can never be a PERFECT | WRONG MOVE, TOO EARLY, TOO LATE |
-| **3. Miss** | everything else | — | MISS, named TOO EARLY / TOO LATE when within 1s (`NearWindow`) of either window |
+| **3. Miss** | everything else | — | MISS, named TOO EARLY / TOO LATE only when a move is in flight |
 
 - `ParrySeconds` = `min(0.42, beat × 0.45)` and `PerfectSeconds` is half of it.
   **The parry window is deliberately capped below the gap between his beats.**
@@ -147,6 +147,10 @@ each of his notes with the same weight he threw.
 - Answering with the wrong weight is **WRONG MOVE**: it consumes the note,
   costs more stance than letting it through, and he names the limb you
   should have used.
+- A move is "in flight" from the moment his tell starts until the last of
+  it goes unanswered past the reply window. **Throwing while he's just
+  strafing is a MISS** — there is nothing to be early or late for, so it is
+  never named one.
 - Out of his reach (facing error over 30°) is **OUT OF RANGE** — nothing
   you throw can land.
 
@@ -269,6 +273,17 @@ heavy (legs). The character **after** a note sets the gap to the next one:
 
 `L H L L` is four crotchets — UP DOWN UP UP. Patterns run in order during
 the lesson and shuffle in the battle.
+
+**He does not throw every bar.** After a pattern he rests its own length
+plus **1–2 bars**, and goes back to strafing for them — the gap is where you
+reply, and where his movement is readable. In the lesson he stays on a
+predictable 4-bar loop instead.
+
+Each moveset wears **its own telegraph pose** (`TelegraphShape`, the moveset
+index mod 3): winding up and round, coiling back over his feet, or rising
+onto one side — signed by his lead limb, so the move is readable before its
+first beat. These are procedural poses, not animations; they are the
+placeholder until there are real per-move anims.
 
 ### 4.9 Winning and losing
 
