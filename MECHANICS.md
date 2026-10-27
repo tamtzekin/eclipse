@@ -129,13 +129,13 @@ each of his notes with the same weight he threw.
 
 | | Window | Best case | Also possible |
 |---|---|---|---|
-| **1. Parry** | his beat ±`ParrySeconds` (0.21s) | **PERFECT** inside the core, ±`PerfectSeconds` (0.105s) | GOOD on the edge, WRONG MOVE, TOO EARLY, TOO LATE |
+| **1. Parry** | his beat ±`ParrySeconds` (0.21s) | **PERFECT** inside the core, ±`PerfectSeconds` (0.14s) | GOOD on the edge, WRONG MOVE, TOO EARLY, TOO LATE |
 | **2. Miss** | everything else | — | MISS, named TOO EARLY / TOO LATE only when a move is in flight |
 
 **Parrying is the only way to answer him.** There is no call-and-response a
 bar later: once his beat has gone past, that move has landed.
 
-- `ParrySeconds` = `min(0.42, beat × 0.45)` and `PerfectSeconds` is half of it.
+- `ParrySeconds` = `min(0.42, beat × 0.45)`; `PerfectSeconds` is 0.65 of it.
   **The parry window is deliberately capped below the gap between his beats.**
   A wider window puts one press inside two notes at once, and the
   nearest-note match then starts answering his pattern backwards.
@@ -160,6 +160,9 @@ bar later: once his beat has gone past, that move has landed.
 | PERFECT | 300 | 25 | `NoteDamage × 1.4` |
 | GOOD | 100 | 10 | `NoteDamage × 0.6` |
 | MISS / TOO EARLY / TOO LATE | 0–50 | 0 | 0 |
+
+Every landed answer cuts the camera in by its grade (`GradeZoom`), hard on a
+PERFECT and less on a GOOD, so the shot tightens as you read him better.
 
 `NoteDamage` is **9**, before multipliers:
 
@@ -189,9 +192,10 @@ stands.
 
 ### 4.4 HEAT mode
 
-**6 PERFECTs in a row** (`HeatStreak`) lights it for **8 bars**. Everything
+**4 PERFECTs in a row** (`HeatStreak`) lights it for **8 bars**. Everything
 hits 1.5× and scores double, and the track speeds up 12%. Only PERFECTs
-build the streak — a GOOD or a reply resets it to zero.
+build the streak, but a GOOD **holds** it — it takes dropping one, or
+answering with the wrong limb, to break the run.
 
 ### 4.5 Movement and facing
 

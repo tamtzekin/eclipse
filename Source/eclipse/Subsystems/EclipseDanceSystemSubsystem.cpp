@@ -68,7 +68,7 @@ namespace
 	constexpr float StaggerSeconds = 2.8f;     // how long you're caught flat-footed
 	constexpr float PlayerStanceRegenPerSec = 5.f;   // footing comes back only while you're matching his stance
 	constexpr float StanceMax = 260.f;         // the opponent's STANCE; break it and the battle's won early
-	constexpr int32 HeatStreak = 6;           // PERFECTs in a row that light HEAT mode
+	constexpr int32 HeatStreak = 4;           // PERFECTs in a row that light HEAT mode
 	constexpr float HeatModeBars = 8.f;       // how long it lasts, in bars
 	constexpr float HeatModeSpeedUp = 0.12f;  // extra tempo while it's on
 	constexpr float HeatDamage = 1.5f;        // everything you land hits this much harder
@@ -716,7 +716,7 @@ void UEclipseDanceSystemSubsystem::CheckBalance()
 // that still lands for less.
 float UEclipseDanceSystemSubsystem::PerfectSeconds() const
 {
-	return ParrySeconds() * 0.5f;
+	return ParrySeconds() * 0.65f;
 }
 
 float UEclipseDanceSystemSubsystem::ParrySeconds() const
@@ -852,7 +852,7 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	// Off the core of his beat: it lands, it just isn't a PERFECT.
 	const bool bLate = FMath::Abs(Press - Best->Time) > Perfect;
 	++PatternHits;
-	Streak = bLate ? 0 : Streak + 1;
+	Streak = bLate ? Streak : Streak + 1;   // a GOOD holds the run; only dropping one breaks it
 	if (!bHeatMode && Streak >= HeatStreak)
 	{
 		bHeatMode = true;
@@ -868,6 +868,8 @@ void UEclipseDanceSystemSubsystem::Attack(bool bHeavy)
 	const EGrade G = bLate ? EGrade::Good : EGrade::Perfect;
 	if (!bLate) ++PatternPerfects;
 	const bool bStyleMatch = PlayerStyle != EEclipseDanceStyle::Count && PlayerStyle == OpponentStyle;
+	CamFOVTarget = FMath::Clamp(BaseFOV + GradeZoom[(int32)G], 34.f, 100.f);   // landing one draws the shot in
+	CamBump = 0.f;
 	const float Damage = NoteDamage * (bLate ? 0.6f : 1.4f) * (bStyleMatch ? StyleMatchBonus : 1.f) * (bHeatMode ? HeatDamage : 1.f);
 	OpponentStance = FMath::Clamp(OpponentStance - Damage, 0.f, StanceMax);
 	LastLandedSong = Song;   // his stance only comes back once you stop landing on him
@@ -1100,7 +1102,7 @@ void UEclipseDanceSystemSubsystem::TickCamera(float DeltaTime)
 		const FVector Right = FVector::CrossProduct(FVector::UpVector, Dir);
 		const FVector Mid = StrafePivot + FVector(0.f, 0.f, 30.f);
 		CamMid = FMath::VInterpTo(CamMid, Mid, DeltaTime, 3.f);
-		CamOffset = FMath::VInterpTo(CamOffset, -Dir * (StrafeRadius + 280.f) + Right * 220.f + FVector(0.f, 0.f, 70.f), DeltaTime, 3.f);
+		CamOffset = FMath::VInterpTo(CamOffset, -Dir * (StrafeRadius + 170.f) + Right * 150.f + FVector(0.f, 0.f, 55.f), DeltaTime, 3.f);
 
 	}
 	CamRoll = FMath::FInterpTo(CamRoll, CamRollTarget, DeltaTime, 8.f);

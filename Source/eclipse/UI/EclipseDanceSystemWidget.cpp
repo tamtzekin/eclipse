@@ -459,7 +459,7 @@ int32 UEclipseFacingGaugeWidget::NativePaint(const FPaintArgs& Args, const FGeom
 	// Sit yours inside his and you're facing him; stray outside and nothing you throw lands.
 	constexpr int32 Segments = 36;
 	// He's a dot at the centre; your oval is wide enough to sit over it while you're facing him.
-	const float HimDot = 5.f, MeX = 48.f, MeY = 15.f;
+	const float HimDot = 5.f, MeX = 34.f, MeY = 15.f;
 	float DepthY = 0.f;   // set just before your own oval is drawn; his dot stays put
 	const auto Oval = [&](float Cx, float Rx, float Ry, const FLinearColor& Col, float Thick, int32 Layer)
 	{
