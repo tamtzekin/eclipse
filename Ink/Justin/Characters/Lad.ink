@@ -93,18 +93,16 @@ Techno is a journey.
 
 // Said over and over while you're not squared up to him, during the stance lesson.
 === lad_battle_face ===
-Face me.
-You're looking past me.
-Eyes here. Then we dance.
-Square up. You want to dance or not?
-In front of me. Always in front of me.
+Sync up with me.
+You're off-balance.
+Eyes on me.
 -> END
 
 // The three objectives listed in the HUD while he's teaching, in order.
 === lad_battle_steps ===
-Keep your balance
-Match him, move for move
-Read him faster
+Match his stance.
+Read his attacks. Counter his moves.
+Knock him out.
 -> END
 
 // What he says after each of his patterns: copied it / kept up but sloppy / fluffed it, in that order.

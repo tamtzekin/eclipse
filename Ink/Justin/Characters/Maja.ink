@@ -15,7 +15,7 @@ FLORIN: Friend, you are not important. Tonight, on the list, there's no soul tha
 == shes_on_the_list
     'It's people like you who are ruining this city. I am on the list. Let me in.'
      She makes a sign at him. Some archaic finger-shape like a butterfly, but its meaning is violent.
-        *** {aethestics > 2} Hey, can you get me in?
+        *** {aesthetics > 2} Hey, can you get me in?
         Maybe.
         
         *** You're on the list too?
